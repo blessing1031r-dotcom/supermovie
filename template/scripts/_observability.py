@@ -384,6 +384,27 @@ def build_cost_payload(estimate, rate_input, rate_output, *,
       dict: nested cost object per Cost JSON Shape contract。`rate_missing` は
       `compute_rate_missing(estimate)` で算出 (single source of truth)。
     """
+    # PR-AL (Codex 04:00 verdict AV) defense: rate_source は v1 cost contract
+    # の env var convention placeholder で、`env:` prefix + non-empty env name の
+    # canonical format。旧実装は型 / format validation なしで空文字 / None / int /
+    # bool / list / prefix なしを silent payload 通過、downstream consumer が
+    # 「どの env から rate を読んでいるか」を機械的にトレースできない drift。
+    # caller の bug を helper が隠す経路を断ち、payload 構築側責務に固定する。
+    if not isinstance(rate_source, str):
+        raise TypeError(
+            f"build_cost_payload: rate_source must be str, got "
+            f"{type(rate_source).__name__} ({rate_source!r})"
+        )
+    if not rate_source.startswith("env:"):
+        raise ValueError(
+            f"build_cost_payload: rate_source must start with 'env:' "
+            f"prefix (canonical convention), got {rate_source!r}"
+        )
+    if len(rate_source) <= len("env:"):
+        raise ValueError(
+            f"build_cost_payload: rate_source must contain a non-empty env "
+            f"var name after 'env:' prefix, got {rate_source!r}"
+        )
     estimate = _coerce_finite_or_none(estimate)
     rate_input = _coerce_finite_or_none(rate_input)
     rate_output = _coerce_finite_or_none(rate_output)

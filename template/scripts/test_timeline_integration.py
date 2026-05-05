@@ -3809,6 +3809,87 @@ def test_observability_emit_json_stderr_clean() -> None:
             )
 
 
+def test_observability_build_cost_payload_rate_source_contract() -> None:
+    """`build_cost_payload(rate_source=...)` の str + `env:` prefix + non-empty
+    env name contract lock-in (Codex 04:00 PR-AL verdict AV、observability v1
+    cost telemetry contract drift 防止)。
+
+    `rate_source` は §Cost JSON Shape の env var convention placeholder で、
+    canonical format は `env:<ENV_VAR_NAME>` (非空 env name 必須)。旧実装は
+    型 / format validation なしで以下の drift を silent payload 通過:
+
+      - `""` (空文字) / `None` / 数値 / bool / list 等 type 違反
+      - `"SUPERMOVIE_RATE_X"` (env: prefix 欠如) → caller が機械的に env
+        name を抽出できない
+      - `"env:"` (prefix 直後 env name 空) → 同上
+
+    新 contract: TypeError (非 str) + ValueError (prefix 欠如 / env name 空)
+    で fail-loud。default 値 `env:SUPERMOVIE_RATE_<PROVIDER>_<DIR>_USD_PER_MTOK`
+    と典型 caller 経路 (env:SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK 等)
+    は backward compatible。
+
+    既存 strict 系 (PR-AC exit_code int / PR-AD redaction_rules / PR-AF cost /
+    PR-AK counts/artifacts) と同 level の defensive lint。
+    """
+    from _observability import build_cost_payload
+
+    # ===== accept 経路 =====
+    # (1a) default (省略) → default placeholder が出る
+    p_def = build_cost_payload(0.001, 1.5, 3.0)
+    assert p_def["rate_source"] == "env:SUPERMOVIE_RATE_<PROVIDER>_<DIR>_USD_PER_MTOK"
+
+    # (1b) 通常 caller の env: prefix + ENV_NAME
+    p_anthropic = build_cost_payload(
+        0.001, 1.5, 3.0,
+        rate_source="env:SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+    )
+    assert p_anthropic["rate_source"] == \
+        "env:SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK"
+
+    # (1c) env: + 1 char minimal env name
+    p_min = build_cost_payload(0.001, 1.5, 3.0, rate_source="env:X")
+    assert p_min["rate_source"] == "env:X"
+
+    # ===== reject 経路 =====
+    # (2) 型違反: None / int / float / bool / list / dict
+    for bad_type in (None, 5, 1.5, True, False, ["env:X"], {"env": "X"}):
+        try:
+            build_cost_payload(0.001, 1.5, 3.0, rate_source=bad_type)
+        except TypeError as e:
+            assert "rate_source" in str(e) and "str" in str(e), (
+                f"TypeError msg should mention rate_source + str, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"non-str rate_source={bad_type!r} must raise TypeError"
+            )
+
+    # (3) prefix 欠如: env: なし
+    for no_prefix in ("SUPERMOVIE_RATE_X", "ENV:X", "env_X", "env-X",
+                      "anthropic_input"):
+        try:
+            build_cost_payload(0.001, 1.5, 3.0, rate_source=no_prefix)
+        except ValueError as e:
+            assert "rate_source" in str(e) and "env:" in str(e), (
+                f"ValueError msg should mention rate_source + env:, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"no-prefix rate_source={no_prefix!r} must raise ValueError"
+            )
+
+    # (4) prefix 直後 env name 空: "env:" or "" (空文字)
+    for empty_or_prefix in ("", "env:"):
+        try:
+            build_cost_payload(0.001, 1.5, 3.0, rate_source=empty_or_prefix)
+        except (ValueError, TypeError):
+            pass
+        else:
+            raise AssertionError(
+                f"empty-name rate_source={empty_or_prefix!r} must raise"
+            )
+
+
 def test_observability_build_cost_payload_nan_inf_defense() -> None:
     """`build_cost_payload()` が NaN / Inf / -Inf rate を None 正規化し、
     `rate_missing=True` 維持 + JSON pollution (`NaN` / `Infinity` token)
@@ -6197,6 +6278,7 @@ def main() -> int:
         test_observability_build_status_cost_dict_strict,
         test_observability_build_status_counts_artifacts_strict,
         test_observability_build_cost_payload_nan_inf_defense,
+        test_observability_build_cost_payload_rate_source_contract,
         # PR-E (distributed tracing run_id active emission): 7 件
         test_observability_resolve_run_context_uses_env,
         test_observability_resolve_run_context_generates_when_missing,
