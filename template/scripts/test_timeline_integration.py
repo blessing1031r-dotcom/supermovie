@@ -2763,6 +2763,81 @@ def test_observability_status_map_lint() -> None:
     )
 
 
+def test_observability_status_map_category_format_invariant() -> None:
+    """`STATUS_MAP` の category string format invariant lock-in
+    (Codex 04:11 PR-AN verdict AW、observability v1 contract drift 防止)。
+
+    `category` は v1 status JSON の bucket field で、downstream consumer /
+    log analyzer / dashboard が同 category 値で payload を集約する。STATUS_MAP
+    の (status, category) tuple の category 値が以下の drift パターンに
+    silent regression するのを早期検出:
+
+      - UPPERCASE letter / mixed case (downstream grep が大文字小文字違いで
+        bucket miss)
+      - whitespace / 制御文字 / non-ASCII 特殊文字 (1-line JSON / log line
+        format 破壊)
+      - leading / trailing dash / underscore (typo 由来 silent drift)
+      - 空文字列 (PR-T `test_observability_status_map_lint` で既に reject、
+        本 test は format 側を独立 lock)
+
+    permissive regex `^[a-z](?:[a-z0-9_-]*[a-z0-9])?$` で lock-in:
+      - lowercase letter で開始
+      - 本体は lowercase + digit + underscore + dash 許容
+      - 末尾は必ず lowercase letter or digit (trailing _ / - を reject)
+      - 1 char (単独 letter) も accept
+
+    snake_case と kebab-case の両方を accept (現 STATUS_MAP は両方混在、
+    segment 単位の case style 統一は別 lint 候補で別 PR)。
+
+    `None` (success → ("ok", None) 経路) は除外、str-only 値のみ regex 検査。
+    """
+    import re as _re
+
+    from _observability import STATUS_MAP
+
+    pat = _re.compile(r"^[a-z](?:[a-z0-9_-]*[a-z0-9])?$")
+
+    fails = []
+    for v0_status, (v1_status, v1_category) in STATUS_MAP.items():
+        if v1_category is None:
+            continue
+        # 必須: str
+        assert isinstance(v1_category, str), (
+            f"STATUS_MAP[{v0_status!r}] category must be str-or-None, "
+            f"got {type(v1_category).__name__}"
+        )
+        # 必須: pattern match
+        if not pat.fullmatch(v1_category):
+            fails.append((v0_status, v1_category))
+
+    assert not fails, (
+        f"STATUS_MAP contains {len(fails)} category value(s) violating "
+        f"format `^[a-z][a-z0-9_-]*$`: {fails[:10]}"
+    )
+
+    # negative control: regex 自体が drift パターンを正しく reject する確認
+    drift_patterns = [
+        "UPPERCASE",                # uppercase
+        "Mixed-Case",               # mixed
+        "1leading-digit",           # leading digit
+        "-leading-dash",            # leading dash
+        "_leading_underscore",      # leading underscore
+        "trailing-",                # trailing dash
+        "trailing_",                # trailing underscore
+        "with space",               # whitespace
+        "with\ttab",                # tab
+        "with\nnewline",            # newline
+        "with.dot",                 # dot
+        "with/slash",               # slash
+        "with$dollar",              # special char
+        "",                         # empty (PR-T と相互 lock)
+    ]
+    for bad in drift_patterns:
+        assert not pat.fullmatch(bad), (
+            f"regex must reject drift pattern {bad!r}, but it passed"
+        )
+
+
 def test_observability_safe_artifact_path_redacts() -> None:
     """abs_path が project_root 相対 / <HOME> placeholder に正規化されること。
 
@@ -6358,6 +6433,7 @@ def main() -> int:
         # Phase 3 obs migration core: helper module regression test (6 件)
         test_observability_helper_status_map,
         test_observability_status_map_lint,
+        test_observability_status_map_category_format_invariant,
         test_observability_safe_artifact_path_redacts,
         test_observability_safe_artifact_path_collision_corners,
         test_observability_safe_artifact_path_tilde_expansion,
