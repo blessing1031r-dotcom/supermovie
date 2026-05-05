@@ -7727,6 +7727,114 @@ def test_observability_status_naming_docs_status_map_value_lint() -> None:
     )
 
 
+def test_observability_build_cost_payload_currency_tokens_value_contract() -> None:
+    """`build_cost_payload()` の currency / tokens_* cell-value 型 contract
+    lock-in (Codex 06:42 PR-BG verdict BS、observability cost aggregator
+    type drift 防止)。
+
+    PR-BE で docs §Cost JSON Shape ↔ build_cost_payload output key の双方向
+    set lint は積んだが、各 cell の値型は未検査の field がある:
+      - currency: docs example "USD" だが str 型 / 非空 enforce なし
+      - tokens_input / tokens_output: docs example int だが int 型 / 非負
+        enforce なし、bool / float / str が silent payload 通過
+
+    downstream cost aggregator (currency 別 sum / token total / per-token
+    unit cost) は型不整合 / silent miscount を起こす drift。
+
+    新 contract:
+      - currency: 非 None str + 非空 (TypeError on non-str / ValueError on "")
+      - tokens_input / tokens_output: int (not bool) or None (TypeError on
+        bool / float / str / list)、< 0 reject (ValueError)
+
+    estimate / rate_*_usd_per_mtok は PR-AA NaN/Inf defense の silent
+    coerce 設計 (`_coerce_finite_or_none`) を意図的に維持、本 contract は
+    cell value 型のうち caller-passthrough の currency / tokens に限定。
+
+    PR-AL rate_source env: prefix / PR-BC counts cell value と同 level の
+    cell value strict contract 層。
+    """
+    from _observability import build_cost_payload
+
+    # ===== accept: 通常 path (no caller fix needed) =====
+    p_default = build_cost_payload(0.001, 1.5, 3.0)
+    assert p_default["currency"] == "USD"
+    assert p_default["tokens_input"] is None
+    assert p_default["tokens_output"] is None
+
+    p_with_tokens = build_cost_payload(
+        0.001, 1.5, 3.0, tokens_input=100, tokens_output=200,
+    )
+    assert p_with_tokens["tokens_input"] == 100
+    assert p_with_tokens["tokens_output"] == 200
+
+    # currency 別 (将来 USD 以外も accept できる string)
+    p_jpy = build_cost_payload(0.001, 1.5, 3.0, currency="JPY")
+    assert p_jpy["currency"] == "JPY"
+    p_lower = build_cost_payload(0.001, 1.5, 3.0, currency="usd")
+    assert p_lower["currency"] == "usd"  # 大小は別 lint で別途固定可、本 PR は型のみ
+
+    # tokens_* = 0 (zero-cost edge) は accept (>= 0 の境界)
+    p_zero_tokens = build_cost_payload(
+        0.001, 1.5, 3.0, tokens_input=0, tokens_output=0,
+    )
+    assert p_zero_tokens["tokens_input"] == 0
+    assert p_zero_tokens["tokens_output"] == 0
+
+    # ===== reject: currency 型違反 =====
+    for bad_curr in (None, 5, 1.5, True, False, [], {"k": "v"}, ()):
+        try:
+            build_cost_payload(0.001, 1.5, 3.0, currency=bad_curr)
+        except TypeError as e:
+            assert "currency" in str(e) and "str" in str(e), (
+                f"TypeError msg should mention currency + str, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"non-str currency={bad_curr!r} must raise TypeError"
+            )
+
+    # ===== reject: currency 空文字 =====
+    try:
+        build_cost_payload(0.001, 1.5, 3.0, currency="")
+    except ValueError as e:
+        assert "currency" in str(e) and "non-empty" in str(e), (
+            f"ValueError msg should mention currency + non-empty, got {e!r}"
+        )
+    else:
+        raise AssertionError("empty currency must raise ValueError")
+
+    # ===== reject: tokens_* 型違反 (bool は int subclass で True == 1 conflate
+    # を避けるため明示 reject、float / str / list / dict / tuple 全 reject) =====
+    bad_token_types = [True, False, 1.5, 0.5, "100", "", [100], {1: 2}, ()]
+    for bad_t in bad_token_types:
+        for label in ("tokens_input", "tokens_output"):
+            try:
+                kwargs = {label: bad_t}
+                build_cost_payload(0.001, 1.5, 3.0, **kwargs)
+            except TypeError as e:
+                assert label in str(e) and "int" in str(e), (
+                    f"TypeError msg should mention {label} + int, got {e!r}"
+                )
+            else:
+                raise AssertionError(
+                    f"non-int {label}={bad_t!r} must raise TypeError"
+                )
+
+    # ===== reject: tokens_* 負 int =====
+    for label in ("tokens_input", "tokens_output"):
+        try:
+            kwargs = {label: -1}
+            build_cost_payload(0.001, 1.5, 3.0, **kwargs)
+        except ValueError as e:
+            assert label in str(e) and ">= 0" in str(e), (
+                f"ValueError msg should mention {label} + >= 0, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"negative {label}=-1 must raise ValueError"
+            )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -8896,6 +9004,7 @@ def main() -> int:
         test_observability_common_fields_docs_payload_key_lint,
         test_observability_cost_json_shape_docs_payload_key_lint,
         test_observability_status_naming_docs_status_map_value_lint,
+        test_observability_build_cost_payload_currency_tokens_value_contract,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,

@@ -473,6 +473,40 @@ def build_cost_payload(estimate, rate_input, rate_output, *,
             f"build_cost_payload: rate_source must contain a non-empty env "
             f"var name after 'env:' prefix, got {rate_source!r}"
         )
+    # PR-BG (Codex 06:42 verdict BS) defense: currency / tokens_* の cell-value
+    # 型 contract。PR-BE で docs §Cost JSON Shape ↔ build_cost_payload output
+    # key の双方向 set lint は積んだが、各 cell の値型 (currency / tokens
+    # int-or-None) は未検査だった。downstream cost aggregator は currency 別 sum
+    # / token total / per-token unit cost を計算するため、currency に空文字 /
+    # 非 str / None が混入したり、tokens に str "100" / float / bool が入ったり
+    # すると aggregator が型不整合 / silent miscount を起こす drift。PR-AL
+    # rate_source / PR-BC counts cell value contract と同 level の cost cell
+    # 値型 fail-loud。estimate / rate_*_usd_per_mtok は PR-AA NaN/Inf defense
+    # の silent coerce 設計を維持 (defense-in-depth 意図)、本 contract は
+    # currency / tokens_* に限定。
+    if not isinstance(currency, str):
+        raise TypeError(
+            f"build_cost_payload: currency must be str, got "
+            f"{type(currency).__name__} ({currency!r})"
+        )
+    if not currency:
+        raise ValueError(
+            f"build_cost_payload: currency must be non-empty, got {currency!r}"
+        )
+    for label, val in (("tokens_input", tokens_input),
+                       ("tokens_output", tokens_output)):
+        if val is None:
+            continue
+        if isinstance(val, bool) or not isinstance(val, int):
+            raise TypeError(
+                f"build_cost_payload: {label} must be int or None "
+                f"(bool / float / str reject)、got {type(val).__name__} "
+                f"({val!r})"
+            )
+        if val < 0:
+            raise ValueError(
+                f"build_cost_payload: {label} must be >= 0, got {val!r}"
+            )
     estimate = _coerce_finite_or_none(estimate)
     rate_input = _coerce_finite_or_none(rate_input)
     rate_output = _coerce_finite_or_none(rate_output)
