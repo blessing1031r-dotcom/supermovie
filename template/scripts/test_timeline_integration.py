@@ -8884,16 +8884,21 @@ def test_observability_emit_json_tail_invariant_caller_ast_lint() -> None:
             return False
         return f.value.attr == "stdout"
 
-    def _is_stdout_writer_stmt(stmt: _ast_re.AST) -> bool:
-        """sibling stmt が stdout writer (print() to stdout /
-        sys.stdout.write()) を実行する Expr 文かどうか"""
-        if not isinstance(stmt, _ast_re.Expr):
-            return False
-        if not isinstance(stmt.value, _ast_re.Call):
-            return False
-        return _is_print_to_stdout(stmt.value) or _is_stdout_write(
-            stmt.value
-        )
+    def _find_stdout_writer_in_subtree(
+        root: _ast_re.AST,
+    ) -> _ast_re.Call | None:
+        """PR-BT P1 fix (Codex 08:50): later sibling stmt の subtree 全体を
+        walk し、ネストした位置 (If.body / Try / For / While / inline
+        callback 等) に隠れる stdout writer Call も検出する。
+        descendant scan で `if verbose: print("done")` 等の drift も
+        fail-loud。
+        """
+        for sub in _ast_re.walk(root):
+            if not isinstance(sub, _ast_re.Call):
+                continue
+            if _is_print_to_stdout(sub) or _is_stdout_write(sub):
+                return sub
+        return None
 
     def _audit_body(
         body: list[_ast_re.AST],
@@ -8901,21 +8906,24 @@ def test_observability_emit_json_tail_invariant_caller_ast_lint() -> None:
         violations: list[str],
     ) -> None:
         """stmt list を順に走査し、emit_json bare Expr の AFTER に
-        stdout writer Expr が同一 list に出現する drift を検出"""
+        stdout writer Call が後続 sibling subtree 内のどこかに出現する
+        drift を検出 (PR-BT P1 fix で descendant scan に拡張、ネスト If
+        / Try / For 内の隠れ print も fail-loud)"""
         for i, stmt in enumerate(body):
             if not _is_emit_call(stmt):
                 continue
             for j in range(i + 1, len(body)):
                 later = body[j]
-                if _is_stdout_writer_stmt(later):
+                hit = _find_stdout_writer_in_subtree(later)
+                if hit is not None:
                     line_emit = stmt.lineno
-                    line_late = later.lineno
+                    line_late = getattr(hit, "lineno", later.lineno)
                     violations.append(
                         f"{script_name}: line {line_emit} で "
                         f"emit_json/wrapper bare Call の後、line "
                         f"{line_late} に stdout writer "
-                        f"({_ast_re.unparse(later)[:80]}) が同一 stmt "
-                        f"list 内に出現 (末尾 1 行 invariant drift)"
+                        f"({_ast_re.unparse(hit)[:80]}) が後続 sibling "
+                        f"subtree 内に出現 (末尾 1 行 invariant drift)"
                     )
 
     SCRIPT_NAMES = (
