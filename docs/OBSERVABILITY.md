@@ -266,6 +266,7 @@ cap: 全 3 field に `MAX_TRACE_CONTEXT_VALUE_LEN = 128` 適用、超過時は `
 | 11 | stderr path leak audit (preflight_video `input not found` / visual_smoke `MAIN_VIDEO` / `REMOTION_BIN` / `VIDEO_CONFIG` / png ffprobe / generate_slide_plan `PROJ` を `safe_artifact_path()` 経由化、`--unsafe-keep-abs-path` で raw、stderr も同 contract 適用 + 1 件 regression test) | PR-J |
 | 12 | `redact_error_message()` regex 強化 (Windows path `C:\...` / `D:/...` 検出 + 置換、IPv6 / data: URI / mailto: の false-positive 防御維持、複数 path 同時 redact + 3 件 edge case test) | PR-K |
 | 13 | `--unsafe-keep-abs-path` flag 7 script audit (`build_slide_data` / `build_telop_data` / `voicevox_narration` / `visual_smoke` / `compare_telop_split` / `preflight_video` / `generate_slide_plan` の argparse + `args.unsafe_keep_abs_path` 使用を verify、将来 script 追加時の漏れ防止 lint test 1 件追加) | PR-M |
+| 14 | `rate_missing` discriminator 追加 (generate_slide_plan dry-run legacy JSON + v1 tail / cost_guard_aborted payload に `rate_missing: bool` 明示、`estimate is None` から推論する fragile downstream parse を回避、§Cost JSON Shape contract enforcement + 2 件 regression test) | PR-N |
 
 ## Test Requirements
 

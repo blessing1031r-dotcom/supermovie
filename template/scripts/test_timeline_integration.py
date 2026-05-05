@@ -3857,6 +3857,139 @@ def test_observability_redact_secret_last_n_zero_or_negative_full_mask() -> None
     assert redacted_zero == "*" * len("sk-1234567890")
 
 
+def test_generate_slide_plan_rate_missing_true_when_rate_unset() -> None:
+    """PR-N (Codex 01:02): rate 未設定時の dry-run payload に rate_missing=true、
+    estimated_cost_usd_upper_bound=null 両方が出ること (downstream discriminator)。
+
+    docs/OBSERVABILITY.md §Cost JSON Shape の rate_missing field を contract enforcement。
+    """
+    import os as _os
+    import io
+    import sys as _sys
+    import importlib
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+    saved_env = {k: _os.environ.get(k) for k in (
+        "ANTHROPIC_API_KEY",
+        "SUPERMOVIE_RATE_INPUT_PER_MTOK", "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
+    )}
+
+    proj = Path(tempfile.mkdtemp(prefix="rate_missing_unset_"))
+    (proj / "transcript_fixed.json").write_text(
+        json.dumps({"duration_ms": 5000, "words": [], "segments": [{"text": "x", "start": 0, "end": 100}]}),
+        encoding="utf-8",
+    )
+    (proj / "project-config.json").write_text(
+        json.dumps({"format": "youtube", "videoType": "test", "tone": "test"}),
+        encoding="utf-8",
+    )
+    try:
+        # rate 未設定
+        for k in ("SUPERMOVIE_RATE_INPUT_PER_MTOK", "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+                  "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+                  "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK"):
+            _os.environ.pop(k, None)
+        _os.environ.pop("ANTHROPIC_API_KEY", None)
+        _os.chdir(str(proj))
+
+        import generate_slide_plan as gsp
+        importlib.reload(gsp)
+        gsp.PROJ = proj
+
+        _sys.argv = ["generate_slide_plan.py", "--dry-run", "--json-log"]
+        out_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(io.StringIO()):
+            gsp.main()
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        # legacy dry-run payload (line 1)
+        legacy = json.loads(lines[0])
+        assert legacy.get("rate_missing") is True, \
+            f"rate_missing should be True with rate unset, got {legacy.get('rate_missing')!r}"
+        assert legacy.get("estimated_cost_usd_upper_bound") is None
+        # v1 tail (last line)
+        v1_tail = json.loads(lines[-1])
+        assert v1_tail.get("rate_missing") is True, \
+            f"v1 tail rate_missing should be True, got {v1_tail.get('rate_missing')!r}"
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        for k, v in saved_env.items():
+            if v is None:
+                _os.environ.pop(k, None)
+            else:
+                _os.environ[k] = v
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
+def test_generate_slide_plan_rate_missing_false_when_rate_set() -> None:
+    """PR-N: rate 両方設定時の dry-run payload に rate_missing=false、
+    estimated_cost_usd_upper_bound=finite float 両方が出ること。
+    """
+    import os as _os
+    import io
+    import sys as _sys
+    import importlib
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+    saved_env = {k: _os.environ.get(k) for k in (
+        "ANTHROPIC_API_KEY",
+        "SUPERMOVIE_RATE_INPUT_PER_MTOK", "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
+    )}
+
+    proj = Path(tempfile.mkdtemp(prefix="rate_missing_set_"))
+    (proj / "transcript_fixed.json").write_text(
+        json.dumps({"duration_ms": 5000, "words": [], "segments": [{"text": "x", "start": 0, "end": 100}]}),
+        encoding="utf-8",
+    )
+    (proj / "project-config.json").write_text(
+        json.dumps({"format": "youtube", "videoType": "test", "tone": "test"}),
+        encoding="utf-8",
+    )
+    try:
+        _os.environ["SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK"] = "1.0"
+        _os.environ["SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK"] = "5.0"
+        for k in ("SUPERMOVIE_RATE_INPUT_PER_MTOK", "SUPERMOVIE_RATE_OUTPUT_PER_MTOK"):
+            _os.environ.pop(k, None)
+        _os.environ.pop("ANTHROPIC_API_KEY", None)
+        _os.chdir(str(proj))
+
+        import generate_slide_plan as gsp
+        importlib.reload(gsp)
+        gsp.PROJ = proj
+
+        _sys.argv = ["generate_slide_plan.py", "--dry-run", "--json-log"]
+        out_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(io.StringIO()):
+            gsp.main()
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        legacy = json.loads(lines[0])
+        assert legacy.get("rate_missing") is False, \
+            f"rate_missing should be False with rate set, got {legacy.get('rate_missing')!r}"
+        assert isinstance(legacy.get("estimated_cost_usd_upper_bound"), (int, float)), \
+            f"estimate should be finite number, got {legacy.get('estimated_cost_usd_upper_bound')!r}"
+        v1_tail = json.loads(lines[-1])
+        assert v1_tail.get("rate_missing") is False
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        for k, v in saved_env.items():
+            if v is None:
+                _os.environ.pop(k, None)
+            else:
+                _os.environ[k] = v
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
 def test_unsafe_keep_abs_path_flag_present_in_all_seven_scripts() -> None:
     """PR-M (Codex 00:54 approve): 7 script すべてが `--unsafe-keep-abs-path` argparse flag を
     受け取り、`safe_artifact_path()` 等で `args.unsafe_keep_abs_path` を使っていることを
@@ -4146,6 +4279,9 @@ def main() -> int:
         test_observability_redact_secret_last_n_zero_or_negative_full_mask,
         # PR-M (--unsafe-keep-abs-path flag audit、Codex 00:54 approve): 1 件 (lint-style)
         test_unsafe_keep_abs_path_flag_present_in_all_seven_scripts,
+        # PR-N (cost.estimate / rate_missing schema verification、Codex 01:02 approve): 2 件
+        test_generate_slide_plan_rate_missing_true_when_rate_unset,
+        test_generate_slide_plan_rate_missing_false_when_rate_set,
         # PR-I (human stdout path leak audit、Codex 00:08 approve): 2 件 (1 feat + 1 fix iter voicevox summary redact)
         test_build_slide_data_human_stdout_path_redacted_by_default,
         test_voicevox_narration_summary_path_redacted_by_default,
