@@ -8851,22 +8851,49 @@ def test_observability_provider_notes_routing_docs_code_lint() -> None:
     )
     body = m.group("body")
 
-    # 4 row 必須 keyword (provider 行毎に 1 grouped check)
-    PROVIDER_ROW_KEYWORDS: list[tuple[str, list[str]]] = [
-        ("Anthropic", ["Anthropic API", "$/MTok", "env 必須"]),
-        ("Gemini", ["Gemini API", "$/image"]),
+    # PR-CF P2 fix #1 (Codex 08:43): markdown table data row 単位で 4 provider
+    # を抽出 + 同一 row 内に必須 keyword 全件を assert (prose に崩れた drift /
+    # 1 row 内 keyword 散らかし drift を fail-loud)
+    table_rows: list[str] = []
+    for line in body.split("\n"):
+        if not line.startswith("| "):
+            continue
+        if line.startswith("|---"):
+            continue
+        # header 行 (| provider | unit | rate kind |) を除外
+        if "provider" in line and "unit" in line and "rate kind" in line:
+            continue
+        table_rows.append(line)
+    assert len(table_rows) == 4, (
+        f"docs §Provider Notes table data row 数が 4 でない: "
+        f"{len(table_rows)} (provider 4 row 契約 drift?)"
+    )
+
+    PROVIDER_ROW_KEYWORDS: list[tuple[str, str, list[str]]] = [
+        ("Anthropic", "Anthropic", ["Anthropic API", "$/MTok", "env 必須"]),
+        ("Gemini", "Gemini", ["Gemini API", "$/image"]),
         (
+            "VOICEVOX",
             "VOICEVOX",
             ["VOICEVOX", "local engine", "cost なし", "telemetry 対象外"],
         ),
-        ("Kling", ["Kling", "将来"]),
+        ("Kling", "Kling", ["Kling", "将来"]),
     ]
-    for provider_name, keywords in PROVIDER_ROW_KEYWORDS:
+    for provider_name, row_marker, keywords in PROVIDER_ROW_KEYWORDS:
+        matching_rows = [r for r in table_rows if row_marker in r]
+        assert matching_rows, (
+            f"docs §Provider Notes table から {provider_name} の data "
+            f"row が抽出できない (row marker '{row_marker}' 削除 / "
+            f"rename drift?)"
+        )
+        # 同一 provider に複数 row marker hit がある場合は最初の row を採用
+        provider_row = matching_rows[0]
         for kw in keywords:
-            assert kw in body, (
+            assert kw in provider_row, (
                 f"docs §Provider Notes の {provider_name} row に必須 "
-                f"keyword '{kw}' が見つからない (row 削除 / rename / "
-                f"分類注釈消失 drift?)"
+                f"keyword '{kw}' が同一 row 内に見つからない "
+                f"(row 内 keyword 散らかし / 注釈消失 drift?): "
+                f"row={provider_row!r}"
             )
 
     # Anthropic provider routing: generate_slide_plan.py AST に
@@ -8925,13 +8952,19 @@ def test_observability_provider_notes_routing_docs_code_lint() -> None:
 
     # VOICEVOX cross-provider isolation: source text に Anthropic /
     # Gemini 語が出ない
-    PROVIDER_FOREIGN_TOKENS = ["Anthropic", "Gemini"]
-    for tok in PROVIDER_FOREIGN_TOKENS:
-        assert tok not in vox_src, (
-            f"voicevox_narration.py source に '{tok}' 語が出現 "
-            f"(docs §Provider Notes row 3 'telemetry 対象外' isolation "
-            f"契約と drift、provider 経路混在 / cost 二重計上 risk?)"
-        )
+    # PR-CF P2 fix #2 (Codex 08:43): case-insensitive + word boundary
+    # 検出で `anthropic` / `ANTHROPIC` / `gemini` 等の大小文字 drift も
+    # fail-loud (provider 名混在 risk の網羅範囲を広げる)
+    foreign_re = re.compile(r"\b(anthropic|gemini)\b", re.IGNORECASE)
+    foreign_hits = [
+        m.group(0) for m in foreign_re.finditer(vox_src)
+    ]
+    assert not foreign_hits, (
+        f"voicevox_narration.py source に provider 名 (Anthropic / "
+        f"Gemini、case-insensitive) が出現: {foreign_hits} "
+        f"(docs §Provider Notes row 3 'telemetry 対象外' isolation "
+        f"契約と drift、provider 経路混在 / cost 二重計上 risk?)"
+    )
 
 
 def test_observability_cost_abort_threshold_docs_code_lint() -> None:
