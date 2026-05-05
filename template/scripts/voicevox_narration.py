@@ -540,12 +540,22 @@ def main():
     args = ap.parse_args()
 
     # Phase 3 obs migration core: helper 経由で v1 schema 経由 emit。
-    # 全 return path で status / exit_code を含む形を維持しつつ schema_version=1 等の
-    # v1 fields を build_status で追加。extra kwargs は top-level merge で v0 互換。
+    # Codex 20:48 PR3 review P1 #2 fix: redact key 名を実 payload と一致させる。
+    # 旧 (output / narration_data_path / chunk_meta_path) は誤、実 emit は
+    # narration_wav / narration_data_ts / chunk_meta_json / narration_ready_json / out_path。
+    PATH_KEYS = (
+        "narration_wav",
+        "narration_data_ts",
+        "chunk_meta_json",
+        "narration_ready_json",
+        "out_path",
+        "output",  # 防御的: 将来追加される可能性
+    )
+
     def emit_json(status: str, exit_code: int, **extra) -> int:
         # Apply abs_path redaction to known path-bearing fields
         redaction_rules = []
-        for key in ("output", "narration_data_path", "chunk_meta_path"):
+        for key in PATH_KEYS:
             if key in extra and extra[key] is not None:
                 extra[key] = safe_artifact_path(
                     extra[key],
@@ -650,7 +660,16 @@ def main():
         atomic_write_bytes(p, wav_bytes)
         chunk_paths.append(p)
         chunk_meta.append((text, ch.get("sourceStartMs"), ch.get("sourceEndMs")))
-        print(f"  chunk[{i:3}] {len(wav_bytes)} bytes  text='{text[:30]}…'")
+        # Codex 20:48 PR3 review P1 #1 fix: chunk text raw partial を default redact、
+        # --unsafe-show-user-content 指定時のみ raw 出力。
+        if args.unsafe_show_user_content:
+            print(f"  chunk[{i:3}] {len(wav_bytes)} bytes  text='{text[:30]}…'")
+        else:
+            meta = user_content_meta(text)
+            print(
+                f"  chunk[{i:3}] {len(wav_bytes)} bytes  "
+                f"text=<redacted len={meta['length']} sha256={meta['sha256']}>"
+            )
 
     if not chunk_paths:
         print("ERROR: no chunks succeeded", file=sys.stderr)

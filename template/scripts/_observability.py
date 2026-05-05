@@ -20,18 +20,29 @@ REDACTION_VERSION = 1
 # v0 → v1 status mapping per docs/OBSERVABILITY.md §Migration Policy.
 # Update both this dict and the doc table together.
 STATUS_MAP = {
+    # success / skip / dry-run
     "success": ("ok", None),
     "api_key_skipped": ("skipped", "api_key_missing"),
     "engine_skipped": ("skipped", "engine_unavailable"),
     "engine_unavailable_strict": ("error", "engine_unavailable"),
     "list_speakers": ("ok", "list_speakers"),
     "dry_run": ("dry_run", None),
-    # error variants: v0 status 名を v1 category として保存
+    # error variants (slide-plan)
     "cost_guard_arg_invalid": ("error", "cost_guard_arg_invalid"),
     "inputs_missing": ("error", "inputs_missing"),
     "rate_limited": ("error", "rate_limited"),
     "api_http_error": ("error", "api_http_error"),
     "llm_json_invalid": ("error", "llm_json_invalid"),
+    # error variants (voicevox)
+    "transcript_missing": ("error", "transcript_missing"),
+    "transcript_invalid": ("error", "transcript_invalid"),
+    "no_chunks": ("error", "no_chunks"),
+    "invalid_fps": ("error", "invalid_fps"),
+    "stale_cleanup_fail": ("error", "stale_cleanup_fail"),
+    "vad_invalid": ("error", "vad_invalid"),
+    "no_chunks_succeeded": ("error", "no_chunks_succeeded"),
+    "concat_fail": ("error", "concat_fail"),
+    "write_narration_data_wave_error": ("error", "write_narration_data_wave_error"),
 }
 
 

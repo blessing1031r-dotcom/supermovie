@@ -2461,12 +2461,19 @@ def test_observability_helper_status_map() -> None:
     """
     from _observability import STATUS_MAP, map_status
 
-    # 既存 v0 emit 経路が STATUS_MAP に登録済みであることを確認
+    # 既存 v0 emit 経路 (slide-plan + voicevox 全 status) が STATUS_MAP に登録済み確認。
+    # Codex 20:48 PR3 review P2 #2 で must_have の文言ズレ指摘を解消、voicevox error statuses 列挙。
     must_have = {
+        # success / skip / dry-run
         "success", "api_key_skipped", "engine_skipped", "engine_unavailable_strict",
         "list_speakers", "dry_run",
+        # slide-plan error variants
         "cost_guard_arg_invalid", "inputs_missing", "rate_limited",
         "api_http_error", "llm_json_invalid",
+        # voicevox error variants (voicevox_narration.py:591/598/601/606/615/635/657/707)
+        "transcript_missing", "transcript_invalid", "no_chunks", "invalid_fps",
+        "stale_cleanup_fail", "vad_invalid", "no_chunks_succeeded", "concat_fail",
+        "write_narration_data_wave_error",
     }
     missing = must_have - set(STATUS_MAP.keys())
     assert not missing, f"STATUS_MAP missing v0 statuses: {missing}"
@@ -2582,6 +2589,100 @@ def test_observability_build_status_v1_schema() -> None:
     assert p["output"] == "out/foo.json"
 
 
+def test_observability_provider_body_stderr_default_redact() -> None:
+    """generate_slide_plan の HTTP error response body と LLM raw text が
+    default で stderr に raw 出力されないこと (Codex 20:48 PR3 review P2 #1)。
+
+    docs/OBSERVABILITY.md §Redaction Rules provider_response_body strict 化
+    の regression test。
+    """
+    import generate_slide_plan as gsp
+    import os as _os
+    import urllib.request as _urlreq
+    import urllib.error as _urlerr
+    import io as _io
+    import contextlib
+
+    secret_body = '{"error": "Anthropic internal: token sk-LEAK-secret-12345"}'
+
+    class FakeHTTPError(_urlerr.HTTPError):
+        def __init__(self, body):
+            self._body = body.encode("utf-8")
+            self.code = 500
+            self.headers = None
+
+        def read(self):
+            return self._body
+
+    def mock_urlopen_500(req, timeout=60):
+        raise FakeHTTPError(secret_body)
+
+    original_urlopen = _urlreq.urlopen
+    original_proj = gsp.PROJ
+    original_api_key = _os.environ.get("ANTHROPIC_API_KEY")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        gsp.PROJ = proj
+        (proj / "transcript_fixed.json").write_text(
+            json.dumps({"words": [{"text": "x"}], "segments": []}),
+            encoding="utf-8",
+        )
+        (proj / "project-config.json").write_text(
+            json.dumps({"format": "short"}), encoding="utf-8",
+        )
+        _os.environ["ANTHROPIC_API_KEY"] = "fake"
+        _urlreq.urlopen = mock_urlopen_500
+        try:
+            import sys as _sys
+            old_argv = _sys.argv
+            captured_err = _io.StringIO()
+            _sys.argv = ["generate_slide_plan.py", "--output", str(proj / "x.json")]
+            try:
+                with contextlib.redirect_stderr(captured_err):
+                    ret = gsp.main()
+                assert_eq(ret, 4, "HTTP 500 → exit 4")
+                err_text = captured_err.getvalue()
+                # default: raw secret string が stderr に出ていない
+                if "sk-LEAK-secret-12345" in err_text:
+                    raise AssertionError(
+                        f"raw secret body leaked to stderr in default mode: {err_text!r}"
+                    )
+                # redacted summary が含まれている
+                if "redacted" not in err_text or "sha256=" not in err_text:
+                    raise AssertionError(
+                        f"expected redacted summary in stderr, got: {err_text!r}"
+                    )
+            finally:
+                _sys.argv = old_argv
+
+            # --unsafe-dump-response: raw が出ること (debug flag が機能している)
+            captured_err2 = _io.StringIO()
+            _sys.argv = [
+                "generate_slide_plan.py",
+                "--output", str(proj / "x.json"),
+                "--unsafe-dump-response",
+            ]
+            try:
+                with contextlib.redirect_stderr(captured_err2):
+                    ret2 = gsp.main()
+                assert_eq(ret2, 4, "unsafe-dump-response also exits 4")
+                err_text2 = captured_err2.getvalue()
+                if "sk-LEAK-secret-12345" not in err_text2:
+                    raise AssertionError(
+                        f"--unsafe-dump-response did not output raw body: {err_text2!r}"
+                    )
+            finally:
+                _sys.argv = old_argv
+        finally:
+            if original_api_key is None:
+                _os.environ.pop("ANTHROPIC_API_KEY", None)
+            else:
+                _os.environ["ANTHROPIC_API_KEY"] = original_api_key
+            _urlreq.urlopen = original_urlopen
+            gsp.PROJ = original_proj
+
+
 def test_observability_emit_json_disabled_no_print(capsys=None) -> None:
     """emit_json は --json-log なし (enabled=False) で stdout に出さないこと。
 
@@ -2658,6 +2759,7 @@ def main() -> int:
         test_observability_user_content_meta_no_raw,
         test_observability_redact_provider_body_default_strict,
         test_observability_build_status_v1_schema,
+        test_observability_provider_body_stderr_default_redact,
         test_observability_emit_json_disabled_no_print,
     ]
     failed = []
