@@ -6737,6 +6737,173 @@ def test_visual_smoke_v1_schema_emit_conformance() -> None:
         _shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def test_generate_slide_plan_v1_schema_emit_conformance() -> None:
+    """generate_slide_plan の `--json-log` tail が v1 schema contract に準拠
+    (Codex 05:43 PR-AY verdict 案A、observability v1 emit caller conformance
+    audit、PR-AW/AX pair で残 4 v1 caller の後半 1/2 件目)。
+
+    api_key_skipped path (ANTHROPIC_API_KEY 未設定 + --dry-run なし) で
+    `script="generate_slide_plan"` / `v0_status="api_key_skipped"` →
+    STATUS_MAP `("skipped", "api_key_missing")` の v1 payload を emit。
+    counts={} / artifacts=[] / cost=None の minimum payload でも v1 common
+    field 全種 (PR-AW `_assert_v1_payload_common` 共有) が contract 通り揃う。
+
+    PR-AY 同 PR で `start_time = time.monotonic()` capture + `duration_ms`
+    kwarg 追加の caller fix を含む (旧 emit_json wrapper は duration_ms 渡さず
+    silent drift)、本 test がその fix を機械的に lock-in。
+
+    PR-AW (3 caller) / PR-AX (2 caller) と相補で残 v1 caller の前半。
+    """
+    import os as _os
+    import io as _io
+    import sys as _sys
+    import importlib
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_argv = list(_sys.argv)
+    saved_env = _os.environ.get("ANTHROPIC_API_KEY")
+    saved_cwd = _os.getcwd()
+
+    proj = Path(tempfile.mkdtemp(prefix="gsp_v1_conform_"))
+    try:
+        # api_key 未設定 path で early skip 経路を狙う
+        _os.environ.pop("ANTHROPIC_API_KEY", None)
+        _os.chdir(str(proj))
+        import generate_slide_plan as gsp
+        importlib.reload(gsp)
+        gsp.PROJ = proj
+
+        _sys.argv = ["generate_slide_plan.py", "--json-log"]
+        out_buf = _io.StringIO()
+        err_buf = _io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            rc = gsp.main()
+        # api_key_skipped → STATUS_MAP "skipped"、exit_code=0
+        assert rc == 0, (
+            f"generate_slide_plan api_key_skipped expected rc=0, got rc={rc}, "
+            f"stderr={err_buf.getvalue()!r}"
+        )
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        assert lines, f"stdout must have output, got {out_buf.getvalue()!r}"
+        # 最終行が v1 JSON tail
+        payload = json.loads(lines[-1])
+
+        _assert_v1_payload_common(
+            payload,
+            expected_script="generate_slide_plan",
+            expected_status="skipped",
+            expected_category="api_key_missing",
+            expected_ok=True,  # "skipped" is ok=True per build_status
+            expected_exit_code=0,
+        )
+
+        # api_key_skipped path は minimum payload (no domain extras)
+        assert payload["counts"] == {}, (
+            f"api_key_skipped counts must be empty dict, got "
+            f"{payload['counts']!r}"
+        )
+        assert payload["artifacts"] == [], (
+            f"api_key_skipped artifacts must be empty list, got "
+            f"{payload['artifacts']!r}"
+        )
+        assert payload["cost"] is None, (
+            f"api_key_skipped cost must be None, got {payload['cost']!r}"
+        )
+        # redaction.applied_rules: skip path で output extra なしなので空
+        assert payload["redaction"]["applied_rules"] == [], (
+            f"api_key_skipped redaction.applied_rules must be empty list, "
+            f"got {payload['redaction']!r}"
+        )
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        if saved_env is None:
+            _os.environ.pop("ANTHROPIC_API_KEY", None)
+        else:
+            _os.environ["ANTHROPIC_API_KEY"] = saved_env
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
+def test_voicevox_narration_v1_schema_emit_conformance() -> None:
+    """voicevox_narration の `--json-log` tail が v1 schema contract に準拠
+    (Codex 05:43 PR-AY verdict 案A、PR-AW/AX/AY pair で残 4 v1 caller 完了)。
+
+    engine_skipped path (VOICEVOX engine 不在 + --require-engine なし) で
+    `script="voicevox_narration"` / `v0_status="engine_skipped"` →
+    STATUS_MAP `("skipped", "engine_unavailable")` の v1 payload を emit。
+    test 環境に VOICEVOX server が無いので check_engine() は False を返し
+    早期 skip path に入る (既存 PR-G test_voicevox_narration_summary_path_
+    redacted_by_default と同 pattern、engine 不在を pre-condition とする)。
+
+    PR-AY 同 PR で `start_time = time.monotonic()` capture + `duration_ms`
+    kwarg 追加の caller fix を含む。
+    """
+    import os as _os
+    import io as _io
+    import sys as _sys
+    import importlib
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+
+    proj = Path(tempfile.mkdtemp(prefix="vox_v1_conform_"))
+    try:
+        _os.chdir(str(proj))
+        import voicevox_narration as vox
+        importlib.reload(vox)
+        vox.PROJ = proj
+
+        _sys.argv = ["voicevox_narration.py", "--json-log"]
+        out_buf = _io.StringIO()
+        err_buf = _io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            rc = vox.main()
+        # engine_skipped (engine 不在 + non-strict) → "skipped" / exit_code=0
+        assert rc == 0, (
+            f"voicevox_narration engine_skipped expected rc=0, got rc={rc}, "
+            f"stderr={err_buf.getvalue()!r}"
+        )
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        assert lines, f"stdout must have output, got {out_buf.getvalue()!r}"
+        payload = json.loads(lines[-1])
+
+        _assert_v1_payload_common(
+            payload,
+            expected_script="voicevox_narration",
+            expected_status="skipped",
+            expected_category="engine_unavailable",
+            expected_ok=True,  # "skipped" is ok=True
+            expected_exit_code=0,
+        )
+
+        # engine_skipped path: counts/artifacts は emit_json wrapper で
+        # 渡されないので default empty
+        assert payload["counts"] == {}, (
+            f"engine_skipped counts must be empty dict, got "
+            f"{payload['counts']!r}"
+        )
+        assert payload["artifacts"] == [], (
+            f"engine_skipped artifacts must be empty list, got "
+            f"{payload['artifacts']!r}"
+        )
+        assert payload["cost"] is None, (
+            f"engine_skipped cost must be None, got {payload['cost']!r}"
+        )
+        # redaction.applied_rules: engine_skipped path で path-bearing extras
+        # なし (info kwarg のみ非 path) なので空 list
+        assert payload["redaction"]["applied_rules"] == [], (
+            f"engine_skipped redaction.applied_rules must be empty list, "
+            f"got {payload['redaction']!r}"
+        )
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -7897,6 +8064,8 @@ def main() -> int:
         test_preflight_video_v1_schema_emit_conformance,
         test_compare_telop_split_v1_schema_emit_conformance,
         test_visual_smoke_v1_schema_emit_conformance,
+        test_generate_slide_plan_v1_schema_emit_conformance,
+        test_voicevox_narration_v1_schema_emit_conformance,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,

@@ -540,6 +540,13 @@ def main():
                          "(default: project-root 相対 / <HOME> placeholder、debug 専用)")
     args = ap.parse_args()
 
+    # PR-AY (Codex 05:43 verdict 案A): 全 emission path で duration_ms を
+    # build_status に渡せるよう main 冒頭で start_time を capture。caller-side
+    # v1 schema conformance で duration_ms key を必須化 (PR-AW _assert_v1_payload_common
+    # P1 fix と整合)、build_slide_data:454 / build_telop_data:510 / preflight_video:334
+    # と同流儀。
+    start_time = time.monotonic()
+
     # PR-E (distributed tracing): main 冒頭で 1 回 resolve、全 emission に同 run_ctx を渡す。
     run_ctx = resolve_run_context()
 
@@ -568,10 +575,15 @@ def main():
                 )
                 if not args.unsafe_keep_abs_path and "abs_path" not in redaction_rules:
                     redaction_rules.append("abs_path")
+        # PR-AY: duration_ms を v1 common field として全 emission path で含める
+        # (旧 emit_json wrapper は duration_ms 渡さず、PR-AW caller conformance
+        # _assert_v1_payload_common P1 fix で必須化された field 欠落 drift)。
+        duration_ms = int((time.monotonic() - start_time) * 1000)
         payload = build_status(
             script="voicevox_narration",
             v0_status=status,
             exit_code=exit_code,
+            duration_ms=duration_ms,
             redaction_rules=redaction_rules,
             run_id=run_ctx["run_id"],
             parent_run_id=run_ctx["parent_run_id"],
