@@ -8788,6 +8788,194 @@ def test_observability_path_policy_placeholder_set_docs_code_lint() -> None:
     )
 
 
+def test_observability_emit_json_tail_invariant_caller_ast_lint() -> None:
+    """V1_CALLER_SCRIPTS 7 caller の `_obs_emit_json` / `emit_json` /
+    wrapper Call site が同一 body 内で stdout 末尾 1 行 invariant を破る
+    trailing stdout writer (`print(...)` to stdout / `sys.stdout.write(...)`)
+    に followed されないことを AST scan で audit
+    (Codex 08:46 PR-BT verdict、PR-BL Stdout And Stderr 3 stream caller
+    presence lint と相補な single-line tail invariant の caller-side audit)。
+
+    docs §Stdout And Stderr line 104 (Read 取得済) は `--json-log` consumer
+    が **stdout の末尾 1 行のみを JSON parse** する想定を明記、helper 側
+    `emit_json()` は 1 line + final newline + `splitlines()[-1]` 前提で
+    既に固定済 (PR-Y `test_observability_emit_json_format_invariant_strict`、
+    PR-AC exit_code int contract)。一方 caller 側は PR-AZ STATUS_MAP forward
+    direction lint / PR-BL stream emission presence lint まではあるが、
+    emit_json 後に追加の stdout writer (`print("done")` など) が入って末尾
+    1 行 invariant を壊す drift は静的に検出できていなかった。
+
+    本 lint は V1_CALLER_SCRIPTS 7 caller それぞれの AST を walk し、各
+    FunctionDef.body / If.body / If.orelse / Try.body / Try.orelse /
+    Try.finalbody / For.body / While.body 等の stmt list 単位で:
+      1. emit_json/_obs_emit_json/wrapper (`emit_json`, `_obs_emit_json`,
+         `_emit_early`, `_emit`, `emit_obs`, `_emit_error`) を Expr 文として
+         呼んでいる site を検出
+      2. その Expr 文の sibling として AFTER に `print(...)` Call (file=
+         stderr 指定なし) または `sys.stdout.write(...)` Call が同一 stmt
+         list 内に出現したら drift fail-loud
+      3. Return 文 / sys.exit(Call) wrap されている emit_json Call は
+         flow がそこで終わるので audit 対象外 (検査は bare Expr のみ)
+
+    drift 検知例:
+      ```
+      _obs_emit_json(args.json_log, payload)
+      print("done!")  # ← FAIL: 末尾 1 行 invariant 違反
+      ```
+
+    PR-BL caller stream emission presence lint と相補な caller-side
+    static audit、本 lint は emit_json bare Call → stdout writer drift
+    という別 axis を fix。
+    """
+    import ast as _ast_re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+
+    # PR-BH `V1_CALLER_SCRIPTS` canonical 7-set (build_slide_data /
+    # build_telop_data / preflight_video / compare_telop_split /
+    # visual_smoke / generate_slide_plan / voicevox_narration)
+    EMIT_FUNC_NAMES = {
+        "emit_json",
+        "_obs_emit_json",
+        "_emit_early",
+        "_emit",
+        "emit_obs",
+        "_emit_error",
+    }
+
+    def _is_emit_call(node: _ast_re.AST) -> bool:
+        """Expr 文の中身が emit_json/wrapper Call かどうか"""
+        if not isinstance(node, _ast_re.Expr):
+            return False
+        if not isinstance(node.value, _ast_re.Call):
+            return False
+        func = node.value.func
+        return isinstance(func, _ast_re.Name) and func.id in EMIT_FUNC_NAMES
+
+    def _is_print_to_stdout(call_node: _ast_re.Call) -> bool:
+        """`print(...)` Call で file=stderr 指定なしの場合 stdout 出力扱い"""
+        if not isinstance(call_node.func, _ast_re.Name):
+            return False
+        if call_node.func.id != "print":
+            return False
+        for kw in call_node.keywords:
+            if kw.arg == "file":
+                # file=sys.stderr / file=stderr を stdout 扱いから除外
+                v = kw.value
+                if isinstance(v, _ast_re.Attribute):
+                    if v.attr == "stderr":
+                        return False
+                if isinstance(v, _ast_re.Name) and "stderr" in v.id:
+                    return False
+                # file= 指定があるが stderr 系でない場合は不明、
+                # 安全側 (= stdout 扱い) で True 維持
+        return True
+
+    def _is_stdout_write(call_node: _ast_re.Call) -> bool:
+        """`sys.stdout.write(...)` / `<x>.stdout.write(...)` Call attr 検出"""
+        f = call_node.func
+        # 形: Attribute(value=Attribute(attr='stdout'), attr='write')
+        if not isinstance(f, _ast_re.Attribute):
+            return False
+        if f.attr != "write":
+            return False
+        if not isinstance(f.value, _ast_re.Attribute):
+            return False
+        return f.value.attr == "stdout"
+
+    def _is_stdout_writer_stmt(stmt: _ast_re.AST) -> bool:
+        """sibling stmt が stdout writer (print() to stdout /
+        sys.stdout.write()) を実行する Expr 文かどうか"""
+        if not isinstance(stmt, _ast_re.Expr):
+            return False
+        if not isinstance(stmt.value, _ast_re.Call):
+            return False
+        return _is_print_to_stdout(stmt.value) or _is_stdout_write(
+            stmt.value
+        )
+
+    def _audit_body(
+        body: list[_ast_re.AST],
+        script_name: str,
+        violations: list[str],
+    ) -> None:
+        """stmt list を順に走査し、emit_json bare Expr の AFTER に
+        stdout writer Expr が同一 list に出現する drift を検出"""
+        for i, stmt in enumerate(body):
+            if not _is_emit_call(stmt):
+                continue
+            for j in range(i + 1, len(body)):
+                later = body[j]
+                if _is_stdout_writer_stmt(later):
+                    line_emit = stmt.lineno
+                    line_late = later.lineno
+                    violations.append(
+                        f"{script_name}: line {line_emit} で "
+                        f"emit_json/wrapper bare Call の後、line "
+                        f"{line_late} に stdout writer "
+                        f"({_ast_re.unparse(later)[:80]}) が同一 stmt "
+                        f"list 内に出現 (末尾 1 行 invariant drift)"
+                    )
+
+    SCRIPT_NAMES = (
+        "build_slide_data",
+        "build_telop_data",
+        "preflight_video",
+        "compare_telop_split",
+        "visual_smoke",
+        "generate_slide_plan",
+        "voicevox_narration",
+    )
+
+    violations: list[str] = []
+    audited_scripts = 0
+    for script_name in SCRIPT_NAMES:
+        script_path = (
+            repo_root / "template" / "scripts" / f"{script_name}.py"
+        )
+        assert script_path.exists(), (
+            f"V1 caller script {script_name}.py が repo に存在しない "
+            f"(削除 / rename drift?)"
+        )
+        src = script_path.read_text(encoding="utf-8")
+        tree = _ast_re.parse(src, filename=f"{script_name}.py")
+        # FunctionDef / AsyncFunctionDef / If / Try / For / While 等の
+        # body-bearing node を全 walk
+        for node in _ast_re.walk(tree):
+            for body_attr in (
+                "body",
+                "orelse",
+                "finalbody",
+            ):
+                if hasattr(node, body_attr):
+                    body = getattr(node, body_attr)
+                    if isinstance(body, list):
+                        _audit_body(body, script_name, violations)
+        audited_scripts += 1
+
+    assert audited_scripts == 7, (
+        f"V1_CALLER_SCRIPTS 7 件全 audit 想定 / 実測={audited_scripts} "
+        f"(script discovery drift?)"
+    )
+    assert not violations, (
+        "emit_json/wrapper bare Call の後に stdout writer が同一 stmt "
+        "list 内に出現 (末尾 1 行 invariant 違反 drift):\n"
+        + "\n".join(violations)
+    )
+
+    # docs §Stdout And Stderr line 104 contract literal presence で
+    # 「stdout の末尾 1 行のみを JSON parse」契約 docs side 維持を
+    # 同一 lint で fail-loud
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    md = obs_md.read_text(encoding="utf-8")
+    assert "stdout の末尾 1 行のみを JSON parse" in md, (
+        "docs/OBSERVABILITY.md §Stdout And Stderr の "
+        "「stdout の末尾 1 行のみを JSON parse」契約文言が欠落 "
+        "(docs spec drift?)"
+    )
+
+
 def test_observability_provider_notes_routing_docs_code_lint() -> None:
     """`docs/OBSERVABILITY.md §Provider Notes` 4 row ↔ provider routing
     isolation 双方向 lint
@@ -10983,6 +11171,7 @@ def main() -> int:
         test_observability_missing_rate_behavior_docs_code_lint,
         test_observability_cost_abort_threshold_docs_code_lint,
         test_observability_provider_notes_routing_docs_code_lint,
+        test_observability_emit_json_tail_invariant_caller_ast_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
