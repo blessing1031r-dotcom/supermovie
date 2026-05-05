@@ -310,7 +310,9 @@ def main():
     transcript_path = PROJ / "transcript_fixed.json"
     config_path = PROJ / "project-config.json"
     if not transcript_path.exists() or not config_path.exists():
-        print(f"ERROR: transcript_fixed.json or project-config.json missing under {PROJ}", file=sys.stderr)
+        # PR-J (stderr path leak audit): redact PROJ on stderr。
+        _safe_proj = safe_artifact_path(PROJ, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
+        print(f"ERROR: transcript_fixed.json or project-config.json missing under {_safe_proj}", file=sys.stderr)
         return emit_json("inputs_missing", 3)
 
     transcript = load_json(transcript_path)

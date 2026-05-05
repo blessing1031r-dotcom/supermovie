@@ -322,11 +322,14 @@ def cli() -> int:
             print(f"ERROR: {tool} コマンドが PATH にない", file=sys.stderr)
             return _emit_early("env_tool_missing", 3, missing_tool=tool)
     if not MAIN_VIDEO.exists():
-        print(f"ERROR: base 動画が無い: {MAIN_VIDEO} (npm run visual-smoke は実 project で実行)", file=sys.stderr)
+        # PR-J (stderr path leak audit): default redact、--unsafe-keep-abs-path で raw。
+        _safe_mv = safe_artifact_path(MAIN_VIDEO, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
+        print(f"ERROR: base 動画が無い: {_safe_mv} (npm run visual-smoke は実 project で実行)", file=sys.stderr)
         return _emit_early("env_main_video_missing", 3)
     if not REMOTION_BIN.exists():
+        _safe_rb = safe_artifact_path(REMOTION_BIN, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
         print(
-            f"ERROR: remotion CLI が無い: {REMOTION_BIN} "
+            f"ERROR: remotion CLI が無い: {_safe_rb} "
             f"(npm install を先に実行してください)",
             file=sys.stderr,
         )
@@ -340,7 +343,8 @@ def cli() -> int:
 
     # videoConfig.ts 原本保持
     if not VIDEO_CONFIG.exists():
-        print(f"ERROR: videoConfig.ts が無い: {VIDEO_CONFIG}", file=sys.stderr)
+        _safe_vc = safe_artifact_path(VIDEO_CONFIG, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
+        print(f"ERROR: videoConfig.ts が無い: {_safe_vc}", file=sys.stderr)
         return _emit_early("env_video_config_missing", 4)
     # PR-G: videoConfig.ts read failure (PermissionError / EncodingError 等) を tail emit。
     try:
@@ -391,7 +395,9 @@ def cli() -> int:
                 try:
                     w, h = probe_dim(png)
                 except subprocess.CalledProcessError as e:
-                    print(f"  ERROR: ffprobe failed for {png}: {e}", file=sys.stderr)
+                    # PR-J: png is abs path under out_dir.resolve()、redact applied.
+                    _safe_png = safe_artifact_path(png, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
+                    print(f"  ERROR: ffprobe failed for {_safe_png}: {redact_error_message(str(e))}", file=sys.stderr)
                     env_error = "probe_failed"
                     results.append(
                         {"format": fmt, "frame": frame, "ok": False, "error": "probe_failed"}

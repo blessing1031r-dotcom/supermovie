@@ -3831,6 +3831,65 @@ def test_voicevox_narration_summary_path_redacted_by_default() -> None:
         _shutil.rmtree(proj, ignore_errors=True)
 
 
+def test_generate_slide_plan_stderr_proj_path_redacted() -> None:
+    """PR-J (Codex 00:22): generate_slide_plan で transcript_fixed.json missing 時の stderr に
+    raw PROJ abs path が出ないこと、--unsafe-keep-abs-path で raw 切替。
+    """
+    import os as _os
+    import io
+    import sys as _sys
+    import importlib
+    import shutil as _shutil
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+    saved_env = {"ANTHROPIC_API_KEY": _os.environ.get("ANTHROPIC_API_KEY")}
+
+    proj = Path(tempfile.mkdtemp(prefix="gsp_stderr_redact_"))
+    try:
+        _os.environ["ANTHROPIC_API_KEY"] = "test-key"  # api_key skip path 回避、inputs_missing 経路へ
+        _os.chdir(str(proj))
+        import generate_slide_plan as gsp
+        importlib.reload(gsp)
+        gsp.PROJ = proj
+
+        # default (redact)
+        _sys.argv = ["generate_slide_plan.py"]
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            try:
+                gsp.main()
+            except SystemExit:
+                pass
+        err = err_buf.getvalue()
+        assert "missing under" in err, f"expected missing-under message, got {err!r}"
+        assert str(proj) not in err, \
+            f"raw proj path leaked in default stderr: {err!r}"
+
+        # --unsafe-keep-abs-path で raw
+        _sys.argv = ["generate_slide_plan.py", "--unsafe-keep-abs-path"]
+        err_buf2 = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(err_buf2):
+            try:
+                gsp.main()
+            except SystemExit:
+                pass
+        err2 = err_buf2.getvalue()
+        assert str(proj) in err2, \
+            f"unsafe-keep-abs-path should preserve raw proj, got {err2!r}"
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        for k, v in saved_env.items():
+            if v is None:
+                _os.environ.pop(k, None)
+            else:
+                _os.environ[k] = v
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
 def test_build_slide_data_human_stdout_path_redacted_by_default() -> None:
     """PR-I (Codex 00:08): build_slide_data の human stdout `path: ...` 行は default redact、
     --unsafe-keep-abs-path で raw 切替。
@@ -3983,6 +4042,8 @@ def main() -> int:
         # PR-I (human stdout path leak audit、Codex 00:08 approve): 2 件 (1 feat + 1 fix iter voicevox summary redact)
         test_build_slide_data_human_stdout_path_redacted_by_default,
         test_voicevox_narration_summary_path_redacted_by_default,
+        # PR-J (stderr path leak audit、Codex 00:22 approve): 1 件
+        test_generate_slide_plan_stderr_proj_path_redacted,
     ]
     failed = []
     for t in tests:

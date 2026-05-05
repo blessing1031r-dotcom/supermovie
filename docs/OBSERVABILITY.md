@@ -263,6 +263,7 @@ cap: 全 3 field に `MAX_TRACE_CONTEXT_VALUE_LEN = 128` 適用、超過時は `
 | 8 | error path tail emit consistency audit (`compare_telop_split` の transcript / typo_dict / telop ts read failure を `_emit_early` 経由化、`preflight_video` の `--write-config` parse / write failure を `_emit` 経由化、`visual_smoke` の `out_dir.mkdir` / `videoConfig.ts read` failure を `_emit_early` 経由化、9 status 追加 + 4 件 regression test) | PR-G |
 | 9 | helper-level secret redaction 実装 (`redact_secret()` で last-4 mask + short-value 全 mask + non-string passthrough、`docs/OBSERVABILITY.md:123` secret class contract enforcement、4 件 regression test) | PR-H |
 | 10 | human stdout path leak audit (build_slide_data / build_telop_data / voicevox_narration / visual_smoke / preflight_video / generate_slide_plan の 9 `print(f"... {path}")` 経路を `safe_artifact_path()` 経由化、`--unsafe-keep-abs-path` で raw 切替 unified knob、abs_path contract 改訂 + 1 件 regression test) | PR-I |
+| 11 | stderr path leak audit (preflight_video `input not found` / visual_smoke `MAIN_VIDEO` / `REMOTION_BIN` / `VIDEO_CONFIG` / png ffprobe / generate_slide_plan `PROJ` を `safe_artifact_path()` 経由化、`--unsafe-keep-abs-path` で raw、stderr も同 contract 適用 + 1 件 regression test) | PR-J |
 
 ## Test Requirements
 

@@ -364,7 +364,9 @@ def main():
         return exit_code
 
     if not Path(args.input_video).exists():
-        print(f"ERROR: input not found: {args.input_video}", file=sys.stderr)
+        # PR-J (stderr path leak audit): redact input path on stderr (default redact、unsafe で raw)。
+        _safe_input = safe_artifact_path(args.input_video, project_root=PROJ_ROOT, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
+        print(f"ERROR: input not found: {_safe_input}", file=sys.stderr)
         sys.exit(_emit("input_not_found", 3))
 
     # Codex 21:34 PR5 review P1 fix: run_ffprobe failure (CalledProcess /
