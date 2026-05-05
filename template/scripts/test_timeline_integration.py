@@ -4552,15 +4552,20 @@ def test_observability_build_status_script_identifier_contract() -> None:
                 f"non-str script={bad_type!r} must raise TypeError"
             )
 
-    # (3) 空文字 / whitespace-only (bucket 不能)
+    # (3) 空文字 / whitespace-only (bucket 不能) → ValueError 限定で contract 明示
+    # Codex 04:08 PR-AM review P2 fix: tab / newline 単独も whitespace なので
+    # strip() ガードが先に trip して "non-empty" ValueError 経路を通る (PR-AM
+    # 検査順 1=isinstance str → 2=non-empty strip → 3=control char に依存)。
     for empty_or_ws in ("", " ", "   ", "\t", "\n", "  \t  "):
         try:
             build_status(script=empty_or_ws, v0_status="success", exit_code=0)
-        except (ValueError, TypeError):
-            pass
+        except ValueError as e:
+            assert "script" in str(e) and "non-empty" in str(e), (
+                f"ValueError msg should mention script + non-empty, got {e!r}"
+            )
         else:
             raise AssertionError(
-                f"empty/whitespace-only script={empty_or_ws!r} must raise"
+                f"empty/whitespace-only script={empty_or_ws!r} must raise ValueError"
             )
 
     # (4) 制御文字含む (emit_json format / log line parser 破壊)
