@@ -3354,6 +3354,67 @@ def test_observability_warn_legacy_cost_extras_env_strict_opt_in() -> None:
             _os.environ[WARN_LEGACY_COST_EXTRAS_ENV] = saved_env
 
 
+def test_observability_redact_provider_body_preview_length_boundaries() -> None:
+    """`redact_provider_body()` の `preview_length` boundary 範囲 lock-in
+    + negative defense (Codex 03:38 PR-AI verdict AK)。
+
+    `preview_length` は consumer 側 progress bar / log summary 表示用の
+    長さ hint で、`[0, len(body)]` range invariant が前提:
+
+      - max_preview > len(body)        → preview_length = len(body)  (上限 clamp)
+      - max_preview == len(body)       → preview_length = len(body)  (boundary)
+      - 0 < max_preview < len(body)    → preview_length = max_preview (通常)
+      - max_preview == 1               → preview_length = 1
+      - max_preview == 0               → preview_length = 0 (preview 抑止 contract)
+      - max_preview < 0 (negative)     → preview_length = 0 (PR-AI fix で下限 clamp)
+
+    旧実装 `min(len(body), max_preview)` は `max_preview=-1` で
+    `preview_length=-1` semantic violation を起こしていた gap を
+    `max(0, min(...))` で defensive 化、本 test で 8 boundary 全部 lock-in。
+
+    raw body / sensitive token は出力に含まれない invariant (PR-J / 既存
+    `test_observability_redact_provider_body_default_strict` と相互強化) も
+    併せて確認。
+    """
+    from _observability import redact_provider_body
+
+    body = "API response body content example with secret token sk-abc123def"
+    body_len = len(body)
+
+    cases = [
+        # (max_preview input, expected preview_length)
+        (body_len + 100, body_len),     # 上限 clamp 大幅超過
+        (body_len + 1, body_len),       # 上限 clamp +1 boundary
+        (body_len, body_len),           # ぴったり境界
+        (body_len - 1, body_len - 1),   # 通常範囲 (-1 boundary)
+        (1, 1),                         # 最小 positive
+        (0, 0),                         # preview 抑止 contract
+        (-1, 0),                        # PR-AI fix: negative → 0 clamp
+        (-100, 0),                      # PR-AI fix: 大きな negative も 0 clamp
+    ]
+
+    for max_preview, expected in cases:
+        r = redact_provider_body(body, max_preview=max_preview)
+        assert r["preview_length"] == expected, (
+            f"max_preview={max_preview}: expected preview_length={expected}, "
+            f"got {r['preview_length']}"
+        )
+        # raw body / token がそもそも summary に含まれない invariant
+        assert "body" not in r, (
+            f"summary must not contain raw body, got {r}"
+        )
+        assert "sk-abc123def" not in str(r), (
+            f"sensitive token leaked in summary: {r}"
+        )
+        # length は常に body 全長 (preview_length とは独立)
+        assert r["length"] == body_len
+        assert r["kind"] == "summary"
+
+    # default max_preview=80 の挙動も維持確認 (caller が省略した場合の慣習)
+    r_default = redact_provider_body(body)
+    assert r_default["preview_length"] == min(body_len, 80)
+
+
 def test_observability_provider_body_stderr_default_redact() -> None:
     """generate_slide_plan の HTTP error response body と LLM raw text が
     default で stderr に raw 出力されないこと (Codex 20:48 PR3 review P2 #1)。
@@ -5911,6 +5972,7 @@ def main() -> int:
         test_observability_safe_artifact_path_tilde_expansion,
         test_observability_user_content_meta_no_raw,
         test_observability_redact_provider_body_default_strict,
+        test_observability_redact_provider_body_preview_length_boundaries,
         test_observability_build_status_v1_schema,
         test_observability_build_status_duration_ms_and_category_override,
         test_observability_build_status_top_level_field_order,

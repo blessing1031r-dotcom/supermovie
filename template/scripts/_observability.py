@@ -289,6 +289,14 @@ def redact_provider_body(body, *, unsafe_dump=False, max_preview=80):
     Default: returns structured summary (length + sha256 + truncated preview).
     unsafe_dump=True returns raw body verbatim (debug-only flag).
     None input → None.
+
+    PR-AI (Codex 03:38 verdict AK) defense: `preview_length` は consumer 側
+    progress bar / log summary 表示の長さ hint で、`[0, len(body)]` の
+    range invariant が前提。旧実装 `min(len(body), max_preview)` は
+    `max_preview=-1` で `preview_length=-1` を返す semantic violation を
+    起こしていたため、`max(0, ...)` で下限 clamp。`max_preview > len(body)`
+    は `len(body)` で上限 clamp (旧動作維持)、`max_preview=0` は 0 を返す
+    (preview 抑止 contract)。
     """
     if body is None:
         return None
@@ -299,7 +307,7 @@ def redact_provider_body(body, *, unsafe_dump=False, max_preview=80):
             "kind": "summary",
             "length": len(body),
             "sha256": _hash16(body),
-            "preview_length": min(len(body), max_preview),
+            "preview_length": max(0, min(len(body), max_preview)),
         }
     return {"kind": "summary", "type": type(body).__name__}
 
