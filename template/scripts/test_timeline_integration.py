@@ -7641,6 +7641,92 @@ def test_observability_cost_json_shape_docs_payload_key_lint() -> None:
     )
 
 
+def test_observability_status_naming_docs_status_map_value_lint() -> None:
+    """`docs/OBSERVABILITY.md §Status Naming` 表 ↔ `STATUS_MAP` value 第 1
+    要素 (v1 status) の双方向整合性 lint
+    (Codex 06:36 PR-BF verdict BU、observability v1 status canonical 値 docs↔code drift 防止)。
+
+    docs §Status Naming は v1 status の正準 4 値 (`ok` / `skipped` / `error` /
+    `dry_run`) を表で定義 (each row は backtick で value、続いて 用途)。
+    一方 `STATUS_MAP` は各 entry の value 第 1 要素として v1 status を持ち、
+    実際の `build_status()` payload `status` field を生成する。
+
+    docs と code が drift すると:
+      - docs に追記した新 status (例: `partial`) が code 未対応 → caller が
+        渡しても map 不能で fallback "error" 経路に流れる
+      - code に追加した v1 status (例: STATUS_MAP に `aborted` mapping を
+        追加) が docs 未掲載 → consumer が contract 認識せず handle 漏れ
+      - typo (`okay` vs `ok`、`erorr` vs `error`) が片側だけ起きる
+
+    PR-BD §Common Fields key lint / PR-BE §Cost JSON Shape key lint と同型
+    の docs/code 双方向 set audit を v1 status canonical 値に展開、本 lint
+    は docs 表から backtick value を抽出して `{v1 for v1, _ in STATUS_MAP.values()}`
+    と完全一致を assert。
+
+    PR-T STATUS_MAP static lint (内部構造) / PR-AZ caller forward direction lint
+    (caller→map) と相補な map↔docs 双方向 audit 層。
+    """
+    import re
+    from pathlib import Path
+
+    from _observability import STATUS_MAP
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    assert obs_md.is_file(), (
+        f"docs/OBSERVABILITY.md must exist at {obs_md}"
+    )
+    md = obs_md.read_text(encoding="utf-8")
+
+    # `### Status Naming` heading の直後 markdown table を抽出 (連続する
+    # `|` 行を 1 ブロックとして capture)
+    section_re = re.compile(
+        r"^### Status Naming[^\n]*\n.*?\n(?P<table>(?:\|[^\n]+\n)+)",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = section_re.search(md)
+    assert m is not None, (
+        "`### Status Naming` の markdown table が docs に見つからない "
+        "(heading rename / 表 形式変更?)"
+    )
+    table = m.group("table")
+
+    # 1 列目 backtick value のみ抽出 (header / separator は backtick なしで自然 skip)
+    docs_v1_values = set(re.findall(r"^\|\s*`(\w+)`\s*\|", table, re.MULTILINE))
+    assert docs_v1_values, (
+        "docs Status Naming table から backtick value が 0 件 抽出 "
+        "(table format 変更?)"
+    )
+
+    # code side: STATUS_MAP value 第 1 要素 (v1 status) を全 entry で集める
+    code_v1_values = {v1 for v1, _ in STATUS_MAP.values()}
+    assert code_v1_values, (
+        "STATUS_MAP が空 / value 抽出失敗"
+    )
+
+    # 双方向 set diff
+    missing_in_code = sorted(docs_v1_values - code_v1_values)
+    extra_in_code = sorted(code_v1_values - docs_v1_values)
+    assert not missing_in_code, (
+        f"docs §Status Naming に列挙された v1 status が STATUS_MAP value "
+        f"set に存在しない: {missing_in_code}\n"
+        f"docs に新値追加されたが code 未対応 (caller 経路で fallback "
+        f"'error' に流れる drift)、または typo。"
+    )
+    assert not extra_in_code, (
+        f"STATUS_MAP value に出現する v1 status が docs §Status Naming に "
+        f"未掲載: {extra_in_code}\n"
+        f"code に追加された v1 status を docs 表に追記する必要、または "
+        f"code 側の typo / 不正値。"
+    )
+
+    # 集合一致 (2 重 check)
+    assert docs_v1_values == code_v1_values, (
+        f"docs Status Naming != STATUS_MAP v1 set "
+        f"(missing_in_code={missing_in_code}, extra_in_code={extra_in_code})"
+    )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -8809,6 +8895,7 @@ def main() -> int:
         test_observability_build_status_counts_value_contract,
         test_observability_common_fields_docs_payload_key_lint,
         test_observability_cost_json_shape_docs_payload_key_lint,
+        test_observability_status_naming_docs_status_map_value_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
