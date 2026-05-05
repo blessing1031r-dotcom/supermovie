@@ -138,9 +138,11 @@ main
 - supermovie-se 統合 (素材判断)
 - SadTalker / HeyGen / Kling 統合 (法的 / モラルリスク + API 課金)
 
-## 全 commit count (roku/phase3j-timeline branch、最新 120 件)
+## 全 commit count (roku/phase3j-timeline branch、最新 122 件)
 
 ```
+1bc7bf5 fix(normalize_fixture)+docs(phase3): archive collision + inferred fallback strict + release note stale (Codex 20:14 4th review P2)
+a429783 docs(phase3): refresh anchor/note/progress to aa244bd / 138 / 120 — Codex 20:04 3rd review fix iter 3 反映 + release note 冒頭 stale 解消
 aa244bd fix(normalize_fixture): early --format validation + RISKS-aware idempotent skip + stale backup collision (Codex 20:04 3rd review P2)
 aad745b docs(phase3): refresh anchor/progress to 983edc4 / 136 / 118 — Codex 19:53 PR re-review fix iter 2 反映
 983edc4 fix(normalize_fixture)+docs(phase3): path normalize + mktemp -d temp dir + strict post-risks (Codex 19:39 PR re-review fix iter 2)
@@ -263,7 +265,7 @@ e2a1a39 fix(timeline): Codex Phase 3-J review 4 件 fix (P1×1 + P2×2 + P3×1)
 66e2aeb feat(timeline): timeline.py 共通化 + Phase 3-I review 6 件 fix (Phase 3-J)
 ```
 
-(更新: 2026-05-05_20:05、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
+(更新: 2026-05-05_20:16、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
 本 script で regen → docs commit する形のため、docs 上の commit chain は
 docs commit を作る前の HEAD を反映する設計 (off-by-one は intrinsic、
 `--verify` mode で count drift を CI 検査可)。)
