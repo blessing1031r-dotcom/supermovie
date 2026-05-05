@@ -5854,9 +5854,12 @@ def test_observability_redact_error_message_url_path_order_independence() -> Non
 
     for label, msg in cases:
         out = redact_error_message(msg)
-        # path は <HOME> placeholder 化、raw secret path は出力に含まれない
-        assert "/secret/file.json" not in out or out.count("<HOME>") >= 1, (
-            f"{label}: HOME path must be redacted, got {out!r}"
+        # Codex 04:38 PR-AR review P2 fix: <HOME> placeholder が実際に出る
+        # ことを直接 assert (count >= 1)、count==count だけだと「両方とも出ない」
+        # でも一致する loophole を closure
+        assert out.count("<HOME>") >= 1, (
+            f"{label}: HOME path must be redacted to <HOME> placeholder, "
+            f"got {out!r}"
         )
         assert f"{home}/secret" not in out, (
             f"{label}: raw HOME path leaked: {out!r}"
