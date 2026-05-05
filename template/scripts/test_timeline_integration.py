@@ -3518,6 +3518,72 @@ def test_observability_emit_json_format_lint() -> None:
     assert rc5 == 2, f"emit_json must return payload exit_code, got {rc5}"
 
 
+def test_observability_emit_json_stderr_clean() -> None:
+    """`emit_json()` は stdout 専用、stderr に何も書かない invariant
+    (Codex 02:42 PR-Z verdict AL、observability transport contract drift 防止)。
+
+    `--json-log` の stdout/stderr 分離契約:
+      - stdout: emit_json() の JSON tail 1 行のみ + 既存 v0 human stdout
+      - stderr: error / warning / debug 用 (`provider_response_body` redact /
+        `warn_legacy_cost_extras` deprecation / human error message)
+
+    emit_json 内部実装が `print()` で stdout に書く前提が崩れて
+    `print(..., file=sys.stderr)` 等にリファクタされると、log collector /
+    parser / CI assertion が dual stream で混乱する。本 test は
+    enabled / disabled / error-status / non-ASCII / control-char の 5 case で
+    `redirect_stderr(StringIO())` 下に呼んで stderr が空のまま維持される
+    invariant を lock-in。
+
+    既存 `test_observability_emit_json_format_lint` (PR-Y) は stdout の
+    1-line / pure JSON / final newline / non-ASCII / exit_code を見るが、
+    stderr 非混入は asserted されていない。
+    """
+    import io
+    from contextlib import redirect_stderr, redirect_stdout
+
+    from _observability import build_status, emit_json
+
+    payload_ok = build_status(script="x", v0_status="success", exit_code=0)
+    payload_err = build_status(script="x", v0_status="rate_limited", exit_code=2)
+    payload_jp = build_status(
+        script="x", v0_status="success", exit_code=0,
+        title="日本語テスト",
+    )
+    payload_ctrl = build_status(
+        script="x", v0_status="success", exit_code=0,
+        weird_field="line1\nline2\twith \"quote\"",
+    )
+
+    cases = [
+        ("enabled=True ok", True, payload_ok),
+        ("enabled=True error", True, payload_err),
+        ("enabled=True non-ASCII", True, payload_jp),
+        ("enabled=True control-char", True, payload_ctrl),
+        ("enabled=False (no print)", False, payload_ok),
+    ]
+
+    for label, enabled, payload in cases:
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            emit_json(enabled, payload)
+        assert err_buf.getvalue() == "", (
+            f"emit_json({label}) leaked to stderr: {err_buf.getvalue()!r}"
+        )
+        if enabled:
+            # sanity guard: stdout には書いている (test 経路自体が機能している
+            # ことを false-positive 防止で確認)
+            assert out_buf.getvalue() != "", (
+                f"emit_json({label}) produced no stdout while expected to: "
+                f"err={err_buf.getvalue()!r}"
+            )
+        else:
+            assert out_buf.getvalue() == "", (
+                f"emit_json({label}) wrote stdout while disabled: "
+                f"{out_buf.getvalue()!r}"
+            )
+
+
 def test_observability_resolve_run_context_uses_env() -> None:
     """env (SUPERMOVIE_RUN_ID / PARENT_RUN_ID / STEP_ID) 設定値をそのまま採用する。"""
     import os as _os
@@ -5106,6 +5172,7 @@ def main() -> int:
         test_observability_provider_body_stderr_default_redact,
         test_observability_emit_json_disabled_no_print,
         test_observability_emit_json_format_lint,
+        test_observability_emit_json_stderr_clean,
         # PR-E (distributed tracing run_id active emission): 7 件
         test_observability_resolve_run_context_uses_env,
         test_observability_resolve_run_context_generates_when_missing,
