@@ -138,9 +138,11 @@ main
 - supermovie-se 統合 (素材判断)
 - SadTalker / HeyGen / Kling 統合 (法的 / モラルリスク + API 課金)
 
-## 全 commit count (roku/phase3j-timeline branch、最新 112 件)
+## 全 commit count (roku/phase3j-timeline branch、最新 114 件)
 
 ```
+9a37873 scripts+docs(phase3): b1 fixture normalize recipe + anchor mission frame patch (Codex 18:55 P1/P2 fix)
+8310a4c docs(phase3): refresh anchor/note to cad6914 / 130 / 112 + PROGRESS regen — gate 7 を pass させる anchor refresh (前 commit の scripts 修正 cad6914 が non-docs のため drift 1 intrinsic 復帰)
 cad6914 docs+gate(phase3): gate 7 SKIP→exit 7 (anchor 欠落/parse 失敗 P1 扱い) + anchor fork remote 行 + 6 gate→7 gate 表記 統一 + refresh anchor/note to f6e89ef / 129 / 111 (Codex hardening review P1×2 + P2 fix)
 f6e89ef docs(phase3): refresh anchor/note to 7e4b328 / 128 / 110 + PROGRESS regen — gate 7 (anchor drift) を pass させる anchor refresh、§Source commit vs Document commit 規約 drift 1 intrinsic 復帰
 7e4b328 docs+gate(phase3): check_release_ready.sh に gate 7 (anchor drift) 追加 + anchor §機械判定 を実装済 に書き換え + refresh anchor/note to 6e89ef5 / 127 / 109 + PROGRESS regen (Codex 12:54 consult Step 3)
@@ -255,7 +257,7 @@ e2a1a39 fix(timeline): Codex Phase 3-J review 4 件 fix (P1×1 + P2×2 + P3×1)
 66e2aeb feat(timeline): timeline.py 共通化 + Phase 3-I review 6 件 fix (Phase 3-J)
 ```
 
-(更新: 2026-05-05_13:10、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
+(更新: 2026-05-05_19:34、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
 本 script で regen → docs commit する形のため、docs 上の commit chain は
 docs commit を作る前の HEAD を反映する設計 (off-by-one は intrinsic、
 `--verify` mode で count drift を CI 検査可)。)
