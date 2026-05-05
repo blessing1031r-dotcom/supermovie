@@ -2988,6 +2988,96 @@ def test_observability_user_content_meta_no_raw() -> None:
     assert "transcript content" not in serialized
 
 
+def test_observability_sha256_hash_format_invariant() -> None:
+    """`user_content_meta()` / `redact_provider_body()` が出す `sha256` field の
+    format invariant lock-in (Codex 03:45 PR-AJ verdict AX、observability v1
+    contract drift 防止)。
+
+    `sha256` は v1 schema の機械的指紋で、downstream consumer / log diff /
+    regression test が「16 char lower hex prefix」前提で扱う。`_hash16()`
+    内部実装が SHA-256 full hex (64 char) や upper case や別 encoding に
+    silent drift した場合、format-dependent caller が壊れる contract drift
+    を early fail させる。
+
+    本 test は 6 層で format invariant を固定:
+      (1) `user_content_meta()` の `sha256` field: str / 16 char / `[0-9a-f]`
+      (2) `redact_provider_body()` 出力の `sha256` field: 同 format
+      (3) deterministic: 同 input → 同 hash (純関数性)
+      (4) 既知入力に対する固定値 snapshot (algorithm drift detection)
+      (5) 異 input → 異 hash (algorithm 変更による全 collision 化を検出)
+      (6) 空文字 / 非 ASCII / control char / emoji 入力でも format 維持
+
+    `_hash16()` 直接 import せず、public API (`user_content_meta` /
+    `redact_provider_body`) 経由で format を verify する (downstream consumer
+    と同じ抽象 layer で test)。
+    """
+    import re as _re
+
+    from _observability import redact_provider_body, user_content_meta
+
+    hex16_re = _re.compile(r"\A[0-9a-f]{16}\Z")
+
+    # (1) user_content_meta の sha256 format
+    meta = user_content_meta("hello world")
+    assert isinstance(meta, dict)
+    sha = meta["sha256"]
+    assert isinstance(sha, str), (
+        f"sha256 must be str, got {type(sha).__name__}"
+    )
+    assert len(sha) == 16, f"sha256 must be 16 char, got {len(sha)}: {sha!r}"
+    assert hex16_re.fullmatch(sha), (
+        f"sha256 must match [0-9a-f]{{16}}, got {sha!r}"
+    )
+
+    # (2) redact_provider_body の sha256 format
+    summary = redact_provider_body("API response body content")
+    sha2 = summary["sha256"]
+    assert isinstance(sha2, str)
+    assert len(sha2) == 16
+    assert hex16_re.fullmatch(sha2), (
+        f"provider body sha256 format drift: {sha2!r}"
+    )
+
+    # (3) deterministic: 同 input → 同 hash (純関数性、salt 混入 / 時刻依存
+    # にリファクタされた場合 regression detect)
+    meta_a = user_content_meta("hello world")
+    meta_b = user_content_meta("hello world")
+    assert meta_a["sha256"] == meta_b["sha256"], (
+        f"sha256 must be deterministic for same input: "
+        f"{meta_a['sha256']!r} vs {meta_b['sha256']!r}"
+    )
+    summary_a = redact_provider_body("API response body content")
+    summary_b = redact_provider_body("API response body content")
+    assert summary_a["sha256"] == summary_b["sha256"]
+
+    # (4) 既知 input snapshot: SHA-256("hello world", utf-8) の最初 16 hex
+    # = "b94d27b9934d3e08" (Python 標準 hashlib 実測)、helper の
+    # `_hash16` が hashlib.sha256 + utf-8 encode + hexdigest()[:16] 仕様を
+    # 維持していることを bytes-level で snapshot 化
+    expected_hash_hello = "b94d27b9934d3e08"
+    assert meta["sha256"] == expected_hash_hello, (
+        f"sha256 algorithm drift for 'hello world': "
+        f"expected {expected_hash_hello}, got {meta['sha256']!r}"
+    )
+
+    # (5) 異 input → 異 hash (collision 偶発以外で必ず差分、algorithm
+    # 変更で全部同じ hash を返すような regression を detect)
+    meta_diff = user_content_meta("different content")
+    assert meta_diff["sha256"] != meta["sha256"]
+    assert hex16_re.fullmatch(meta_diff["sha256"])
+
+    # (6) 空文字 / 非 ASCII / control char / emoji 入力でも format invariant 維持
+    for input_text in ("", "日本語テスト", "\n\t\r control",
+                       "long " * 100, "🎬 emoji 🚀"):
+        m = user_content_meta(input_text)
+        sha_x = m["sha256"]
+        assert isinstance(sha_x, str)
+        assert len(sha_x) == 16
+        assert hex16_re.fullmatch(sha_x), (
+            f"sha256 format drift for input {input_text!r}: {sha_x!r}"
+        )
+
+
 def test_observability_redact_provider_body_default_strict() -> None:
     """provider_response_body default が raw 禁止、unsafe_dump=True で raw を返すこと。
 
@@ -5971,6 +6061,7 @@ def main() -> int:
         test_observability_safe_artifact_path_collision_corners,
         test_observability_safe_artifact_path_tilde_expansion,
         test_observability_user_content_meta_no_raw,
+        test_observability_sha256_hash_format_invariant,
         test_observability_redact_provider_body_default_strict,
         test_observability_redact_provider_body_preview_length_boundaries,
         test_observability_build_status_v1_schema,
