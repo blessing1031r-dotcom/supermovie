@@ -693,7 +693,20 @@ def emit_json(enabled, payload):
     silent 通過 + caller の責務曖昧化を起こしていた。新実装は missing 時の
     default 0 はそのまま、type mismatch (bool / str / float / None / その他) を
     explicit TypeError で fail-loud、payload 構築側の責務として固定する。
+
+    PR-AQ (Codex 04:30 verdict BB) defense: payload は v1 status JSON object の
+    根で、`--json-log` の末尾行が dict 構造前提に downstream parser が組まれる。
+    旧実装は `payload.get(...)` を直接呼ぶため、None / list / str / int 等
+    non-dict が渡されると uncaught AttributeError "X object has no attribute
+    'get'" が出るだけで、caller が helper の責務違反を理解しにくい drift。
+    payload validation を最優先に置き、明示 TypeError で payload 構築側の
+    責務を固定する。
     """
+    if not isinstance(payload, dict):
+        raise TypeError(
+            f"emit_json: payload must be dict, got "
+            f"{type(payload).__name__} ({payload!r})"
+        )
     exit_code = payload.get("exit_code", 0)
     # bool は int subclass なので isinstance(v, int) を通り抜けるため先に reject
     if isinstance(exit_code, bool) or not isinstance(exit_code, int):

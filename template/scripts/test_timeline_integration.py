@@ -4762,6 +4762,70 @@ def test_observability_build_status_v0_status_defensive_lint() -> None:
         assert p["status"] in ("ok", "skipped", "error", "dry_run")
 
 
+def test_observability_emit_json_payload_must_be_dict() -> None:
+    """`emit_json(enabled, payload)` の payload dict 必須 contract lock-in
+    (Codex 04:30 PR-AQ verdict BB、observability v1 transport contract drift 防止)。
+
+    `--json-log` の末尾行は v1 status JSON object 前提に downstream parser
+    が組まれるため、payload は dict 必須。旧実装は entry で直接
+    `payload.get("exit_code", 0)` を呼ぶため、non-dict 入力 (None / list /
+    str / int / tuple / set) で uncaught AttributeError "X object has no
+    attribute 'get'" が出るだけで、caller の責務違反が分かりにくい drift。
+
+    新 contract: emit_json 入口で `isinstance(payload, dict)` 違反を explicit
+    TypeError で fail-loud、`payload` 名 + 期待 + 実値 repr 含めて debug 可能。
+    既存 callers (emit_json は build_status() 経由 dict のみ受け取る) は
+    backward compatible。
+
+    既存 strict 系 (PR-AC exit_code int / PR-AD redaction_rules / PR-AF cost /
+    PR-AK counts/artifacts / PR-AL rate_source / PR-AM script / PR-AO secret /
+    PR-AP v0_status) と同 level の defensive lint。
+    """
+    from _observability import emit_json
+
+    # ===== accept =====
+    # (1a) 通常 dict (build_status 由来想定)
+    rc = emit_json(False, {"status": "ok", "exit_code": 0})
+    assert rc == 0
+    # (1b) empty dict (default exit_code=0)
+    rc_empty = emit_json(False, {})
+    assert rc_empty == 0
+    # (1c) exit_code 含む dict
+    rc_err = emit_json(False, {"status": "error", "exit_code": 2})
+    assert rc_err == 2
+
+    # ===== reject 非 dict 全種 =====
+    for bad_payload in (
+        None, [], [1, 2], "payload", "", 5, 0, 1.5,
+        True, False, (), (1, 2), {1, 2}, object(),
+    ):
+        try:
+            emit_json(False, bad_payload)
+        except TypeError as e:
+            assert "payload" in str(e) and "dict" in str(e), (
+                f"TypeError msg should mention payload + dict, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"non-dict payload={bad_payload!r} ({type(bad_payload).__name__}) "
+                f"must raise TypeError"
+            )
+
+    # ===== reject 経路で stdout に何も書かれない (PR-AC stdout 空 invariant 維持) =====
+    import io
+    from contextlib import redirect_stdout
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        try:
+            emit_json(True, None)  # enabled=True でも payload 違反で raise
+        except TypeError:
+            pass
+    assert buf.getvalue() == "", (
+        f"emit_json must reject before printing, got stdout={buf.getvalue()!r}"
+    )
+
+
 def test_observability_resolve_run_context_uses_env() -> None:
     """env (SUPERMOVIE_RUN_ID / PARENT_RUN_ID / STEP_ID) 設定値をそのまま採用する。"""
     import os as _os
@@ -6645,6 +6709,7 @@ def main() -> int:
         test_observability_emit_json_format_lint,
         test_observability_emit_json_stderr_clean,
         test_observability_emit_json_exit_code_int_contract,
+        test_observability_emit_json_payload_must_be_dict,
         test_observability_build_status_redaction_rules_strict,
         test_observability_build_status_reserved_key_collision,
         test_observability_build_status_cost_dict_strict,
