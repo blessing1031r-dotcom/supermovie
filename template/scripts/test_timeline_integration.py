@@ -6004,6 +6004,132 @@ def test_observability_redact_error_message_url_path_order_independence() -> Non
     assert out_c.count("api.example.com") == out_d.count("api.example.com")
 
 
+def test_observability_build_status_category_override_defensive_lint() -> None:
+    """`build_status(category_override=...)` の str + non-empty + no-control-char
+    contract lock-in (Codex 04:56 PR-AT verdict BE、observability v1 category
+    bucket field drift 防止)。
+
+    `category_override` は STATUS_MAP lookup の category を bypass して
+    `if category_override is not None: v1_category = category_override` で
+    payload core field に直接代入される経路。`STATUS_MAP` 側の category format
+    invariant lint (PR-AL) は通常 lookup ペアのみ対象で、override 経路は
+    検査されない gap が残っていた:
+
+      - `""` / `"   "` (whitespace-only) → category="" / "   " で PR-AL
+        format invariant 違反 + downstream bucket 不能
+      - `"a\\nb"` / `"a\\x00b"` → category に control char が漏れて
+        emit_json 1-line format invariant (PR-Y) 破壊 + log line parser break
+      - 5 / True / [...] / {...} → 非 str fallback で category 型違反
+        (downstream str-method AttributeError、JSON serialize 結果も乱れる)
+
+    新 contract:
+      - category_override: 非 None 渡し時は str 必須 (TypeError on type
+        mismatch)
+      - 非空 (whitespace-only も含む) (ValueError)
+      - 制御文字 \\x00-\\x1F + \\x7F 不含 (ValueError)
+      - None は引き続き許容 (STATUS_MAP の category を活かす経路、
+        既存 visual_smoke / 通常 build_slide_data 経路と互換)
+
+    PR-AM script identifier / PR-AP v0_status_strict と同型の build_status
+    入口 defensive lint。既存 strict 系 (PR-AC/AD/AF/AK/AL/AM/AO/AP/AQ) と
+    同 level。
+    """
+    from _observability import build_status
+
+    # ===== accept =====
+    # (1a) 既存 caller で実際に使われている category_override 群 (regression guard)
+    for ok_cat in ("kpi-comparison", "dimension-regression",
+                   "preflight-source-meta", "slide-build", "telop-build"):
+        p = build_status(
+            script="x", v0_status="success", exit_code=0,
+            category_override=ok_cat,
+        )
+        assert p["category"] == ok_cat, (
+            f"category_override={ok_cat!r} must propagate to category, "
+            f"got {p['category']!r}"
+        )
+
+    # (1b) 1 char (snake_case identifier 形式の最小)
+    p_min = build_status(
+        script="x", v0_status="success", exit_code=0,
+        category_override="a",
+    )
+    assert p_min["category"] == "a"
+
+    # (1c) None は STATUS_MAP の category を活かす (既存挙動維持)
+    # success → STATUS_MAP で category=None
+    p_none = build_status(
+        script="x", v0_status="success", exit_code=0,
+        category_override=None,
+    )
+    assert p_none["category"] is None
+    # 未知 v0_status は PR-T defensive fallback で category=v0_status
+    p_fb = build_status(
+        script="x", v0_status="mystery_status", exit_code=2,
+        category_override=None,
+    )
+    assert p_fb["category"] == "mystery_status"
+
+    # (1d) default kwarg 省略時も None と同じ挙動
+    p_def = build_status(script="x", v0_status="success", exit_code=0)
+    assert p_def["category"] is None
+
+    # ===== reject 型違反 =====
+    for bad_type in (5, 0, 1.5, True, False, [], ["x"],
+                     {"k": "v"}, ("a",), object()):
+        try:
+            build_status(
+                script="x", v0_status="success", exit_code=0,
+                category_override=bad_type,
+            )
+        except TypeError as e:
+            assert "category_override" in str(e) and "str" in str(e), (
+                f"TypeError msg should mention category_override + str, "
+                f"got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"non-str category_override={bad_type!r} must raise TypeError"
+            )
+
+    # ===== reject 空文字 / whitespace-only =====
+    for empty_or_ws in ("", " ", "   ", "\t", "  \t  "):
+        try:
+            build_status(
+                script="x", v0_status="success", exit_code=0,
+                category_override=empty_or_ws,
+            )
+        except ValueError as e:
+            assert "category_override" in str(e) and "non-empty" in str(e), (
+                f"ValueError msg should mention category_override + "
+                f"non-empty, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"empty/whitespace category_override={empty_or_ws!r} "
+                f"must raise ValueError"
+            )
+
+    # ===== reject 制御文字 =====
+    for ctrl_cat in ("a\nb", "a\rb", "a\x00b", "abc\x01",
+                     "abc\x1f", "a\x7fb", "\nabc"):
+        try:
+            build_status(
+                script="x", v0_status="success", exit_code=0,
+                category_override=ctrl_cat,
+            )
+        except ValueError as e:
+            assert "control" in str(e) and "category_override" in str(e), (
+                f"ValueError msg should mention control + category_override, "
+                f"got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"control-char category_override={ctrl_cat!r} must raise "
+                f"ValueError"
+            )
+
+
 def test_compare_telop_split_error_message_redacted() -> None:
     """compare_telop_split で error=str(e) → tail に raw abs path が漏れないこと。
 
@@ -6936,6 +7062,7 @@ def main() -> int:
         test_observability_redact_error_message_multiple_paths_in_one_msg,
         test_observability_redact_error_message_url_path_order_independence,
         test_observability_redact_error_message_tilde_path_token,
+        test_observability_build_status_category_override_defensive_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,

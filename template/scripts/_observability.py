@@ -674,7 +674,30 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
                     f"{type(item).__name__} ({item!r})"
                 )
     v1_status, v1_category = map_status(v0_status)
+    # PR-AT (Codex 04:56 verdict BE) defense: category_override は
+    # `if category_override is not None: v1_category = category_override` で
+    # STATUS_MAP lookup 後の v1 category core field に直接代入される経路で、
+    # `STATUS_MAP` 側の format invariant lint (PR-AL) は通常 lookup ペアのみ
+    # 検査するため override で空文字 / non-str / 制御文字を渡されても silent
+    # 通過する gap が残っていた。caller の bug を helper が隠す経路を断ち、
+    # script / v0_status と同じ 3-step validation (型 / 空 / 制御文字) で
+    # fail-loud 化する。
     if category_override is not None:
+        if not isinstance(category_override, str):
+            raise TypeError(
+                f"build_status: category_override must be str or None, got "
+                f"{type(category_override).__name__} ({category_override!r})"
+            )
+        if not category_override.strip():
+            raise ValueError(
+                f"build_status: category_override must be non-empty "
+                f"(whitespace-only rejected), got {category_override!r}"
+            )
+        if any(ord(c) < 0x20 or ord(c) == 0x7F for c in category_override):
+            raise ValueError(
+                f"build_status: category_override must not contain control "
+                f"characters (\\x00-\\x1F / \\x7F), got {category_override!r}"
+            )
         v1_category = category_override
     payload = {
         "schema_version": SCHEMA_VERSION,
