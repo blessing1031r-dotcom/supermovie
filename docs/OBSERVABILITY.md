@@ -20,11 +20,11 @@
 
 ## Current Surface
 
-実装済の observability surface (Bash 実測 2026-05-05 19:36):
+実装済の observability surface (Bash 実測 2026-05-05 21:24、PR #3 + PR-A merged 後):
 
 | script | --json-log | cost guard | dry-run | redaction status |
 |---|---|---|---|---|
-| `generate_slide_plan.py` | ✓ ([:168](../template/scripts/generate_slide_plan.py)) | ✓ ([:161,297](../template/scripts/generate_slide_plan.py)) | ✓ ([:159](../template/scripts/generate_slide_plan.py)) | partial (API key OK / transcript text not redacted / output path JSON に含む [:380](../template/scripts/generate_slide_plan.py)) |
+| `generate_slide_plan.py` | ✓ helper 経由 v1 (PR #3 merged) | ✓ ([:161,297](../template/scripts/generate_slide_plan.py)) | ✓ ([:159](../template/scripts/generate_slide_plan.py)) | helper 経由 (HTTP body / LLM raw text default redact、output path safe) |
 | `voicevox_narration.py` | ✓ helper 経由 v1 (PR #3 merged) | minimal | — | helper 経由 (chunk text default redact、summary path safe) |
 | `compare_telop_split.py` | ✓ helper 経由 v1 + category_override=`kpi-comparison` (PR-A) | — | — | helper 経由 (artifact path safe、`/tmp/` 等 system tmpdir も placeholder) |
 | `visual_smoke.py` | ✓ helper 経由 v1 + category_override=`dimension-regression` (PR-A)、summary JSON artifact ([:365](../template/scripts/visual_smoke.py)) は維持 | — | — | helper 経由 (summary / grid path safe) |

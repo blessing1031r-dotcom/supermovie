@@ -63,6 +63,7 @@ STATUS_MAP = {
     "env_main_video_missing": ("error", "env-failure"),
     "env_remotion_cli_missing": ("error", "env-failure"),
     "env_video_config_missing": ("error", "env-failure"),
+    "usage_error_frames_invalid": ("error", "usage-error"),
 }
 
 
@@ -80,6 +81,23 @@ def _hash16(text):
     return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16]
 
 
+def _lexical_redact(s, home):
+    """resolve なしで abs path を placeholder に変換 (defensive fallback)。
+
+    Codex 21:23 PR4 re-review P2 で resolve() 例外時 raw return が漏れる問題 fix。
+    純文字列レベルで prefix match → placeholder 化。
+    """
+    if s.startswith(home):
+        return "<HOME>" + s[len(home):]
+    tmp_prefixes = ("/tmp/", "/var/tmp/", "/var/folders/", "/private/tmp/", "/private/var/folders/")
+    for prefix in tmp_prefixes:
+        if s.startswith(prefix):
+            return "<TMP>" + s[len(prefix.rstrip("/")):]
+    if s.startswith("/"):
+        return f"<ABS>/{Path(s).name}"
+    return s
+
+
 def safe_artifact_path(path, *, project_root=None, repo_root=None, unsafe_keep_abs_path=False):
     """Convert path to safe form (relative to project/repo root or placeholder).
 
@@ -89,16 +107,20 @@ def safe_artifact_path(path, *, project_root=None, repo_root=None, unsafe_keep_a
     Codex 21:14 PR4 review P1 #2 fix: project/repo root に該当しない absolute path も
     `<HOME>` / `<TMP>` / `<ABS>` placeholder に正規化する (旧実装は raw return で
     `/tmp/...` 等が漏れていた)。
+    Codex 21:23 PR4 re-review P2 fix: resolve() 例外時の fallback も lexical redaction
+    で raw absolute を漏らさない (旧実装は raw `s` 返却していた)。
     """
     if path is None:
         return None
     s = str(path)
     if unsafe_keep_abs_path:
         return s
+    home = os.path.expanduser("~")
     try:
         p = Path(s).expanduser().resolve() if Path(s).is_absolute() else Path(s).resolve()
     except (OSError, RuntimeError):
-        return s
+        # resolve fail (broken symlink / circular link 等): lexical redaction で defensive
+        return _lexical_redact(s, home)
     for root in (project_root, repo_root):
         if root is None:
             continue
@@ -107,21 +129,8 @@ def safe_artifact_path(path, *, project_root=None, repo_root=None, unsafe_keep_a
             return str(p.relative_to(root_resolved))
         except (ValueError, OSError):
             continue
-    # Resolve HOME (符号化された "~" でない実 absolute) を最優先で照合
-    home = os.path.expanduser("~")
-    if s.startswith(home):
-        return "<HOME>" + s[len(home):]
-    # System tmp dirs (POSIX `/tmp`、macOS tmpfs `/var/folders`、Linux `/var/tmp`)
-    # 等は <TMP> placeholder で raw absolute を漏らさない。
-    tmp_prefixes = ("/tmp/", "/var/tmp/", "/var/folders/", "/private/tmp/", "/private/var/folders/")
-    for prefix in tmp_prefixes:
-        if s.startswith(prefix):
-            return "<TMP>" + s[len(prefix.rstrip("/")):]
-    # その他 absolute path: basename だけ残し path 構造を `<ABS>/...` で隠す。
-    # path 構造を見せたい debug 用途では --unsafe-keep-abs-path を使う想定。
-    if Path(s).is_absolute():
-        return f"<ABS>/{Path(s).name}"
-    return s
+    # 通常 path: lexical redaction (HOME / TMP / ABS placeholder)
+    return _lexical_redact(s, home)
 
 
 def user_content_meta(text):
