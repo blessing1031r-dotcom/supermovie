@@ -12,18 +12,18 @@
 
 ## Verified Snapshot (作成時点で Bash 実測、push/PR 前に再更新)
 
-| 項目 | 値 (Bash 実測 2026-05-05 19:47) |
+| 項目 | 値 (Bash 実測 2026-05-05 19:56) |
 |---|---|
-| HEAD (source commit) | `5ce2bc5` (anchor 自身の document commit はこの後ろに 1 件積まれる、§Source commit vs Document commit 規約 参照) |
-| branch | `roku/fixture-normalize-recipe` (Codex 18:55 review + 19:39 PR review P1/P2 fix bundle、`roku/phase3j-timeline` ベース) |
-| main..HEAD | 134 commits |
-| roku/phase3i-transcript-alignment..HEAD | 116 commits |
+| HEAD (source commit) | `983edc4` (anchor 自身の document commit はこの後ろに 1 件積まれる、§Source commit vs Document commit 規約 参照) |
+| branch | `roku/fixture-normalize-recipe` (Codex 18:55 review + 19:39 PR review + 19:53 PR re-review fix iter 2、`roku/phase3j-timeline` ベース) |
+| main..HEAD | 136 commits |
+| roku/phase3i-transcript-alignment..HEAD | 118 commits |
 | origin remote | `https://github.com/RenTonoduka/supermovie.git` (READ only) |
 | origin viewerPermission | READ (Roku gh account `blessing1031r-dotcom` は write 権限なし) |
 | fork remote | `https://github.com/blessing1031r-dotcom/supermovie.git` (Step 6 で `gh repo fork` + `git remote add fork` 完了、PR #1-#8 push 済) |
 | gh auth status | ✓ Logged in (account: blessing1031r-dotcom、scopes: gist read:org repo workflow、Claude Code 側 12:00 / 12:32 / 12:38 / 12:41 で 4 回 valid 確認。Codex `--ephemeral` sandbox 内では token 不可視 = invalid 表示されるが Claude Code 実行環境に影響なし) |
 | worktree | clean (cleanup commit `e0f5107` で `docs/reviews/**` 38 files + `docs/roadmap/FUTURE_FEATURES_REQUIREMENTS_v0.md` を release scope から外し済み、future doc は別 worktree `../supermovie-future-features-v0` の `roku/future-features-v0` branch `72a6ef4` に保全済) |
-| 7 gate composite | ALL PASS at 5ce2bc5 (env / worktree clean / regen drift 1 / 43/43 python smoke / lint exit 0 / React 22/22 / **gate 7 anchor drift = 1 intrinsic OK**、Bash 実測 19:47 再走行予定) |
+| 7 gate composite | ALL PASS at 983edc4 (env / worktree clean / regen drift 1 / 43/43 python smoke / lint exit 0 / React 22/22 / **gate 7 anchor drift = 1 intrinsic OK**、Bash 実測 19:56 再走行予定) |
 | b1 fixture e2e (`npm run test:visual-smoke` + `npm run render`) | proj1 で全 PASS (Bash 実測 2026-05-05 18:42-18:55、HEVC HDR DoVi 4K → H.264 SDR 1080x1920 60fps + 2516 frames render、`docs/PHASE3_RELEASE_NOTE.md` `b1 fixture normalize evidence trail` 参照) |
 
 ## Roku Authorized Decisions (2026-05-05 user prompt 確定)
