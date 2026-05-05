@@ -53,6 +53,16 @@ STATUS_MAP = {
     "dimension_mismatch": ("error", "dimension-regression"),
     "env_error": ("error", "env-failure"),
     "grid_failed": ("error", "grid-failure"),
+    # visual_smoke early return v0 statuses (Codex 21:14 PR4 review P1 #1 で追加)
+    "usage_error_formats_empty": ("error", "usage-error"),
+    "usage_error_unknown_format": ("error", "usage-error"),
+    "usage_error_frames_empty": ("error", "usage-error"),
+    "usage_error_frames_negative": ("error", "usage-error"),
+    "usage_error_patch_format": ("error", "usage-error"),
+    "env_tool_missing": ("error", "env-failure"),
+    "env_main_video_missing": ("error", "env-failure"),
+    "env_remotion_cli_missing": ("error", "env-failure"),
+    "env_video_config_missing": ("error", "env-failure"),
 }
 
 
@@ -71,10 +81,14 @@ def _hash16(text):
 
 
 def safe_artifact_path(path, *, project_root=None, repo_root=None, unsafe_keep_abs_path=False):
-    """Convert path to safe form (relative to project/repo root or HOME placeholder).
+    """Convert path to safe form (relative to project/repo root or placeholder).
 
     Returns string. None input → None.
     unsafe_keep_abs_path=True bypasses sanitization (debug-only flag).
+
+    Codex 21:14 PR4 review P1 #2 fix: project/repo root に該当しない absolute path も
+    `<HOME>` / `<TMP>` / `<ABS>` placeholder に正規化する (旧実装は raw return で
+    `/tmp/...` 等が漏れていた)。
     """
     if path is None:
         return None
@@ -93,9 +107,20 @@ def safe_artifact_path(path, *, project_root=None, repo_root=None, unsafe_keep_a
             return str(p.relative_to(root_resolved))
         except (ValueError, OSError):
             continue
+    # Resolve HOME (符号化された "~" でない実 absolute) を最優先で照合
     home = os.path.expanduser("~")
     if s.startswith(home):
         return "<HOME>" + s[len(home):]
+    # System tmp dirs (POSIX `/tmp`、macOS tmpfs `/var/folders`、Linux `/var/tmp`)
+    # 等は <TMP> placeholder で raw absolute を漏らさない。
+    tmp_prefixes = ("/tmp/", "/var/tmp/", "/var/folders/", "/private/tmp/", "/private/var/folders/")
+    for prefix in tmp_prefixes:
+        if s.startswith(prefix):
+            return "<TMP>" + s[len(prefix.rstrip("/")):]
+    # その他 absolute path: basename だけ残し path 構造を `<ABS>/...` で隠す。
+    # path 構造を見せたい debug 用途では --unsafe-keep-abs-path を使う想定。
+    if Path(s).is_absolute():
+        return f"<ABS>/{Path(s).name}"
     return s
 
 

@@ -252,21 +252,47 @@ def cli() -> int:
     args = ap.parse_args()
     start_time = time.monotonic()
 
+    # Phase 3 obs migration step 3 (Codex 21:14 PR4 review P1 #1):
+    # contract は --json-log 時 1 invocation 1 emission。validation/env early return も
+    # tail emit する helper closure を冒頭で定義し、全 return path で使う。
+    def _emit_early(v0_status, exit_code, **extra):
+        """Early-return path 用 v1 status emit。validation / env error を tail に記録。
+
+        category_override は使わず STATUS_MAP の登録値を活かす:
+        - usage_error_* → category="usage-error"
+        - env_* → category="env-failure"
+        smoke 本走の dimension-regression category とは区別される (smoke が走っていない段階の error)。
+        """
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        payload = build_status(
+            script="visual_smoke",
+            v0_status=v0_status,
+            exit_code=exit_code,
+            counts={},
+            artifacts=[],
+            cost=None,
+            duration_ms=duration_ms,
+            redaction_rules=[],
+            **extra,
+        )
+        _obs_emit_json(args.json_log, payload)
+        return exit_code
+
     formats = [f.strip() for f in args.formats.split(",") if f.strip()]
     if not formats:
         print("ERROR: --formats が空です (例: --formats youtube,short)", file=sys.stderr)
-        return 4
+        return _emit_early("usage_error_formats_empty", 4)
     for f in formats:
         if f not in FORMAT_DIMS:
             print(f"ERROR: 未知の format: {f} (許容: {','.join(FORMAT_DIMS)})", file=sys.stderr)
-            return 4
+            return _emit_early("usage_error_unknown_format", 4, bad_format=f)
     frames = [int(x) for x in args.frames.split(",") if x.strip()]
     if not frames:
         print("ERROR: --frames が空です (例: --frames 30,90)", file=sys.stderr)
-        return 4
+        return _emit_early("usage_error_frames_empty", 4)
     if any(f < 0 for f in frames):
         print(f"ERROR: --frames に負数: {frames}", file=sys.stderr)
-        return 4
+        return _emit_early("usage_error_frames_negative", 4)
 
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -275,17 +301,17 @@ def cli() -> int:
     for tool in ("npx", "ffprobe", "ffmpeg"):
         if shutil.which(tool) is None:
             print(f"ERROR: {tool} コマンドが PATH にない", file=sys.stderr)
-            return 3
+            return _emit_early("env_tool_missing", 3, missing_tool=tool)
     if not MAIN_VIDEO.exists():
         print(f"ERROR: base 動画が無い: {MAIN_VIDEO} (npm run visual-smoke は実 project で実行)", file=sys.stderr)
-        return 3
+        return _emit_early("env_main_video_missing", 3)
     if not REMOTION_BIN.exists():
         print(
             f"ERROR: remotion CLI が無い: {REMOTION_BIN} "
             f"(npm install を先に実行してください)",
             file=sys.stderr,
         )
-        return 3
+        return _emit_early("env_remotion_cli_missing", 3)
     grid_label = has_drawtext_filter()
     if not grid_label and not args.no_grid:
         print(
@@ -296,7 +322,7 @@ def cli() -> int:
     # videoConfig.ts 原本保持
     if not VIDEO_CONFIG.exists():
         print(f"ERROR: videoConfig.ts が無い: {VIDEO_CONFIG}", file=sys.stderr)
-        return 4
+        return _emit_early("env_video_config_missing", 4)
     original = VIDEO_CONFIG.read_text(encoding="utf-8")
 
     results: list[dict] = []
@@ -312,7 +338,7 @@ def cli() -> int:
                 patched = patch_format(original, fmt)
             except ValueError as e:
                 print(f"ERROR: {e}", file=sys.stderr)
-                return 4
+                return _emit_early("usage_error_patch_format", 4, error=str(e))
             VIDEO_CONFIG.write_text(patched, encoding="utf-8")
             print(f"\n[smoke] format={fmt} に切替て still を出力します")
             for frame in frames:

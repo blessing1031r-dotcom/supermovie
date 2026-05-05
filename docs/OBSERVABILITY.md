@@ -25,15 +25,15 @@
 | script | --json-log | cost guard | dry-run | redaction status |
 |---|---|---|---|---|
 | `generate_slide_plan.py` | ✓ ([:168](../template/scripts/generate_slide_plan.py)) | ✓ ([:161,297](../template/scripts/generate_slide_plan.py)) | ✓ ([:159](../template/scripts/generate_slide_plan.py)) | partial (API key OK / transcript text not redacted / output path JSON に含む [:380](../template/scripts/generate_slide_plan.py)) |
-| `voicevox_narration.py` | ✓ ([:523](../template/scripts/voicevox_narration.py)) | minimal | — | partial (chunk text human log / summary JSON に absolute path 含む [:778](../template/scripts/voicevox_narration.py)) |
-| `preflight_video.py` | — | — | — | — (input path 出力あり) |
-| `timeline.py` | — | — | — | — |
-| `visual_smoke.py` | summary JSON artifact ([:365](../template/scripts/visual_smoke.py)) | — | — | — |
-| `build_slide_data.py` | — | — | — | raw title/telop text on stdout |
-| `build_telop_data.py` | — | — | — | raw title/telop text on stdout |
-| `compare_telop_split.py` | — | — | — | — |
+| `voicevox_narration.py` | ✓ helper 経由 v1 (PR #3 merged) | minimal | — | helper 経由 (chunk text default redact、summary path safe) |
+| `compare_telop_split.py` | ✓ helper 経由 v1 + category_override=`kpi-comparison` (PR-A) | — | — | helper 経由 (artifact path safe、`/tmp/` 等 system tmpdir も placeholder) |
+| `visual_smoke.py` | ✓ helper 経由 v1 + category_override=`dimension-regression` (PR-A)、summary JSON artifact ([:365](../template/scripts/visual_smoke.py)) は維持 | — | — | helper 経由 (summary / grid path safe) |
+| `preflight_video.py` | — (PR-B 候補) | — | — | — (input path 出力あり) |
+| `timeline.py` | — (library 性質、Codex 21:01 step 3 S3-2 で migration 対象外) | — | — | — |
+| `build_slide_data.py` | — (PR-C 候補) | — | — | raw title/telop text on stdout |
+| `build_telop_data.py` | — (PR-C 候補) | — | — | raw title/telop text on stdout |
 
-`--json-log` 実装は `generate_slide_plan.py:168` と `voicevox_narration.py:523` の 2 箇所が canonical pattern、他 6 script (`preflight_video.py` / `timeline.py` / `visual_smoke.py` / `build_slide_data.py` / `build_telop_data.py` / `compare_telop_split.py`) は本 doc 確定後に別 PR で migration 候補。
+v1 helper 経由は generate_slide_plan / voicevox_narration / compare_telop_split / visual_smoke の **4 script** が適用済 (PR #3 + PR-A merged 後)。残 3 script (`preflight_video.py` / `build_slide_data.py` / `build_telop_data.py`) は別 PR (PR-B / PR-C) で migration。`timeline.py` は呼び出し元 script 側で status emit される library 設計。
 
 ### v0 JSON tail / output gap (Codex 20:08 review O-1, P2 #3 reflect)
 

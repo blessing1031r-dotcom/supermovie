@@ -2479,6 +2479,11 @@ def test_observability_helper_status_map() -> None:
         "all_pass", "some_fail",
         # visual_smoke (Codex 21:01 verdict S3-4 dimension regression)
         "smoke_ok", "dimension_mismatch", "env_error", "grid_failed",
+        # visual_smoke early return (Codex 21:14 PR4 review P1 #1 で 1 invocation 1 emission contract 化)
+        "usage_error_formats_empty", "usage_error_unknown_format",
+        "usage_error_frames_empty", "usage_error_frames_negative", "usage_error_patch_format",
+        "env_tool_missing", "env_main_video_missing",
+        "env_remotion_cli_missing", "env_video_config_missing",
     }
     missing = must_have - set(STATUS_MAP.keys())
     assert not missing, f"STATUS_MAP missing v0 statuses: {missing}"
@@ -2512,6 +2517,18 @@ def test_observability_safe_artifact_path_redacts() -> None:
                               unsafe_keep_abs_path=True) == f"{proj}/x.json"
     # None passthrough
     assert safe_artifact_path(None, project_root=proj) is None
+    # Codex 21:14 PR4 review P1 #2 fix: /tmp / /var/folders 等 system tmpdir は <TMP> placeholder
+    sp_tmp = safe_artifact_path("/tmp/telop_baseline.ts", project_root=proj)
+    assert sp_tmp.startswith("<TMP>"), f"expected <TMP> placeholder for /tmp/, got {sp_tmp!r}"
+    assert "/tmp/" not in sp_tmp, f"raw /tmp/ leaked: {sp_tmp!r}"
+    # macOS tmpfs (/var/folders) も <TMP>
+    sp_macos = safe_artifact_path("/var/folders/kn/abc/foo.ts", project_root=proj)
+    assert sp_macos.startswith("<TMP>"), f"expected <TMP> for /var/folders, got {sp_macos!r}"
+    # 任意の絶対 path (project / HOME / TMP 外) は <ABS>/basename に隠す
+    sp_abs = safe_artifact_path("/etc/some_secret/foo.ts", project_root=proj)
+    assert sp_abs.startswith("<ABS>"), f"expected <ABS> placeholder, got {sp_abs!r}"
+    assert "/etc/" not in sp_abs and "some_secret" not in sp_abs, \
+        f"raw absolute path structure leaked: {sp_abs!r}"
 
 
 def test_observability_user_content_meta_no_raw() -> None:
