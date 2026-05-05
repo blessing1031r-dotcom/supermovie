@@ -8795,11 +8795,12 @@ def test_observability_status_mapping_policy_docs_code_lint() -> None:
     Migration Policy table の v0 status set + v1 mapping consistency に展開)。
 
     docs §v0 → v1 status mapping は新規 script 追加時 / regression test 修正時の
-    normative table として、(a) 6 explicit v0 status (`success` slide-plan,
-    `success` narration, `api_key_skipped`, `engine_skipped`, `list_speakers`,
-    `dry_run`) + (b) 5 named error variants の parenthetical (`cost_guard_arg_invalid` /
-    `inputs_missing` / `rate_limited` / `api_http_error` / `llm_json_invalid`) を
-    記載、各 row は v1 canonical (ok / skipped / error / dry_run) を割り当てる。
+    normative table として、(a) 5 unique non-error v0 status (`success` は
+    slide-plan/narration の 2 row で同一 v0 名のため統合、+ `api_key_skipped`,
+    `engine_skipped`, `list_speakers`, `dry_run`) + (b) 5 named error variants
+    の parenthetical (`cost_guard_arg_invalid` / `inputs_missing` /
+    `rate_limited` / `api_http_error` / `llm_json_invalid`) を記載、各 row は
+    v1 canonical (ok / skipped / error / dry_run) を割り当てる。
     code 側 `STATUS_MAP` は `_observability.py` で v0 → (v1, category) tuple を
     保持する正準 source。
 
@@ -8819,11 +8820,14 @@ def test_observability_status_mapping_policy_docs_code_lint() -> None:
          parenthetical 内 backtick literal 5 件を分けて抽出
       3. `STATUS_MAP` (`_observability.STATUS_MAP`) を import して keys と values
          を取得
-      4. forward 6 explicit non-error v0 status: それぞれ `STATUS_MAP` に存在 +
-         table の v1_canonical 列 (`ok` / `skipped` / `dry_run`) と
-         `STATUS_MAP[v0][0]` が一致することを assert (mapping consistency)
+      4. forward 5 unique non-error v0 status (`success` 2 row 統合済み):
+         それぞれ `STATUS_MAP` に存在 + table の v1_canonical 列
+         (`ok` / `skipped` / `dry_run`) と `STATUS_MAP[v0][0]` が一致 (mapping
+         consistency)
       5. forward 5 explicit error variants: それぞれ `STATUS_MAP` に存在 +
-         `STATUS_MAP[v0][0] == "error"` を assert
+         `STATUS_MAP[v0][0] == "error"` を assert + docs error variants 行の
+         v1 canonical 列が `error` であることを lock-in (P1 fix: docs side
+         drift `error` → `ok` / typo `erorr` を fail-loud)
       6. reverse direction (STATUS_MAP entry が docs に未掲載) は table 末尾の
          `等` 拡張表記で開いていて strict 化できないため info-only (assert
          しない、本 lint は forward + mapping consistency のみ lock-in)
@@ -8856,6 +8860,7 @@ def test_observability_status_mapping_policy_docs_code_lint() -> None:
     # 1st column = v0 status, 2nd column = v1 canonical
     docs_explicit: dict[str, str] = {}
     docs_error_variants: list[str] = []
+    docs_error_variants_v1: str | None = None
     backtick_re = re.compile(r"`([^`]+)`")
     for line in body.split("\n"):
         if not line.startswith("| "):
@@ -8875,6 +8880,15 @@ def test_observability_status_mapping_policy_docs_code_lint() -> None:
             backticks = backtick_re.findall(v0_cell)
             # backticks[0] == "error" (説明用語)、[1:] が実 v0 status 名
             docs_error_variants = backticks[1:]
+            # 2nd column v1 canonical も capture (PR-CC P1 fix: docs side
+            # mapping drift `error` → `ok` / typo `erorr` も fail-loud)
+            v1_backticks = backtick_re.findall(v1_cell)
+            assert v1_backticks, (
+                f"docs §v0 → v1 status mapping の error variants 行 2nd "
+                f"column に backtick v1 canonical 値が見つからない: "
+                f"{v1_cell!r}"
+            )
+            docs_error_variants_v1 = v1_backticks[0]
             continue
         # 通常 row: 1st backtick = v0 status (slide-plan/narration 注釈は
         # parenthetical で除去)
@@ -8924,6 +8938,14 @@ def test_observability_status_mapping_policy_docs_code_lint() -> None:
     assert not missing_variants, (
         f"docs §v0 → v1 status mapping の error variants parenthetical "
         f"から literal が欠落: {missing_variants} (parenthetical 削除?)"
+    )
+
+    # PR-CC P1 fix: docs error variants 行の v1 canonical 列が `error` で
+    # あることを lock-in (docs 側 typo / mapping rename の drift 検出)
+    assert docs_error_variants_v1 == "error", (
+        f"docs §v0 → v1 status mapping の error variants 行 v1 canonical "
+        f"列が `error` でない: {docs_error_variants_v1!r} "
+        f"(docs side mapping drift / typo `erorr` 等?)"
     )
 
     # code 側 STATUS_MAP import
