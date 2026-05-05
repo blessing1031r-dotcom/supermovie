@@ -8674,6 +8674,120 @@ def test_observability_user_content_policy_docs_meta_key_lint() -> None:
     )
 
 
+def test_observability_path_policy_placeholder_set_docs_code_lint() -> None:
+    """`docs/OBSERVABILITY.md §Path Policy` ↔ `safe_artifact_path()` /
+    `_lexical_redact()` の path placeholder set 双方向整合性 lint
+    (Codex 07:58 PR-BN verdict BZ、PR-BD/BE/BF/BH/BI/BJ/BK/BL/BM 同型を
+    path placeholder set に展開)。
+
+    docs §Path Policy は abs path redaction の placeholder set として
+    `<HOME>` / `<TMP>` / `<ABS>` の 3 種を明記、code 側 `safe_artifact_path()`
+    / `_lexical_redact()` body は同 3 placeholder string literal で sub。
+    docs と code が drift すると:
+      - docs に新 placeholder を追記したが code 未対応 → 観測不能
+      - code に新 placeholder を追加したが docs 未掲載 → consumer
+        classification 漏れ
+      - placeholder rename (`<HOME>` → `~/`) が片側だけ起きる
+
+    本 lint は docs section から backtick で囲まれた angle-bracket token
+    を抽出 + helper body (`safe_artifact_path` / `_lexical_redact` 限定) の
+    string literal / f-string prefix から path placeholder を抽出して
+    双方向 set diff で完全一致 assert。helper body 限定でなく module 全体
+    から抽出すると docs 別 section の `<PROVIDER>` / `<DIR>` (rate_source
+    canonical 例示) も拾うので、helper 関数 body 内 literal のみを path
+    placeholder の正準 source として絞る。
+
+    PR-BD/BE/BF/BH/BI/BJ/BK/BL/BM 同 level の docs/code 双方向 audit、本 lint
+    は path redaction placeholder set という別 axis を fix。
+    """
+    import re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    md = obs_md.read_text(encoding="utf-8")
+
+    # `### Path Policy` section 抽出
+    section_re = re.compile(
+        r"^### Path Policy[^\n]*\n(?P<body>.*?)(?=^## |^### )",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = section_re.search(md)
+    assert m is not None, (
+        "`### Path Policy` の section が docs に見つからない "
+        "(heading rename / 構造変更?)"
+    )
+    body = m.group("body")
+
+    # docs body から backtick で囲まれた angle-bracket placeholder を抽出
+    placeholder_re = re.compile(r"`(<[A-Z]+>)`")
+    docs_placeholders = set(placeholder_re.findall(body))
+    assert docs_placeholders, (
+        "docs §Path Policy section から backtick-wrapped placeholder が "
+        "0 件 抽出 (placeholder rename / backtick 除去?)、"
+        "section excerpt: " + repr(body[:300])
+    )
+
+    # code 側: `safe_artifact_path()` / `_lexical_redact()` body 内の
+    # literal placeholder のみを path 用 placeholder の正準 source とする。
+    obs_py = repo_root / "template" / "scripts" / "_observability.py"
+    src = obs_py.read_text(encoding="utf-8")
+    # body 抽出は AST 経由で確実に取る (regex の indented body greedy match は
+    # blank line を `\s*\n` で吸って catastrophic backtracking を引き起こす
+    # ため避ける)。`safe_artifact_path` / `_lexical_redact` の FunctionDef
+    # ノードから body 各 stmt の source 範囲を ast.get_source_segment で
+    # 抽出して連結する。
+    import ast as _ast_helper
+    helper_path_placeholders: set[str] = set()
+    matched_fns: set[str] = set()
+    helper_tree = _ast_helper.parse(src, filename="_observability.py")
+    target_fns = {"safe_artifact_path", "_lexical_redact"}
+    for hnode in _ast_helper.walk(helper_tree):
+        if not isinstance(
+            hnode,
+            (_ast_helper.FunctionDef, _ast_helper.AsyncFunctionDef),
+        ):
+            continue
+        if hnode.name not in target_fns:
+            continue
+        matched_fns.add(hnode.name)
+        # function 全体 (def 行 + body) の source segment を取得し、内部の
+        # string literal placeholder を抽出
+        fn_src = _ast_helper.get_source_segment(src, hnode) or ""
+        helper_path_placeholders.update(re.findall(r'"(<[A-Z]+>)"', fn_src))
+        helper_path_placeholders.update(re.findall(r"'(<[A-Z]+>)'", fn_src))
+        helper_path_placeholders.update(re.findall(r'f"(<[A-Z]+>)/', fn_src))
+        helper_path_placeholders.update(re.findall(r"f'(<[A-Z]+>)/", fn_src))
+    assert matched_fns == target_fns, (
+        f"helper FunctionDef nodes extracted {sorted(matched_fns)}, "
+        f"expected {sorted(target_fns)} (rename / 移動?)"
+    )
+    assert helper_path_placeholders, (
+        "_observability.py `safe_artifact_path()` / `_lexical_redact()` "
+        "body から path placeholder literal が 0 件 抽出 (helper rename / "
+        "literal 抽出 regex 不整合?)"
+    )
+
+    # 双方向 set diff
+    missing_in_code = sorted(docs_placeholders - helper_path_placeholders)
+    extra_in_code = sorted(helper_path_placeholders - docs_placeholders)
+    assert not missing_in_code, (
+        f"docs §Path Policy 宣言の placeholder が helper body に未実装: "
+        f"{missing_in_code}\n"
+        f"helper rename / 実装削除 / docs spec drift?"
+    )
+    assert not extra_in_code, (
+        f"helper body の placeholder が docs §Path Policy に未掲載: "
+        f"{extra_in_code}\n"
+        f"docs に追記が必要、または helper 側の typo / 不正値。"
+    )
+    assert docs_placeholders == helper_path_placeholders, (
+        f"docs §Path Policy != helper body placeholders "
+        f"(docs={sorted(docs_placeholders)}, "
+        f"helper={sorted(helper_path_placeholders)})"
+    )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -9843,6 +9957,7 @@ def main() -> int:
         test_observability_redaction_rules_helper_mapping_lint,
         test_observability_stdout_stderr_stream_contract_lint,
         test_observability_user_content_policy_docs_meta_key_lint,
+        test_observability_path_policy_placeholder_set_docs_code_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
