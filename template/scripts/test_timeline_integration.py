@@ -5888,6 +5888,37 @@ def test_observability_redact_error_message_tilde_path_token() -> None:
     # `~ ` (tilde + space) が raw のままでないこと (token として redact 済)
     assert "go to ~ " not in out8
 
+    # ===== Codex 04:51 PR-AS review P1 fix: URL preserve regression =====
+    # (9) URL path segment 内 `~` は redact しない (URL preserve invariant
+    # 違反だった、`_TILDE_PATH_RE` lookbehind に `/` 追加で skip)
+    out9 = redact_error_message("failed at https://example.com/~/x.json")
+    assert "https://example.com/~/x.json" in out9, (
+        f"URL-internal `~/` path segment must be preserved, got {out9!r}"
+    )
+
+    # (10) URL query parameter 内 `~` も同様 (lookbehind `=` 追加)
+    out10 = redact_error_message("redirect to ?next=~/x.json failed")
+    assert "~/x.json" in out10, (
+        f"URL query param `=~/` must be preserved, got {out10!r}"
+    )
+
+    # (11) URL `~user` も path segment 内では preserve
+    out11 = redact_error_message(
+        "GET https://example.com/~user/repo failed"
+    )
+    assert "~user/repo" in out11, (
+        f"URL-internal `~user/` path must be preserved, got {out11!r}"
+    )
+
+    # (12) plain abs path regression: URL 系 char に挟まれていない `/etc/conf`
+    # は引き続き redact (PR-AS fix iter で `~` を `_ABS_PATH_RE` lookbehind に
+    # 追加したが、word/`:`/`/`/`>`/`~` 以外の前置 (空白等) では match 維持)
+    out12 = redact_error_message("failed at /etc/conf")
+    assert "<ABS>" in out12 or "<HOME>" in out12, (
+        f"plain abs path must be redacted, got {out12!r}"
+    )
+    assert "/etc/conf" not in out12
+
 
 def test_observability_redact_error_message_url_path_order_independence() -> None:
     """`redact_error_message()` の URL+path 混在 input で order-independent

@@ -146,7 +146,11 @@ def _lexical_redact(s, home):
 # `<ABS>` placeholder の直後 `/...` を再マッチさせて二重 redact を起こさない (例:
 # tilde sub 経路で `<HOME>/secret/file.json` → 旧実装は `<HOME><ABS>/file.json` の
 # 残留 leak、`>` reject で `<HOME>/secret/file.json` を保持)。
-_ABS_PATH_RE = re.compile(r"(?<![A-Za-z0-9_:/>])(/[A-Za-z0-9._/\-]+)")
+# PR-AS fix iter (Codex 04:51 P1): 直前 `~` も reject set に追加。URL 内
+# (`https://example.com/~/x.json`) の `/x.json` 部分が `~` 直後で誤発火し、URL
+# preserve invariant (PR-K) を破壊していた。tilde sub は URL 内の `~` を skip
+# するが、`_ABS_PATH_RE` も独立に防御する必要がある (defense-in-depth)。
+_ABS_PATH_RE = re.compile(r"(?<![A-Za-z0-9_:/>~])(/[A-Za-z0-9._/\-]+)")
 
 # Windows abs path token (drive letter + `:` + `\` or `/`)。SuperMovie は Darwin/Linux 主だが、
 # CI / cross-platform エラー文字列 / Windows tool 経由で leak する可能性に対する defense-in-depth (PR-K、Codex 00:36)。
@@ -158,7 +162,11 @@ _WIN_PATH_RE = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z]:[\\\/][^\s'\"]+)")
 # `_ABS_PATH_RE` は `/` 始まりのみ捕捉するため、`~/secret` の `/secret` 部分が独立に match して
 # `~<ABS>/...` という `~` 残留 leak を起こしていた。本 regex を `_ABS_PATH_RE` より先に sub すること
 # で `~/...` 全体を 1 token として placeholder 化、`~` 残留を closure。
-_TILDE_PATH_RE = re.compile(r"(?<![A-Za-z0-9_])(~[A-Za-z0-9_]*(?:/[A-Za-z0-9._/\-]+)?)")
+# PR-AS fix iter (Codex 04:51 P1): lookbehind reject set に `/` / `=` / `?` / `&` を追加。
+# URL path segment (`https://example.com/~/x.json` の `~`) / query parameter value
+# (`?next=~/x.json` の `~`) を誤発火させると URL preserve invariant (PR-K) を破壊する
+# ため、URL 系 char の直後にある `~` は match しない。
+_TILDE_PATH_RE = re.compile(r"(?<![A-Za-z0-9_/=?&])(~[A-Za-z0-9_]*(?:/[A-Za-z0-9._/\-]+)?)")
 
 
 def redact_secret(value, *, last_n=4, mask_char="*"):
