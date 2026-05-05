@@ -3660,6 +3660,58 @@ def test_observability_redact_error_message_ipv6_and_data_uri_safe() -> None:
         f"mailto: should be preserved: {redacted_mail!r}"
 
 
+def test_observability_redact_error_message_url_with_port_query_fragment() -> None:
+    """PR-R (Codex 01:37 T approve): URL に port / query / fragment が含まれていても
+    破壊しない regression。`_ABS_PATH_RE` が `://` 直前の `:` lookbehind で URL scheme を
+    弾く実装の lock-in test (T scope: redaction safety の未被覆 edge を閉じる)。
+    """
+    from _observability import redact_error_message
+
+    # port: scheme://host:port/path
+    msg_port = "fail http://example.com:8080/api/v1/users"
+    redacted_port = redact_error_message(msg_port)
+    assert "http://example.com:8080/api/v1/users" in redacted_port, \
+        f"URL with port should be preserved: {redacted_port!r}"
+
+    # query string
+    msg_query = "fetch http://example.com/api?key=value&other=2 failed"
+    redacted_query = redact_error_message(msg_query)
+    assert "http://example.com/api?key=value&other=2" in redacted_query, \
+        f"URL with query should be preserved: {redacted_query!r}"
+
+    # fragment / anchor
+    msg_frag = "open http://example.com/docs#section-2 in browser"
+    redacted_frag = redact_error_message(msg_frag)
+    assert "http://example.com/docs#section-2" in redacted_frag, \
+        f"URL with fragment should be preserved: {redacted_frag!r}"
+
+    # 全部入り (port + path + query + fragment)
+    msg_all = "GET https://api.example.com:443/v1/users?id=42#top returned 404"
+    redacted_all = redact_error_message(msg_all)
+    assert "https://api.example.com:443/v1/users?id=42#top" in redacted_all, \
+        f"full URL should be preserved: {redacted_all!r}"
+
+    # localhost + port (dev environment)
+    msg_local = "connect refused: http://localhost:3000/path/to/endpoint"
+    redacted_local = redact_error_message(msg_local)
+    assert "http://localhost:3000/path/to/endpoint" in redacted_local, \
+        f"localhost URL should be preserved: {redacted_local!r}"
+
+    # git+ssh:// scheme (uncommon but valid)
+    msg_git = "clone failed: git+ssh://user@host:22/repo.git timeout"
+    redacted_git = redact_error_message(msg_git)
+    assert "git+ssh://user@host:22/repo.git" in redacted_git, \
+        f"git+ssh URL should be preserved: {redacted_git!r}"
+
+    # path part 含む URL と純粋 abs path 混在 → URL は維持、abs path は redact
+    msg_path_in_url = "url=http://example.com/api/v1/foo and file=/tmp/x.json"
+    redacted_mixed = redact_error_message(msg_path_in_url)
+    assert "http://example.com/api/v1/foo" in redacted_mixed, \
+        f"URL path within URL should not be redacted: {redacted_mixed!r}"
+    assert "/tmp/x.json" not in redacted_mixed, \
+        f"raw abs path should be redacted: {redacted_mixed!r}"
+
+
 def test_observability_redact_error_message_multiple_paths_in_one_msg() -> None:
     """PR-K: 1 メッセージに POSIX abs path 複数 → すべて redact。"""
     from _observability import redact_error_message
@@ -4367,6 +4419,7 @@ def main() -> int:
         test_observability_redact_error_message_strips_abs_path,
         test_observability_redact_error_message_windows_path,
         test_observability_redact_error_message_ipv6_and_data_uri_safe,
+        test_observability_redact_error_message_url_with_port_query_fragment,
         test_observability_redact_error_message_multiple_paths_in_one_msg,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,

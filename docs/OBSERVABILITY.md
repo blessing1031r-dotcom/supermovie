@@ -280,6 +280,7 @@ cap: 全 3 field に `MAX_TRACE_CONTEXT_VALUE_LEN = 128` 適用、超過時は `
 | 15 | `compute_rate_missing()` helper sink (`estimate is None ⇔ rate_missing=true` 算出規約を helper に集約、caller (legacy JSON / v1 tail / cost_guard_aborted) の重複式 3 site を `compute_rate_missing(estimate)` 単一呼び出しに統一、single source of truth + 1 件 unit test) | PR-O |
 | 16 | entry exit code propagation audit (`build_slide_data` / `build_telop_data` / `preflight_video` の `__main__` block を `main()` 直呼び → `sys.exit(main() or 0)` に統一、`_emit_error` 経由 return int を shell rc に propagate、PR-G fix iter で compare_telop_split で発見された pattern を全 7 script に展開 + 漏れ防止 lint test 1 件) | PR-P |
 | 17 | `redaction.applied_rules` canonicalize (`build_status()` で `sorted(set(...))` 正規化、caller の dedup 漏れ / 順序差を helper 側で吸収、downstream diff / regression test 安定性確保 + 1 件 unit test) | PR-Q |
+| 18 | `redact_error_message()` URL edge case lock-in test (port `:8080` / query string `?key=value` / fragment `#anchor` / git+ssh:// scheme / URL+abs_path 混在 path 7 case を preserve regression、PR-K の `_ABS_PATH_RE` URL 破壊回避ロジック未被覆 edge を閉じる + 1 件 regression test) | PR-R |
 
 ## Test Requirements
 
