@@ -2795,6 +2795,92 @@ def test_observability_safe_artifact_path_redacts() -> None:
         f"raw absolute path structure leaked: {sp_abs!r}"
 
 
+def test_observability_safe_artifact_path_collision_corners() -> None:
+    """`safe_artifact_path()` の path 衝突 corner case を lock-in (Codex 02:09 verdict AE)。
+
+    既存 `test_observability_safe_artifact_path_redacts` は基本 4 経路
+    (in-project / outside / unsafe_keep / None / TMP / ABS) を網羅するが、
+    以下の collision-prone な corner は未被覆:
+
+      (1) project_root + repo_root の同時指定で path が両方の配下にある
+          場合、最初の root (project_root) 側が優先されること
+          (relative_to の最短表現に勝手に切り替わらない、output 安定性)
+      (2) path == project_root の完全一致 → relative_to は "." を返す
+          (None / 空文字列 fallback でない、artifact 表示の正規形)
+      (3) `..` を含む traversal で project_root の外に escape する path
+          → relative_to に成功させず lexical redaction の placeholder に
+          落として、root 直下に偽装した artifact を漏らさない
+          (出力先一意性 / 監査 trail 健全性の保証)
+      (4) project_root に trailing slash を付けても結果が変わらない
+          (caller 流儀差で output 揺れが出ない契約)
+      (5) `proj` と `proj_extra` の似た prefix が誤って collision 扱いに
+          ならない (substring match で root 判定していない、Path.relative_to
+          が segment 単位で判定する性質に依存)
+      (6) repo_root のみ指定で path が repo 配下のとき repo 相対化される
+          (project_root 未指定経路のフォールバック contract)
+      (7) 相対 path 入力 (絶対化しない) が意図せず HOME / TMP / ABS
+          placeholder に巻き込まれず as-is で返ること
+    """
+    from _observability import safe_artifact_path
+
+    proj = "/Users/rokumasuda/tmp/proj"
+    repo = "/Users/rokumasuda/tmp"
+
+    # (1) project_root と repo_root の両方が match: project_root 優先
+    p1 = safe_artifact_path(f"{proj}/sub/x.json", project_root=proj, repo_root=repo)
+    assert p1 == "sub/x.json", (
+        f"expected project_root precedence ('sub/x.json'), got {p1!r}"
+    )
+
+    # (2) path が project_root と完全一致 → "."
+    p2 = safe_artifact_path(proj, project_root=proj)
+    assert p2 == ".", f"expected '.' for self-relative, got {p2!r}"
+
+    # (3) `..` traversal escape: relative_to で root 配下に偽装しない
+    p3 = safe_artifact_path(f"{proj}/../secret/foo.txt", project_root=proj)
+    # project_root 直下のように見える形 ('secret/foo.txt' or 'foo.txt') では
+    # 絶対 NG (relative_to に成功してはいけない)。<HOME> / <TMP> / <ABS> / 元 path 由来の
+    # placeholder に落ちる必要がある。
+    assert p3.startswith(("<HOME>", "<TMP>", "<ABS>")), (
+        f"escape via .. must yield placeholder, got {p3!r}"
+    )
+    assert not p3.startswith("secret/"), (
+        f"escape via .. must not be exposed as project-relative, got {p3!r}"
+    )
+
+    # (4) trailing slash on project_root → 結果が同じ
+    p4_no = safe_artifact_path(f"{proj}/x.json", project_root=proj)
+    p4_yes = safe_artifact_path(f"{proj}/x.json", project_root=proj + "/")
+    assert p4_no == p4_yes == "x.json", (
+        f"trailing slash must not change output: no_slash={p4_no!r}, "
+        f"with_slash={p4_yes!r}"
+    )
+
+    # (5) similar prefix (`proj_extra` not under `proj`) は collision にしない
+    p5 = safe_artifact_path(f"{repo}/proj_extra/file.txt", project_root=proj)
+    # `proj_extra` は project_root 配下ではないので relative_to fail、
+    # lexical redaction で placeholder。`proj_extra/file.txt` 形式を
+    # project-relative として返してはいけない。
+    assert p5.startswith(("<HOME>", "<TMP>", "<ABS>")), (
+        f"similar-prefix dir must yield placeholder, got {p5!r}"
+    )
+    assert not p5.startswith("proj_extra/") and not p5.startswith("../"), (
+        f"similar-prefix substring leak: {p5!r}"
+    )
+
+    # (6) repo_root only fallback
+    p6 = safe_artifact_path(f"{repo}/proj/sub/x.json", repo_root=repo)
+    assert p6 == "proj/sub/x.json", (
+        f"expected repo-relative ('proj/sub/x.json') with only repo_root, got {p6!r}"
+    )
+
+    # (7) 相対 path 入力は as-is (placeholder 巻き込み防止)
+    p7 = safe_artifact_path("public/main.mp4", project_root=proj)
+    assert p7 == "public/main.mp4", (
+        f"relative input must pass through unchanged, got {p7!r}"
+    )
+
+
 def test_observability_user_content_meta_no_raw() -> None:
     """user_content_meta が length / sha256 のみ返し、raw text を含まないこと。
 
@@ -4604,6 +4690,7 @@ def main() -> int:
         test_observability_helper_status_map,
         test_observability_status_map_lint,
         test_observability_safe_artifact_path_redacts,
+        test_observability_safe_artifact_path_collision_corners,
         test_observability_user_content_meta_no_raw,
         test_observability_redact_provider_body_default_strict,
         test_observability_build_status_v1_schema,
