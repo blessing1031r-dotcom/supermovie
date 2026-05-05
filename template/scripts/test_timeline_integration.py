@@ -4355,6 +4355,109 @@ def test_observability_resolve_run_context_cap_boundary() -> None:
                 _os.environ[env_name] = saved
 
 
+def test_observability_build_status_schema_version_invariant() -> None:
+    """`build_status()` の `schema_version: 1` invariant + header hash lock-in
+    (Codex 03:33 PR-AH verdict AT、observability v1 contract drift 防止)。
+
+    `schema_version` は v1 schema の root identifier で、downstream consumer /
+    log analyzer / regression test が「v1 payload を読んでいる」前提を立てる
+    最上流契約。本 test は 4 層で invariant を固定:
+
+      (1) `SCHEMA_VERSION` module constant が int 1 (型 + 値 lock-in、定数差替
+          regression を early fail)
+      (2) build_status() の出力で `schema_version=1` を全 v0 status (success /
+          error / skipped / dry_run 各経路) で確認、`map_status` 経由でも
+          schema header が壊れないことを保証
+      (3) `**extras` で `schema_version=999` 等を inject しても reserved-wins
+          で 1 維持 (PR-AE 5 keys の `schema_version` 単独ピン留め)
+      (4) header (`schema_version` / `script` / `status` / `ok` / `exit_code` /
+          `category`) の deterministic JSON hash snapshot を固定。リファクタで
+          header 部分が変質した場合に hash mismatch で early fail
+
+    既存 PR-W (field order) / PR-AE (reserved key collision) と役割が分離:
+    本 test は schema_version 単独の root identifier 不変性 + header bytes
+    snapshot を独立 lock-in。
+    """
+    import hashlib as _hashlib
+    import json as _json
+
+    from _observability import SCHEMA_VERSION, build_status
+
+    # (1) 定数値 + 型 lock-in (drift detection at module level)
+    assert SCHEMA_VERSION == 1, (
+        f"SCHEMA_VERSION constant drift: expected 1, got {SCHEMA_VERSION!r}"
+    )
+    assert isinstance(SCHEMA_VERSION, int), (
+        f"SCHEMA_VERSION must be int, got {type(SCHEMA_VERSION).__name__}"
+    )
+    # bool は int subclass なので明示 reject
+    assert not isinstance(SCHEMA_VERSION, bool), (
+        f"SCHEMA_VERSION must not be bool, got {SCHEMA_VERSION!r}"
+    )
+
+    # (2) build_status 出力で `schema_version=1` を全 v0 status 経路で確認
+    for v0, exit_code in [
+        ("success", 0),
+        ("rate_limited", 2),
+        ("api_key_skipped", 0),
+        ("dry_run", 0),
+        ("cost_guard_aborted", 10),
+        ("ffprobe_failed", 2),
+        ("smoke_ok", 0),
+    ]:
+        p = build_status(script="x", v0_status=v0, exit_code=exit_code)
+        assert p["schema_version"] == 1, (
+            f"schema_version drift for v0={v0!r}: {p['schema_version']!r}"
+        )
+        assert isinstance(p["schema_version"], int), (
+            f"schema_version must remain int for v0={v0!r}, "
+            f"got {type(p['schema_version']).__name__}"
+        )
+        assert not isinstance(p["schema_version"], bool), (
+            f"schema_version must not be bool for v0={v0!r}"
+        )
+
+    # (3) extras で schema_version override 試行 → reserved-wins で 1 維持
+    p_inj = build_status(script="x", v0_status="success", exit_code=0,
+                         **{"schema_version": 999})
+    assert p_inj["schema_version"] == 1, (
+        f"extras schema_version=999 leaked: {p_inj['schema_version']!r}"
+    )
+
+    # (4) header 6 field の deterministic hash snapshot lock-in。
+    # 入力: script="test_script" / v0="success" / exit_code=0 で
+    # header == {"schema_version":1,"script":"test_script","status":"ok",
+    #            "ok":true,"exit_code":0,"category":null}
+    # JSON string (sort_keys=False で payload の insertion order 保持) を
+    # SHA-256 16 char prefix で snapshot、PR-W 順序契約と相互強化。
+    p_baseline = build_status(script="test_script", v0_status="success",
+                              exit_code=0)
+    header = {
+        k: p_baseline[k]
+        for k in ("schema_version", "script", "status", "ok",
+                  "exit_code", "category")
+    }
+    expected_header = {
+        "schema_version": 1,
+        "script": "test_script",
+        "status": "ok",
+        "ok": True,
+        "exit_code": 0,
+        "category": None,
+    }
+    assert header == expected_header, (
+        f"header content drift: {header}"
+    )
+    header_json = _json.dumps(header, ensure_ascii=False, sort_keys=False)
+    header_hash = _hashlib.sha256(header_json.encode("utf-8")).hexdigest()[:16]
+    expected_hash = "4e1cd359d000dd2b"
+    assert header_hash == expected_hash, (
+        f"header snapshot hash drift: expected {expected_hash}, "
+        f"got {header_hash} (header_json={header_json!r}); "
+        f"if header schema 意図的に changed、update expected_hash"
+    )
+
+
 def test_observability_run_id_in_payload() -> None:
     """build_status は run_id / parent_run_id / step_id が non-None で payload に乗せる。"""
     from _observability import build_status
@@ -5829,6 +5932,7 @@ def main() -> int:
         test_observability_resolve_run_context_empty_env_fallback,
         test_observability_resolve_run_context_cap_exceeded,
         test_observability_resolve_run_context_cap_boundary,
+        test_observability_build_status_schema_version_invariant,
         test_observability_run_id_in_payload,
         test_generate_slide_plan_run_id_propagation,
         # PR-F (cost abort threshold): 3 件
