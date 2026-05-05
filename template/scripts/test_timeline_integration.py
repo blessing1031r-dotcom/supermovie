@@ -8892,12 +8892,27 @@ def test_observability_emit_json_tail_invariant_caller_ast_lint() -> None:
         callback 等) に隠れる stdout writer Call も検出する。
         descendant scan で `if verbose: print("done")` 等の drift も
         fail-loud。
+
+        PR-BT P2 fix (Codex 08:52): 後続 sibling に nested な FunctionDef /
+        AsyncFunctionDef / Lambda がある場合、その body 内の print/write
+        は同一 flow で実行されないため false positive を避ける。これらを
+        descend stop barrier として扱う。
         """
-        for sub in _ast_re.walk(root):
-            if not isinstance(sub, _ast_re.Call):
+        # iterative walk with manual descent to skip nested function defs
+        stack: list[_ast_re.AST] = [root]
+        BARRIER = (_ast_re.FunctionDef, _ast_re.AsyncFunctionDef, _ast_re.Lambda)
+        while stack:
+            cur = stack.pop()
+            # root 自体が barrier の場合は body を skip しても root 自体
+            # の Call check はしない (nested function 定義内が flow 上
+            # 直接実行されないため)
+            if cur is not root and isinstance(cur, BARRIER):
                 continue
-            if _is_print_to_stdout(sub) or _is_stdout_write(sub):
-                return sub
+            if isinstance(cur, _ast_re.Call):
+                if _is_print_to_stdout(cur) or _is_stdout_write(cur):
+                    return cur
+            for child in _ast_re.iter_child_nodes(cur):
+                stack.append(child)
         return None
 
     def _audit_body(
