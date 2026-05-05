@@ -3212,7 +3212,7 @@ def main() -> int:
         test_observability_build_status_duration_ms_and_category_override,
         test_observability_provider_body_stderr_default_redact,
         test_observability_emit_json_disabled_no_print,
-        # PR-E (distributed tracing run_id active emission): 6 件
+        # PR-E (distributed tracing run_id active emission): 7 件
         test_observability_resolve_run_context_uses_env,
         test_observability_resolve_run_context_generates_when_missing,
         test_observability_resolve_run_context_no_generate,
