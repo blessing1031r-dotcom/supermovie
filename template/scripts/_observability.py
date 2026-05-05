@@ -509,6 +509,19 @@ def warn_legacy_cost_extras(payload, *, stream=None):
     """
     import sys as _sys
 
+    # PR-AU (Codex 05:05 verdict BF) defense: payload は build_status() の
+    # 出力 dict 前提で `payload.get("cost")` / `k in payload` を直接呼ぶため、
+    # non-dict (None / list / str / int / tuple / set / object) を渡されると
+    # uncaught AttributeError "X object has no attribute 'get'" / TypeError
+    # "argument of type 'X' is not iterable" を投げて caller bug が見えにくく
+    # なる drift。emit_json (PR-AQ) と同型の dict-only contract に統一して
+    # entry で fail-loud 化、env gate よりも前に置くことで env=0/unset でも
+    # caller の責務違反を即時検知 (PR-AQ stdout 空 invariant 同型)。
+    if not isinstance(payload, dict):
+        raise TypeError(
+            f"warn_legacy_cost_extras: payload must be dict, got "
+            f"{type(payload).__name__} ({payload!r})"
+        )
     if os.environ.get(WARN_LEGACY_COST_EXTRAS_ENV) != "1":
         return False
     if not payload.get("cost"):

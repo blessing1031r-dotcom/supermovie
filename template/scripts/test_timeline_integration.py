@@ -6130,6 +6130,126 @@ def test_observability_build_status_category_override_defensive_lint() -> None:
             )
 
 
+def test_observability_warn_legacy_cost_extras_payload_must_be_dict() -> None:
+    """`warn_legacy_cost_extras(payload)` の payload dict 必須 contract lock-in
+    (Codex 05:05 PR-AU verdict BF、observability deprecation warning contract
+    drift 防止)。
+
+    `warn_legacy_cost_extras()` は build_status() 出力 dict 前提に
+    `payload.get("cost")` / `for k in LEGACY_COST_EXTRAS_KEYS if k in payload`
+    を直接呼ぶ実装。旧実装は entry に型 guard がなく、non-dict (None / list /
+    str / int / tuple / set / object) を渡されると uncaught AttributeError
+    "X object has no attribute 'get'" / TypeError "argument of type 'X' is
+    not iterable" を投げて caller 責務違反が見えにくい drift。env=0/unset
+    の no-op 経路でも env check より前に payload 型違反は弾けるため、env 状態
+    に依らず entry で fail-loud 化する (env=1 path の前置検査で warning emit
+    の有無に関わらず caller bug 即時検知)。
+
+    新 contract: warn_legacy_cost_extras 入口で `isinstance(payload, dict)`
+    違反を explicit TypeError で fail-loud、emit_json (PR-AQ) と同型。
+    既存 callers (build_status() 経由 dict のみ) は backward compatible。
+
+    既存 strict 系 (PR-AC exit_code int / PR-AD redaction_rules / PR-AF cost /
+    PR-AK counts/artifacts / PR-AL rate_source / PR-AM script / PR-AO secret /
+    PR-AP v0_status / PR-AQ emit_json payload / PR-AT category_override) と
+    同 level の defensive lint。
+    """
+    import io
+    import os as _os
+    from contextlib import redirect_stderr, redirect_stdout
+    from _observability import (
+        WARN_LEGACY_COST_EXTRAS_ENV,
+        warn_legacy_cost_extras,
+    )
+
+    # ===== accept (env=0 / unset、no-op 経路) =====
+    saved = _os.environ.get(WARN_LEGACY_COST_EXTRAS_ENV)
+    _os.environ.pop(WARN_LEGACY_COST_EXTRAS_ENV, None)
+    try:
+        # (1a) 通常 dict (no nested cost) → False
+        buf0 = io.StringIO()
+        emitted0 = warn_legacy_cost_extras({"status": "ok"}, stream=buf0)
+        assert emitted0 is False
+        assert buf0.getvalue() == ""
+        # (1b) empty dict → False
+        buf1 = io.StringIO()
+        emitted1 = warn_legacy_cost_extras({}, stream=buf1)
+        assert emitted1 is False
+        assert buf1.getvalue() == ""
+        # (1c) build_status 出力風 dict (cost dict + legacy keys) でも env off
+        # は no-op
+        buf2 = io.StringIO()
+        emitted2 = warn_legacy_cost_extras(
+            {"cost": {"x": 1}, "rate_input_usd_per_mtok": 0.5}, stream=buf2
+        )
+        assert emitted2 is False
+        assert buf2.getvalue() == ""
+
+        # ===== reject 非 dict 全種 (env=0 でも payload 型は前置で fail-loud) =====
+        for bad_payload in (
+            None, [], [1, 2], "payload", "", 5, 0, 1.5,
+            True, False, (), (1, 2), {1, 2}, object(),
+        ):
+            try:
+                warn_legacy_cost_extras(bad_payload)
+            except TypeError as e:
+                assert "payload" in str(e) and "dict" in str(e), (
+                    f"TypeError msg should mention payload + dict, got {e!r}"
+                )
+            else:
+                raise AssertionError(
+                    f"non-dict payload={bad_payload!r} "
+                    f"({type(bad_payload).__name__}) must raise TypeError"
+                )
+
+        # ===== reject 経路で stderr に warning が漏れない (env off + 型違反で
+        # warning print より前に raise) =====
+        buf_err = io.StringIO()
+        with redirect_stderr(buf_err):
+            try:
+                warn_legacy_cost_extras(None)
+            except TypeError:
+                pass
+        assert buf_err.getvalue() == "", (
+            f"warn_legacy_cost_extras must reject before printing warning, "
+            f"got stderr={buf_err.getvalue()!r}"
+        )
+    finally:
+        if saved is None:
+            _os.environ.pop(WARN_LEGACY_COST_EXTRAS_ENV, None)
+        else:
+            _os.environ[WARN_LEGACY_COST_EXTRAS_ENV] = saved
+
+    # ===== reject 経路は env=1 でも維持 (caller bug は env 状態に依らず fail-loud) =====
+    saved2 = _os.environ.get(WARN_LEGACY_COST_EXTRAS_ENV)
+    _os.environ[WARN_LEGACY_COST_EXTRAS_ENV] = "1"
+    try:
+        for bad_payload in (None, [], "payload", 5, ()):
+            try:
+                warn_legacy_cost_extras(bad_payload)
+            except TypeError as e:
+                assert "payload" in str(e) and "dict" in str(e), (
+                    f"TypeError msg should mention payload + dict (env=1), "
+                    f"got {e!r}"
+                )
+            else:
+                raise AssertionError(
+                    f"non-dict payload={bad_payload!r} (env=1) must raise "
+                    f"TypeError"
+                )
+        # env=1 + dict は backward-compat (warning 出る or 出ない pathway)
+        buf_ok = io.StringIO()
+        emitted_ok = warn_legacy_cost_extras({"status": "ok"}, stream=buf_ok)
+        # nested cost なしなので no-op
+        assert emitted_ok is False
+        assert buf_ok.getvalue() == ""
+    finally:
+        if saved2 is None:
+            _os.environ.pop(WARN_LEGACY_COST_EXTRAS_ENV, None)
+        else:
+            _os.environ[WARN_LEGACY_COST_EXTRAS_ENV] = saved2
+
+
 def test_compare_telop_split_error_message_redacted() -> None:
     """compare_telop_split で error=str(e) → tail に raw abs path が漏れないこと。
 
@@ -7063,6 +7183,7 @@ def main() -> int:
         test_observability_redact_error_message_url_path_order_independence,
         test_observability_redact_error_message_tilde_path_token,
         test_observability_build_status_category_override_defensive_lint,
+        test_observability_warn_legacy_cost_extras_payload_must_be_dict,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
