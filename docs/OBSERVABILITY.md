@@ -260,6 +260,7 @@ cap: 全 3 field に `MAX_TRACE_CONTEXT_VALUE_LEN = 128` 適用、超過時は `
 | 5 | rate env v0 → v1 alias 実装 (Anthropic 限定後方互換) | PR-D |
 | 6 | distributed tracing run_id active emission 実装 (`resolve_run_context()` helper + 7 script propagate + cap validation + 7 件 regression test) | PR-E |
 | 7 | pre-API cost abort threshold 実装 (`SUPERMOVIE_COST_USD_ABORT_AT` env + `--cost-abort-at` CLI + `cost_guard_aborted` status_map 追加 + estimate 共通化 + 3 件 regression test) | PR-F |
+| 8 | error path tail emit consistency audit (`compare_telop_split` の transcript / typo_dict / telop ts read failure を `_emit_early` 経由化、`preflight_video` の `--write-config` parse / write failure を `_emit` 経由化、`visual_smoke` の `out_dir.mkdir` / `videoConfig.ts read` failure を `_emit_early` 経由化、9 status 追加 + 4 件 regression test) | PR-G |
 
 ## Test Requirements
 

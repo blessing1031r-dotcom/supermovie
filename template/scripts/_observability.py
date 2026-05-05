@@ -58,6 +58,11 @@ STATUS_MAP = {
     # compare_telop_split (Codex 21:01 verdict S3-6 KPI comparison、category_override="kpi-comparison")
     "all_pass": ("ok", "kpi-comparison"),
     "some_fail": ("error", "kpi-comparison"),
+    # compare_telop_split early-error paths (PR-G error path tail audit)
+    "typo_dict_invalid": ("error", "typo_dict_invalid"),
+    "telop_ts_missing": ("error", "telop_ts_missing"),
+    "telop_ts_invalid": ("error", "telop_ts_invalid"),
+    "kpi_calc_error": ("error", "kpi_calc_error"),
     # visual_smoke (Codex 21:01 verdict S3-4、category_override="dimension-regression")
     "smoke_ok": ("ok", "dimension-regression"),
     "dimension_mismatch": ("error", "dimension-regression"),
@@ -72,6 +77,9 @@ STATUS_MAP = {
     "env_tool_missing": ("error", "env-failure"),
     "env_main_video_missing": ("error", "env-failure"),
     "env_remotion_cli_missing": ("error", "env-failure"),
+    # visual_smoke early IO failure paths (PR-G error path tail audit)
+    "out_dir_mkdir_error": ("error", "out-dir-mkdir-error"),
+    "video_config_read_error": ("error", "video-config-read-error"),
     "env_video_config_missing": ("error", "env-failure"),
     "usage_error_frames_invalid": ("error", "usage-error"),
     # preflight_video (PR-B、Codex 21:01 step 3 S3-3、category_override="preflight-source-meta")
@@ -81,6 +89,9 @@ STATUS_MAP = {
     "ffprobe_failed": ("error", "ffprobe-failed"),
     "risks_not_allowed": ("error", "risks-not-allowed"),
     "format_inference_failed": ("error", "format-inference-failed"),
+    # preflight_video write-config error paths (PR-G error path tail audit)
+    "write_config_parse_error": ("error", "write-config-parse-error"),
+    "write_config_write_error": ("error", "write-config-write-error"),
     # build_slide_data / build_telop_data (PR-C、Codex 21:01 step 3 S3-5 user_content redaction)
     "build_slide_ok": ("ok", "slide-build"),
     "build_telop_ok": ("ok", "telop-build"),

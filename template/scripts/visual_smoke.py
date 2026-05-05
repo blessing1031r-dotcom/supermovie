@@ -307,7 +307,12 @@ def cli() -> int:
         return _emit_early("usage_error_frames_negative", 4)
 
     out_dir = Path(args.out_dir).resolve()
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # PR-G: out_dir 作成失敗 (PermissionError / FileExistsError 等) を tail emit。
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"ERROR: out_dir mkdir failed: {e}", file=sys.stderr)
+        return _emit_early("out_dir_mkdir_error", 3, error=str(e))
 
     # 環境チェック (Codex Phase 3-G review P1 #1 反映、render 失敗を環境問題として早期検知)
     for tool in ("npx", "ffprobe", "ffmpeg"):
@@ -335,7 +340,12 @@ def cli() -> int:
     if not VIDEO_CONFIG.exists():
         print(f"ERROR: videoConfig.ts が無い: {VIDEO_CONFIG}", file=sys.stderr)
         return _emit_early("env_video_config_missing", 4)
-    original = VIDEO_CONFIG.read_text(encoding="utf-8")
+    # PR-G: videoConfig.ts read failure (PermissionError / EncodingError 等) を tail emit。
+    try:
+        original = VIDEO_CONFIG.read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"ERROR: videoConfig.ts read failed: {e}", file=sys.stderr)
+        return _emit_early("video_config_read_error", 3, error=str(e))
 
     results: list[dict] = []
     stills: list[Path] = []

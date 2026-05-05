@@ -159,16 +159,61 @@ def main():
     baseline_path = Path(args.baseline)
     new_path = Path(args.new)
 
-    transcript = json.loads((PROJ / "transcript_fixed.json").read_text(encoding="utf-8"))
+    # PR-G (error path tail audit): file read / parse failure を tail emit する early-emit closure。
+    # KPI 計算前の例外でも `--json-log` 時に v1 tail を返す。
+    def _emit_early(v0_status, exit_code, **extra):
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        payload = build_status(
+            script="compare_telop_split",
+            v0_status=v0_status,
+            exit_code=exit_code,
+            counts={},
+            artifacts=[],
+            cost=None,
+            duration_ms=duration_ms,
+            redaction_rules=[],
+            run_id=run_ctx["run_id"],
+            parent_run_id=run_ctx["parent_run_id"],
+            step_id=run_ctx["step_id"],
+            **extra,
+        )
+        _obs_emit_json(args.json_log, payload)
+        return exit_code
+
+    try:
+        transcript = json.loads((PROJ / "transcript_fixed.json").read_text(encoding="utf-8"))
+    except FileNotFoundError as e:
+        print(f"ERROR: transcript_fixed.json not found: {e}", file=sys.stderr)
+        return _emit_early("transcript_missing", 3, error=str(e))
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"ERROR: transcript_fixed.json parse failed: {e}", file=sys.stderr)
+        return _emit_early("transcript_invalid", 3, error=str(e))
+
     typo = (PROJ / "typo_dict.json")
-    typo_dict = json.loads(typo.read_text(encoding="utf-8")) if typo.exists() else {}
+    try:
+        typo_dict = json.loads(typo.read_text(encoding="utf-8")) if typo.exists() else {}
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"ERROR: typo_dict.json parse failed: {e}", file=sys.stderr)
+        return _emit_early("typo_dict_invalid", 3, error=str(e))
     preserve = typo_dict.get("preserve", [])
     words = transcript.get("words", [])
 
-    base_telops = parse_telop_data_ts(baseline_path)
-    new_telops = parse_telop_data_ts(new_path)
-    base_kpi = kpi_metrics(base_telops, words, preserve)
-    new_kpi = kpi_metrics(new_telops, words, preserve)
+    try:
+        base_telops = parse_telop_data_ts(baseline_path)
+        new_telops = parse_telop_data_ts(new_path)
+    except (FileNotFoundError, OSError) as e:
+        print(f"ERROR: telop ts read failed: {e}", file=sys.stderr)
+        return _emit_early("telop_ts_missing", 3, error=str(e))
+    except Exception as e:
+        print(f"ERROR: telop ts parse failed: {e}", file=sys.stderr)
+        return _emit_early("telop_ts_invalid", 3, error=str(e))
+
+    try:
+        base_kpi = kpi_metrics(base_telops, words, preserve)
+        new_kpi = kpi_metrics(new_telops, words, preserve)
+    except Exception as e:
+        print(f"ERROR: kpi calc failed: {e}", file=sys.stderr)
+        return _emit_early("kpi_calc_error", 3, error=str(e))
 
     def emit_obs(status, exit_code, gates_result=None):
         """v1 status JSON を --json-log 時のみ emit。category_override で
