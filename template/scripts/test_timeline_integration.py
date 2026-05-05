@@ -6142,11 +6142,13 @@ def test_observability_docs_migration_steps_numbering() -> None:
       - 番号を skip (例: 47 → 49): backfill 漏れ / 連番 audit 不能
       - 1 から始まらない: 初手の table 構造破壊
 
-    上記 3 drift を機械的に検出する lint。table 行 `| <int> | <内容> | <PR> |`
-    を正規表現で抽出し、(1) 抽出件数 ≥ 1、(2) 重複なし、(3) 1..N の連番
-    (sorted set == set(range(1, N+1))) を assert。Migration steps section の
-    境界は `### Migration steps` 開始 ～ 次の `^## ` 開始まで (現状 `## Test
-    Requirements`) で区切る。
+    上記 3 drift + 追加の row 順序入れ替え (例: step 5 を step 4 の上に動かす)
+    を機械的に検出する lint。table 行 `| <int> | <内容> | <PR> |` を正規表現
+    で抽出し、(1) 抽出件数 ≥ 1、(2) 重複なし、(3) 出現順そのものが 1..N
+    (`step_numbers == list(range(1, N+1))`、Codex 05:14 P2 fix で sorted
+    比較から append-only 契約強化へ tighten) を assert。Migration steps
+    section の境界は `### Migration steps` 開始 ～ 次の `^## ` 開始まで
+    (現状 `## Test Requirements`) で区切る。
 
     既存 lint 系 (PR-M `--unsafe-keep-abs-path` flag audit / PR-P entry exit
     code propagation / PR-T STATUS_MAP static / PR-AN STATUS_MAP category
