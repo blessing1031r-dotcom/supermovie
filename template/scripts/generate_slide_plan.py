@@ -123,26 +123,39 @@ def _resolve_int(
 def _resolve_decimal(
     cli_val: float | None,
     env_name: str,
+    *,
+    v0_alias: str | None = None,
 ) -> float | None:
-    """CLI > env > None の precedence で decimal 解決 (finite + >=0)。範囲違反は ValueError。
+    """CLI > v1 env > v0 alias env > None の precedence で decimal 解決
+    (finite + >=0)。範囲違反は ValueError。
 
     Codex P2 review P2 反映 (CODEX_P2_COST_GUARD_REVIEW:7-9):
     `math.isfinite` を必須化し、nan/inf を禁止 (cost estimate を破壊するため)。
+
+    Codex 21:54 PR-D verdict: env_name を v1 canonical
+    (SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK 等) として扱い、v1 が未設定なら
+    v0_alias (SUPERMOVIE_RATE_INPUT_PER_MTOK 等) を fallback として参照する。
+    両方設定時は v1 が勝つ。docs/OBSERVABILITY.md §Rate Env Var Convention 整合。
     """
     if cli_val is not None:
         v = cli_val
         source = f"--{env_name.lower()}"
     else:
         env_str = os.environ.get(env_name)
+        used_env = env_name
+        # v1 env が未設定なら v0 alias を fallback
+        if env_str is None and v0_alias is not None:
+            env_str = os.environ.get(v0_alias)
+            used_env = v0_alias
         if env_str is None:
             return None
         try:
             v = float(env_str)
         except ValueError as e:
             raise ValueError(
-                f"{env_name}={env_str!r} は decimal に変換できません: {e}"
+                f"{used_env}={env_str!r} は decimal に変換できません: {e}"
             ) from e
-        source = f"env {env_name}"
+        source = f"env {used_env}"
     if not math.isfinite(v):
         raise ValueError(f"{source}={v} は finite (nan/inf 禁止)")
     if v < 0:
@@ -169,10 +182,14 @@ def main():
                     help="API を呼ばず prompt 生成 + cost estimate JSON を出して exit 0 "
                          "(API key 不要、env 解決は実行)")
     ap.add_argument("--rate-input", type=float, default=None,
-                    help="input cost rate USD/MTok (env: SUPERMOVIE_RATE_INPUT_PER_MTOK、"
+                    help="input cost rate USD/MTok "
+                         "(env v1: SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK、"
+                         "env v0 alias: SUPERMOVIE_RATE_INPUT_PER_MTOK、"
                          "両 rate 設定時のみ dry-run cost estimate 計算)")
     ap.add_argument("--rate-output", type=float, default=None,
-                    help="output cost rate USD/MTok (env: SUPERMOVIE_RATE_OUTPUT_PER_MTOK)")
+                    help="output cost rate USD/MTok "
+                         "(env v1: SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK、"
+                         "env v0 alias: SUPERMOVIE_RATE_OUTPUT_PER_MTOK)")
     # Phase 3-V P3 logging 拡張 (Codex CODEX_P2_COST_GUARD_DESIGN §4): voicevox_narration の
     # --json-log と同じ pattern で全 return path を status JSON で観測可能に。
     ap.add_argument("--json-log", action="store_true",
@@ -254,8 +271,18 @@ def main():
                     )
             else:
                 max_input_segments = None
-        rate_input = _resolve_decimal(args.rate_input, "SUPERMOVIE_RATE_INPUT_PER_MTOK")
-        rate_output = _resolve_decimal(args.rate_output, "SUPERMOVIE_RATE_OUTPUT_PER_MTOK")
+        # Codex 21:54 PR-D verdict: v1 canonical (SUPERMOVIE_RATE_ANTHROPIC_*) を一次、
+        # v0 alias (SUPERMOVIE_RATE_*_PER_MTOK) を後方互換 fallback として読む。
+        rate_input = _resolve_decimal(
+            args.rate_input,
+            "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+            v0_alias="SUPERMOVIE_RATE_INPUT_PER_MTOK",
+        )
+        rate_output = _resolve_decimal(
+            args.rate_output,
+            "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
+            v0_alias="SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+        )
     except ValueError as e:
         print(f"ERROR: cost guard arg invalid: {e}", file=sys.stderr)
         return emit_json("cost_guard_arg_invalid", 4, error=str(e))

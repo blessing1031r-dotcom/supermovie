@@ -162,9 +162,9 @@ artifact `path` field は repo root or project root からの **相対 path** �
 
 - v1 canonical: `SUPERMOVIE_RATE_<PROVIDER>_<DIRECTION>_USD_PER_MTOK`
   - 例: `SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK`、`SUPERMOVIE_RATE_GEMINI_OUTPUT_USD_PER_MTOK`
-- v0 (既存): `SUPERMOVIE_RATE_INPUT_PER_MTOK` / `SUPERMOVIE_RATE_OUTPUT_PER_MTOK` ([generate_slide_plan.py:161](../template/scripts/generate_slide_plan.py))
+- v0 (既存): `SUPERMOVIE_RATE_INPUT_PER_MTOK` / `SUPERMOVIE_RATE_OUTPUT_PER_MTOK` ([generate_slide_plan.py](../template/scripts/generate_slide_plan.py))
   - v0 alias は **`generate_slide_plan.py` の Anthropic input/output rate 専用** で定義 (Codex 20:08 review P2 #1)。Gemini / Kling 等 future provider には v1 canonical のみを使う。
-  - v1 が未設定で v0 が設定されている場合の alias 動作 (Anthropic 限定) を future PR で実装 (本 doc は規約のみ)。
+  - **alias 動作実装済 (PR-D)**: `_resolve_decimal()` の precedence は `CLI > v1 canonical > v0 alias > None`。両方設定時は v1 が勝つ。後方互換維持で v0 のみ設定でも動作。test は `test_generate_slide_plan_rate_v0_v1_alias_precedence` で 4 case 検証 (v0 only / v1 only / v1+v0 both / CLI wins)。
 
 ### Provider Notes
 

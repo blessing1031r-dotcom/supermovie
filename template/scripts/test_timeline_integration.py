@@ -1356,6 +1356,116 @@ def test_generate_slide_plan_rate_rejects_nan_inf() -> None:
             gsp.PROJ = original_proj
 
 
+def test_generate_slide_plan_rate_v0_v1_alias_precedence() -> None:
+    """Codex 21:54 PR-D verdict: v1 canonical (SUPERMOVIE_RATE_ANTHROPIC_*_USD_PER_MTOK)
+    + v0 alias (SUPERMOVIE_RATE_*_PER_MTOK) の precedence + alias 動作を検証。
+
+    docs/OBSERVABILITY.md §Rate Env Var Convention の v1 / v0 alias 仕様 regression。
+    Test cases:
+    - v0 alias only → v0 から読む (後方互換維持)
+    - v1 only → v1 から読む
+    - v1 + v0 both set → v1 が勝つ (v0 alias は ignore)
+    - CLI --rate-input → env 全て上書き
+    """
+    import generate_slide_plan as gsp
+    import os as _os
+    import urllib.request as _urlreq
+    import io as _io
+    import contextlib
+
+    V1_IN = "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK"
+    V1_OUT = "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK"
+    V0_IN = "SUPERMOVIE_RATE_INPUT_PER_MTOK"
+    V0_OUT = "SUPERMOVIE_RATE_OUTPUT_PER_MTOK"
+
+    saved_env = {k: _os.environ.get(k) for k in (V1_IN, V1_OUT, V0_IN, V0_OUT, "ANTHROPIC_API_KEY")}
+    original_proj = gsp.PROJ
+    original_urlopen = _urlreq.urlopen
+
+    def mock_urlopen_unused(req, timeout=60):
+        raise AssertionError("API not expected in dry-run path")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        gsp.PROJ = proj
+        (proj / "transcript_fixed.json").write_text(
+            json.dumps({"words": [{"text": "x"}], "segments": []}),
+            encoding="utf-8",
+        )
+        (proj / "project-config.json").write_text(
+            json.dumps({"format": "short"}), encoding="utf-8",
+        )
+        for k in (V1_IN, V1_OUT, V0_IN, V0_OUT):
+            _os.environ.pop(k, None)
+        _os.environ["ANTHROPIC_API_KEY"] = "fake"
+        _urlreq.urlopen = mock_urlopen_unused
+
+        import sys as _sys
+        old_argv = _sys.argv
+        try:
+            # Case A: v0 alias only → 後方互換 (旧 env が機能し続ける)
+            _os.environ[V0_IN] = "1.5"
+            _os.environ[V0_OUT] = "5.0"
+            captured = _io.StringIO()
+            _sys.argv = ["generate_slide_plan.py", "--dry-run"]
+            with contextlib.redirect_stdout(captured):
+                ret = gsp.main()
+            assert_eq(ret, 0, "v0 alias only → exit 0")
+            payload = json.loads(captured.getvalue().strip().splitlines()[-1])
+            assert_eq(payload.get("rate_input_per_mtok"), 1.5, "v0 alias rate_input read")
+            assert_eq(payload.get("rate_output_per_mtok"), 5.0, "v0 alias rate_output read")
+
+            # Case B: v1 only → v1 が読まれる
+            _os.environ.pop(V0_IN, None)
+            _os.environ.pop(V0_OUT, None)
+            _os.environ[V1_IN] = "2.0"
+            _os.environ[V1_OUT] = "8.0"
+            captured = _io.StringIO()
+            _sys.argv = ["generate_slide_plan.py", "--dry-run"]
+            with contextlib.redirect_stdout(captured):
+                ret = gsp.main()
+            assert_eq(ret, 0, "v1 only → exit 0")
+            payload = json.loads(captured.getvalue().strip().splitlines()[-1])
+            assert_eq(payload.get("rate_input_per_mtok"), 2.0, "v1 rate_input read")
+            assert_eq(payload.get("rate_output_per_mtok"), 8.0, "v1 rate_output read")
+
+            # Case C: v1 + v0 both → v1 が勝つ
+            _os.environ[V0_IN] = "9.9"  # v1 と異なる値、v1 が勝つことを確認
+            _os.environ[V0_OUT] = "9.9"
+            _os.environ[V1_IN] = "2.5"
+            _os.environ[V1_OUT] = "10.0"
+            captured = _io.StringIO()
+            _sys.argv = ["generate_slide_plan.py", "--dry-run"]
+            with contextlib.redirect_stdout(captured):
+                ret = gsp.main()
+            assert_eq(ret, 0, "v1 + v0 both → exit 0")
+            payload = json.loads(captured.getvalue().strip().splitlines()[-1])
+            assert_eq(payload.get("rate_input_per_mtok"), 2.5, "v1 wins over v0 alias (input)")
+            assert_eq(payload.get("rate_output_per_mtok"), 10.0, "v1 wins over v0 alias (output)")
+
+            # Case D: CLI > env all → CLI が勝つ
+            captured = _io.StringIO()
+            _sys.argv = [
+                "generate_slide_plan.py", "--dry-run",
+                "--rate-input", "0.5", "--rate-output", "1.0",
+            ]
+            with contextlib.redirect_stdout(captured):
+                ret = gsp.main()
+            assert_eq(ret, 0, "CLI > env all → exit 0")
+            payload = json.loads(captured.getvalue().strip().splitlines()[-1])
+            assert_eq(payload.get("rate_input_per_mtok"), 0.5, "CLI wins over v1+v0 (input)")
+            assert_eq(payload.get("rate_output_per_mtok"), 1.0, "CLI wins over v1+v0 (output)")
+        finally:
+            _sys.argv = old_argv
+            for k, v in saved_env.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
+            gsp.PROJ = original_proj
+            _urlreq.urlopen = original_urlopen
+
+
 def test_generate_slide_plan_max_input_caps_prompt() -> None:
     """Phase 3-V P2: --max-input-words / --max-input-segments で prompt 入力 cap."""
     import generate_slide_plan as gsp
@@ -2839,6 +2949,7 @@ def main() -> int:
         test_generate_slide_plan_json_log_status_path,
         test_generate_slide_plan_skip_preserves_with_bad_env,
         test_generate_slide_plan_rate_rejects_nan_inf,
+        test_generate_slide_plan_rate_v0_v1_alias_precedence,
         test_generate_slide_plan_max_input_caps_prompt,
         test_generate_slide_plan_api_invalid_json,
         test_build_slide_data_plan_validation_fallback,
