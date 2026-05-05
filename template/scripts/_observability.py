@@ -228,6 +228,12 @@ def safe_artifact_path(path, *, project_root=None, repo_root=None, unsafe_keep_a
     `/tmp/...` 等が漏れていた)。
     Codex 21:23 PR4 re-review P2 fix: resolve() 例外時の fallback も lexical redaction
     で raw absolute を漏らさない (旧実装は raw `s` 返却していた)。
+    Codex 02:14 PR-V verdict AF fix: `~/...` 入力を早期 expanduser で吸収。
+    旧実装は `Path(s).is_absolute()` ガードで `~` を `expanduser` せず、
+    後段 `_lexical_redact(s, home)` も `s` 原文 (`~/...`) を `<HOME>` に
+    変換できず literal `~/...` がそのまま漏れていた。`s.startswith("~")`
+    時のみ `os.path.expanduser` を通し、相対 path 入力 (`public/main.mp4`
+    等) の as-is passthrough は維持する。
     """
     if path is None:
         return None
@@ -235,11 +241,12 @@ def safe_artifact_path(path, *, project_root=None, repo_root=None, unsafe_keep_a
     if unsafe_keep_abs_path:
         return s
     home = os.path.expanduser("~")
+    s_expanded = os.path.expanduser(s) if s.startswith("~") else s
     try:
-        p = Path(s).expanduser().resolve() if Path(s).is_absolute() else Path(s).resolve()
+        p = Path(s_expanded).resolve()
     except (OSError, RuntimeError):
         # resolve fail (broken symlink / circular link 等): lexical redaction で defensive
-        return _lexical_redact(s, home)
+        return _lexical_redact(s_expanded, home)
     for root in (project_root, repo_root):
         if root is None:
             continue
@@ -249,7 +256,7 @@ def safe_artifact_path(path, *, project_root=None, repo_root=None, unsafe_keep_a
         except (ValueError, OSError):
             continue
     # 通常 path: lexical redaction (HOME / TMP / ABS placeholder)
-    return _lexical_redact(s, home)
+    return _lexical_redact(s_expanded, home)
 
 
 def user_content_meta(text):

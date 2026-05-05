@@ -2881,6 +2881,79 @@ def test_observability_safe_artifact_path_collision_corners() -> None:
     )
 
 
+def test_observability_safe_artifact_path_tilde_expansion() -> None:
+    """`~/...` 入力が `<HOME>` placeholder / project-relative に正規化されること
+    (Codex 02:14 PR-V verdict AF、helper-level redaction contract gap fix)。
+
+    `docs/OBSERVABILITY.md §Path Policy` は abs path を `<HOME>` /
+    `<TMP>` / `<ABS>` placeholder に正規化する契約だが、旧実装は
+    `Path(s).is_absolute()` ガードで `~` を `expanduser` せず、
+    `Path("~/x").is_absolute() == False` の python 仕様により
+    後段 `_lexical_redact(s, home)` も `s.startswith(home)` 判定を
+    通せず literal `~/...` をそのまま漏らしていた。
+
+    fix: `s.startswith("~")` 時のみ `os.path.expanduser` を早期適用、
+    後段 resolve / relative_to / lexical_redact が一貫して absolute
+    path として処理。相対 path 入力 (`public/main.mp4` 等) は
+    PR-U test 7 の as-is passthrough invariant を維持する。
+    """
+    import os as _os
+
+    from _observability import safe_artifact_path
+    home = _os.path.expanduser("~")
+
+    # (1) `~/outside/...` で root 未指定 → <HOME>/... placeholder
+    p1 = safe_artifact_path("~/outside/foo.json")
+    assert p1 == "<HOME>/outside/foo.json", (
+        f"~ must expand and redact to <HOME>, got {p1!r}"
+    )
+    assert "~" not in p1, f"raw ~ leaked: {p1!r}"
+
+    # (2) `~/outside/...` w/ 異なる project_root → relative_to fail で <HOME>
+    p2 = safe_artifact_path(
+        "~/outside/foo.json", project_root="/Users/rokumasuda/tmp/proj"
+    )
+    assert p2 == "<HOME>/outside/foo.json", (
+        f"~ outside project must yield <HOME>, got {p2!r}"
+    )
+
+    # (3) `~/...` 入力 + `~/...` project_root → 両方 expanduser されて
+    # project-relative になる (caller 流儀差で output 揺れない)
+    p3 = safe_artifact_path("~/tmp/proj/sub/x.json", project_root="~/tmp/proj")
+    assert p3 == "sub/x.json", (
+        f"both ~ args must produce project-relative, got {p3!r}"
+    )
+
+    # (4) `~/...` 入力 + abs project_root も match (mixed style 吸収)
+    p4 = safe_artifact_path(
+        "~/tmp/proj/sub/x.json", project_root=f"{home}/tmp/proj"
+    )
+    assert p4 == "sub/x.json", (
+        f"~ input + abs root must produce project-relative, got {p4!r}"
+    )
+
+    # (5) `unsafe_keep_abs_path=True` は `~/...` も bypass で raw 維持
+    p5 = safe_artifact_path("~/x", unsafe_keep_abs_path=True)
+    assert p5 == "~/x", f"unsafe_keep must preserve raw ~/, got {p5!r}"
+
+    # (6) regression guard: 相対 path 入力 (`~` 接頭辞なし) は as-is、
+    # cwd-relative 解決で巻き込み redaction しない (PR-U test 7 invariant)
+    p6 = safe_artifact_path(
+        "public/main.mp4", project_root="/Users/rokumasuda/tmp/proj"
+    )
+    assert p6 == "public/main.mp4", (
+        f"non-tilde relative input must passthrough, got {p6!r}"
+    )
+
+    # (7) regression guard: 既存 abs-HOME 経路が壊れていない
+    p7 = safe_artifact_path(
+        f"{home}/elsewhere/foo.json", project_root="/Users/rokumasuda/tmp/proj"
+    )
+    assert p7.startswith("<HOME>"), (
+        f"abs HOME path regression, got {p7!r}"
+    )
+
+
 def test_observability_user_content_meta_no_raw() -> None:
     """user_content_meta が length / sha256 のみ返し、raw text を含まないこと。
 
@@ -4691,6 +4764,7 @@ def main() -> int:
         test_observability_status_map_lint,
         test_observability_safe_artifact_path_redacts,
         test_observability_safe_artifact_path_collision_corners,
+        test_observability_safe_artifact_path_tilde_expansion,
         test_observability_user_content_meta_no_raw,
         test_observability_redact_provider_body_default_strict,
         test_observability_build_status_v1_schema,
