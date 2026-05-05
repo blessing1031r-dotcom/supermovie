@@ -139,7 +139,9 @@ def _lexical_redact(s, home):
     return s
 
 
-_ABS_PATH_RE = re.compile(r"(?<![A-Za-z0-9_])(/[A-Za-z0-9._/\-]+)")
+# `/...` 風の path token を抽出。直前が word 文字 (URL の `https:` / `file:` 等の scheme) や
+# `:` の場合はマッチしない (URL 破壊回避、Codex 23:33 P2 #1)。
+_ABS_PATH_RE = re.compile(r"(?<![A-Za-z0-9_:/])(/[A-Za-z0-9._/\-]+)")
 
 
 def redact_error_message(msg):
@@ -150,8 +152,8 @@ def redact_error_message(msg):
     placeholder に置換する。引用符 (`'/foo'` / `"/foo"`) や直前文字 (`:`、`=`) があっても
     動作するよう、char-class で前後 boundary を判定する。
 
-    注: `/dev/null` のような short path や relative `./foo` は redact 対象外 (URL や device
-    pseudofile を破壊しないため)。長さ最低 2 component 以上を redact 対象にする。
+    URL 破壊回避: `https://...` の `://` 配下は scheme の `:` が直前にあるため非 match。
+    純粋な絶対 path のみ redact 対象。
     """
     if not isinstance(msg, str):
         return msg
@@ -159,8 +161,6 @@ def redact_error_message(msg):
 
     def _sub(m):
         path = m.group(1)
-        # `/dev/null` 等の system pseudofile は短く、_lexical_redact で <ABS>/null に化けるが
-        # それで困らない。component 1 個 (= '/foo') は path 風文字列として redact する。
         return _lexical_redact(path, home)
 
     return _ABS_PATH_RE.sub(_sub, msg)

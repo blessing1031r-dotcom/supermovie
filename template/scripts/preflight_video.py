@@ -374,7 +374,7 @@ def main():
         probe = run_ffprobe(args.input_video)
     except FFprobeError as e:
         print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(_emit("ffprobe_failed", 3, error=str(e)))
+        sys.exit(_emit("ffprobe_failed", 3, error=redact_error_message(str(e))))
     streams = probe.get("streams", []) or []
     video_streams = [s for s in streams if s.get("codec_type") == "video"]
     audio_streams = [s for s in streams if s.get("codec_type") == "audio"]

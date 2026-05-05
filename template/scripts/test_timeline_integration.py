@@ -3595,6 +3595,18 @@ def test_observability_redact_error_message_strips_abs_path() -> None:
     msg3 = "ValueError: invalid input 'foo'"
     assert redact_error_message(msg3) == msg3
 
+    # PR-G fix iter 2 (Codex 23:33 P2 #1): URL 破壊しないこと
+    url_msg = "fetch failed: https://example.com/api/v1/foo"
+    redacted_url = redact_error_message(url_msg)
+    assert "https://example.com/api/v1/foo" in redacted_url, \
+        f"URL should be preserved, got {redacted_url!r}"
+
+    # file:// scheme もOK
+    file_url = "could not open file://localhost/tmp/x.json"
+    redacted_file_url = redact_error_message(file_url)
+    assert "file://localhost" in redacted_file_url, \
+        f"file:// URL should be preserved (scheme intact), got {redacted_file_url!r}"
+
 
 def test_compare_telop_split_error_message_redacted() -> None:
     """compare_telop_split で error=str(e) → tail に raw abs path が漏れないこと。

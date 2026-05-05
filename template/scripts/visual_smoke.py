@@ -60,6 +60,7 @@ REMOTION_BIN = PROJ / "node_modules" / ".bin" / "remotion"
 # category_override="dimension-regression" (Codex S3-4)、cost=null。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _observability import (  # noqa: E402
+    STATUS_MAP,
     build_status,
     emit_json as _obs_emit_json,
     redact_error_message,
@@ -492,8 +493,13 @@ def cli() -> int:
     if not args.unsafe_keep_abs_path:
         redaction_rules.append("abs_path")
 
+    # PR-G review fix iter 2 (Codex 23:33 P2 #2): env_error が specific status string
+    # (video_config_write_error / video_config_restore_error 等) の時は v0 にそのまま使い、
+    # generic "env_error" に潰さず STATUS_MAP の specific category を活かす。
     if env_error:
-        v0 = "env_error"
+        # STATUS_MAP に登録済の specific status は v0 にそのまま採用、
+        # それ以外 (still_failed / probe_failed 等の従来 string) は generic env_error に fallback
+        v0 = env_error if env_error in STATUS_MAP else "env_error"
         exit_code = 3
     elif grid_status == "failed":
         v0 = "grid_failed"
