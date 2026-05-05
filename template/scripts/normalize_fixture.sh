@@ -151,7 +151,9 @@ if [ "$INPUT" = "$OUTPUT" ]; then
     if cmp -s "$INPUT" "$BACKUP"; then
       echo "[normalize] backup already exists (matches INPUT): $BACKUP"
     else
-      OLD_BACKUP="$INPUT_DIR/main_orig_${TAG}_$(date +%s).mp4"
+      # Codex 20:14 4th review P2: 同秒連続実行で `date +%s` 単独だと collision するため、
+      # mktemp -u の random suffix を使って衝突回避。事前 path 予約のみで file 作成は mv。
+      OLD_BACKUP=$(mktemp -u "$INPUT_DIR/main_orig_${TAG}_archived_XXXXXX").mp4
       mv "$BACKUP" "$OLD_BACKUP"
       cp -p "$INPUT" "$BACKUP"
       echo "[normalize] backup (existing differs, archived to $OLD_BACKUP): $BACKUP"
@@ -171,12 +173,21 @@ case "$TARGET_FORMAT" in
   youtube) W=1920; H=1080 ;;
   square)  W=1080; H=1080 ;;
   "")
-    INFERRED=$(echo "$SOURCE_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("inferred_format") or "short")')
+    # Codex 20:14 4th review P2: inferred_format 空時の short fallback を strict 化。
+    # preflight が aspect から format を推定できない場合 (unknown-aspect risk が立つ source)、
+    # silent fallback では誤った target dim で transcode する risk あり。
+    # --format 必須 fail に寄せ、user に明示判断を要求する。
+    INFERRED=$(echo "$SOURCE_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("inferred_format") or "")')
     case "$INFERRED" in
       short)   W=1080; H=1920 ;;
       youtube) W=1920; H=1080 ;;
       square)  W=1080; H=1080 ;;
-      *)       W=1080; H=1920 ;;
+      "")
+        echo "[normalize][FAIL] preflight が format を推定できません (aspect 異常 / unknown-aspect risk)。--format short|youtube|square を明示してください。" >&2
+        exit 2 ;;
+      *)
+        echo "[normalize][FAIL] preflight returned unknown inferred_format: $INFERRED" >&2
+        exit 2 ;;
     esac
     ;;
   *)

@@ -1,6 +1,6 @@
 # SuperMovie Phase 3 Release Note (2026-05-04 → 2026-05-05)
 
-`roku/fixture-normalize-recipe` source commit HEAD: `aa244bd` (anchor 自身の document commit は drift 1 intrinsic、CONTEXT_ANCHOR.md §Source commit vs Document commit 規約 参照、Phase 3-V FINAL の元 source `cad6914` から +6 commits = b1 fixture normalize bundle + Codex 19:39 PR review fix iter + 19:53 re-review fix iter 2 + 20:04 3rd review fix iter 3)。Codex CODEX_REVIEW_PHASE3V_FINAL 20260505T064250 で「P0/P1/P2 なし、Phase 3-V production 品質で止めてよい」 verdict 後、post-freeze
+`roku/fixture-normalize-recipe` source commit HEAD: `aa244bd` (anchor 自身の document commit は drift 1 intrinsic、CONTEXT_ANCHOR.md §Source commit vs Document commit 規約 参照、Phase 3-V FINAL の元 source `cad6914` から source commit ベースで 4 件積上げ = b1 fixture normalize bundle [9a37873] + Codex 19:39 PR review fix iter [5ce2bc5] + 19:53 re-review fix iter 2 [983edc4] + 20:04 3rd review fix iter 3 [aa244bd]、それぞれに anchor refresh commit が docs-only で続くため `cad6914..aa244bd` raw count は source 4 + anchor refresh 4 = 8 となる、anchor refresh は除外規則で source 進捗から除く)。Codex CODEX_REVIEW_PHASE3V_FINAL 20260505T064250 で「P0/P1/P2 なし、Phase 3-V production 品質で止めてよい」 verdict 後、post-freeze
 backlog 第 1〜3 弾 + P3 logging extension + Codex 4 cycle re-review (P5/2nd-batch/P2/P3-slide-plan
 全 P0/P1 NONE) を反映、Codex CODEX_FULL_SESSION_REVIEW 20260505T113913 で「過剰実装、
 P5 sentinel 以降は黄信号」と判定。さらに b1 fixture normalize bundle (Codex 18:36 verdict + 18:55 review + 19:39 PR review fix iter + 19:53 re-review fix iter 2 + 20:04 3rd review fix iter 3) を追加。
@@ -23,13 +23,15 @@ main..HEAD は 138 commit、Bash 実測) を積んだ成果物の release assert
 
 Roku 判断領域 (release blocker 候補):
 - ★ PR / merge 戦略: phase3f→g→h→i→j は ancestry 連結済み、技術的に階層 merge
-  不要。Codex 推奨は `roku/phase3j-timeline` を 1 PR / squash merge。`main..HEAD`
-  は 130 commits (Bash 実測)、PR diff は phase3i..HEAD の 112 commits より大きく見える点に注意。
+  不要。Codex 推奨は `roku/phase3j-timeline` を 1 PR / squash merge。本 branch
+  `roku/fixture-normalize-recipe` (HEAD `aa244bd`、b1 fixture normalize bundle 込) では
+  `main..HEAD` は **138 commits**、`phase3i..HEAD` は **120 commits** (Bash 実測 20:04)。
   upstream `RenTonoduka/supermovie` (Roku 所有でない、現 gh account `blessing1031r-dotcom`
   は READ only、Bash 実測) のため Codex 推奨は **Option A: fork → blessing1031r-dotcom →
   upstream PR** (CODEX_FULL_SESSION_REVIEW 20260505T113913 §推奨理由、release branch 外、commit history で参照可)。
+  ※ Roku 18:06 訂正後の現解釈: completion 条件 = local 再現性、upstream PR は optional_later (CONTEXT_ANCHOR §External Actions Mission frame 注記)。fork-internal PR (本 PR url) で完結可。
 - 実 project (main.mp4 + node_modules + remotion installed) で
-  `npm run test:visual-smoke` と `npm run render` を 1 周通すことが推奨。
+  `npm run test:visual-smoke` と `npm run render` を 1 周通すことが推奨。本 PR では proj1 で b1 fixture (HEVC HDR DoVi 4K) 経由で完走実証 (`b1 fixture normalize evidence trail` section 参照)。
 - 5/13 リリース予定なら本 branch を Roku の最終 e2e 後に main へ。
 
 ## 主要 deliverable (Phase 3-F 〜 3-Q)
