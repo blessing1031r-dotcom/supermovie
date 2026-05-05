@@ -8576,6 +8576,104 @@ def test_observability_stdout_stderr_stream_contract_lint() -> None:
         )
 
 
+def test_observability_user_content_policy_docs_meta_key_lint() -> None:
+    """`docs/OBSERVABILITY.md §User Content Policy` ↔ `user_content_meta()`
+    output keys の双方向整合性 lint
+    (Codex 07:54 PR-BM verdict CA、PR-BD/BE/BF/BH/BI/BJ/BK/BL 同型を
+    user_content meta key set に展開)。
+
+    docs §User Content Policy は user_content default emission の構造を
+    `length / sha256 hash` の 2 field と明記、code 側 `user_content_meta()`
+    は `{length: int, sha256: str}` の dict を返す。docs と code が drift
+    すると:
+      - docs に新 field を書いたが code 未対応 → consumer が新 field を
+        期待して KeyError
+      - code に新 field を追加したが docs 未掲載 → schema 拡張が consumer
+        に伝わらず undocumented
+      - field rename (sha256 → hash / length → text_length 等) が片側だけ
+        起きる
+
+    本 lint は docs section から literal field name `length` / `sha256` を
+    抽出 + 任意 input string で `user_content_meta()` を呼んだ output dict
+    の keys と双方向 set diff で完全一致 assert。
+
+    PR-BD/BE/BF/BH/BI/BJ/BK/BL 同 level の docs/code 双方向 audit、本 lint
+    は user_content meta dict shape という別 axis を fix。
+    """
+    import re
+    from pathlib import Path
+
+    from _observability import user_content_meta
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    md = obs_md.read_text(encoding="utf-8")
+
+    # `### User Content Policy` heading 直後 ～ 次 `## ` または `### ` 直前
+    # までを section として抽出
+    section_re = re.compile(
+        r"^### User Content Policy[^\n]*\n(?P<body>.*?)(?=^## |^### )",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = section_re.search(md)
+    assert m is not None, (
+        "`### User Content Policy` の section が docs に見つからない "
+        "(heading rename / 構造変更?)"
+    )
+    body = m.group("body")
+
+    # docs section に `length` / `sha256` という literal token が登場するか
+    # 確認 (両方が同 1 文 "user_content_meta (length / sha256 hash)" 内に
+    # 並ぶ前提)。docs 側 canonical key set。
+    EXPECTED_DOCS_TOKENS = {"length", "sha256"}
+    for token in EXPECTED_DOCS_TOKENS:
+        assert token in body, (
+            f"docs §User Content Policy section に '{token}' field の "
+            f"mention が消えた (rename / spec drift?)、"
+            f"section excerpt: {body[:200]!r}..."
+        )
+
+    # code: user_content_meta(任意 str) の output keys
+    sample_meta = user_content_meta("sample text for hashing")
+    assert isinstance(sample_meta, dict), (
+        f"user_content_meta() must return dict, got "
+        f"{type(sample_meta).__name__}"
+    )
+    code_keys = set(sample_meta.keys())
+    assert code_keys, "user_content_meta() returned empty dict"
+
+    # 双方向 set diff
+    missing_in_code = sorted(EXPECTED_DOCS_TOKENS - code_keys)
+    extra_in_code = sorted(code_keys - EXPECTED_DOCS_TOKENS)
+    assert not missing_in_code, (
+        f"docs §User Content Policy に書かれた field が user_content_meta "
+        f"output に欠落: {missing_in_code}\n"
+        f"docs に追記された新 field が code 未対応 / typo (sha256 vs hash)?"
+    )
+    assert not extra_in_code, (
+        f"user_content_meta output に存在するが docs §User Content Policy "
+        f"に未掲載: {extra_in_code}\n"
+        f"code に追加された field を docs 表現に追記する必要、または "
+        f"code 側の typo / 不正値。"
+    )
+    assert code_keys == EXPECTED_DOCS_TOKENS, (
+        f"docs User Content Policy != user_content_meta keys "
+        f"(missing_in_code={missing_in_code}, extra_in_code={extra_in_code})"
+    )
+
+    # 値型の sanity: length は int、sha256 は str (hex hash の prefix 16 char、
+    # PR-AH `test_observability_sha256_hash_format_invariant` で個別 lock 済
+    # だが、本 lint でも 型 contract drift を簡単に確認)
+    assert isinstance(sample_meta["length"], int), (
+        f"user_content_meta length must be int, got "
+        f"{type(sample_meta['length']).__name__}"
+    )
+    assert isinstance(sample_meta["sha256"], str), (
+        f"user_content_meta sha256 must be str, got "
+        f"{type(sample_meta['sha256']).__name__}"
+    )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -9744,6 +9842,7 @@ def main() -> int:
         test_observability_normalize_redaction_rules_membership_reject,
         test_observability_redaction_rules_helper_mapping_lint,
         test_observability_stdout_stderr_stream_contract_lint,
+        test_observability_user_content_policy_docs_meta_key_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
