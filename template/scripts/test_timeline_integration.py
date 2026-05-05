@@ -6519,6 +6519,224 @@ def test_preflight_video_v1_schema_emit_conformance() -> None:
         _shutil_mod.rmtree(tmp_dir, ignore_errors=True)
 
 
+def test_compare_telop_split_v1_schema_emit_conformance() -> None:
+    """compare_telop_split の `--json-log` tail が v1 schema contract に準拠
+    (Codex 05:33 PR-AX verdict BH、observability v1 emit caller conformance
+    audit、PR-AW pair で残 4 v1 caller の前半 2 件)。
+
+    success path で `script="compare_telop_split"` / `v0_status="all_pass"`
+    → STATUS_MAP で `("ok", "kpi-comparison")`、counts={baseline_kpi,
+    new_kpi} (各々 dict)、artifacts=[{path, kind="ts"} x 2] (baseline + new)、
+    redaction_rules=["abs_path"] (default)、category_override="kpi-comparison"。
+
+    `_assert_v1_payload_common` は dict-or-None cost / int>=0 duration_ms /
+    sorted-unique applied_rules を全部 lock-in、PR-AW と同 helper 共有。
+    """
+    import os as _os
+    import io as _io
+    import sys as _sys
+    import importlib
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+
+    proj = Path(tempfile.mkdtemp(prefix="cts_v1_conform_"))
+    try:
+        # transcript_fixed.json: minimal で valid (kpi 計算が成立する程度)
+        (proj / "transcript_fixed.json").write_text(
+            json.dumps(
+                {
+                    "duration_ms": 4000,
+                    "text": "hello world",
+                    "segments": [
+                        {"text": "hello world", "start": 0, "end": 4000},
+                    ],
+                    "words": [
+                        {"text": "hello", "start": 0, "end": 2000},
+                        {"text": "world", "start": 2000, "end": 4000},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        # baseline / new の minimal telopData.ts (parse_telop_data_ts regex
+        # に match する形式 1 件)
+        baseline_ts = proj / "baseline.ts"
+        new_ts = proj / "new.ts"
+        baseline_ts.write_text(
+            'export const telopData = [\n'
+            '  { id: 1, startFrame: 0, endFrame: 60, '
+            'text: "hello world", style: \'normal\', template: 1 },\n'
+            '];\n',
+            encoding="utf-8",
+        )
+        new_ts.write_text(
+            'export const telopData = [\n'
+            '  { id: 1, startFrame: 0, endFrame: 60, '
+            'text: "hello world", style: \'normal\', template: 1 },\n'
+            '];\n',
+            encoding="utf-8",
+        )
+
+        _os.chdir(str(proj))
+        import compare_telop_split as cts
+        importlib.reload(cts)
+        cts.PROJ = proj
+
+        _sys.argv = [
+            "compare_telop_split.py",
+            str(baseline_ts), str(new_ts),
+            "--json-log",
+        ]
+        out_buf = _io.StringIO()
+        err_buf = _io.StringIO()
+        # compare_telop_split.main() は success path で `sys.exit(0)` /
+        # fail path で `sys.exit(1)` を直接呼ぶ実装 (line 294 / 298)、
+        # in-process 実行時に test runner も終了させてしまうので SystemExit
+        # を catch して exit code を採取する。
+        rc = None
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            try:
+                cts.main()
+            except SystemExit as e:
+                rc = e.code if isinstance(e.code, int) else 0
+        # success path で rc=0 (gates なし → all_pass で STATUS_MAP "ok")
+        assert rc == 0, (
+            f"compare_telop_split success expected rc=0, got rc={rc!r}, "
+            f"stderr={err_buf.getvalue()!r}"
+        )
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        assert lines, f"stdout must have output, got {out_buf.getvalue()!r}"
+        payload = json.loads(lines[-1])
+
+        _assert_v1_payload_common(
+            payload,
+            expected_script="compare_telop_split",
+            expected_status="ok",
+            expected_category="kpi-comparison",
+            expected_ok=True,
+            expected_exit_code=0,
+        )
+
+        # counts: baseline_kpi / new_kpi (各 dict)
+        counts = payload["counts"]
+        assert "baseline_kpi" in counts and isinstance(
+            counts["baseline_kpi"], dict
+        ), f"counts.baseline_kpi must be dict, got {counts!r}"
+        assert "new_kpi" in counts and isinstance(counts["new_kpi"], dict), (
+            f"counts.new_kpi must be dict, got {counts!r}"
+        )
+        # baseline_kpi 内の telop_count >= 1 (1 件 fixture)
+        assert counts["baseline_kpi"].get("telop_count") == 1, (
+            f"baseline_kpi.telop_count must be 1 (1 fixture telop), "
+            f"got {counts['baseline_kpi']!r}"
+        )
+
+        # artifacts: 2 件 (baseline + new)、各 kind="ts"
+        assert len(payload["artifacts"]) == 2, (
+            f"compare_telop_split emits 2 artifacts (baseline + new), "
+            f"got {payload['artifacts']!r}"
+        )
+        for art in payload["artifacts"]:
+            assert art["kind"] == "ts", (
+                f"artifacts[*].kind must be 'ts', got {art!r}"
+            )
+
+        # redaction: default redact で abs_path
+        assert "abs_path" in payload["redaction"]["applied_rules"]
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
+def test_visual_smoke_v1_schema_emit_conformance() -> None:
+    """visual_smoke の `--json-log` tail (early-error path) が v1 schema
+    contract に準拠 (Codex 05:33 PR-AX verdict BH)。
+
+    success path は npx remotion still + Node toolchain 必要で test 実行
+    環境に依存するため、early-error path (out-dir-mkdir-error) で v1
+    conformance を audit。`_emit_early` は category_override を使わず
+    STATUS_MAP の `out-dir-mkdir-error` category を活かす経路で、
+    counts={} / artifacts=[] / redaction_rules=[] の minimum payload に
+    なるが、それでも v1 common field 全種が contract 通り揃うことを lock-in。
+
+    既存 test_visual_smoke_out_dir_mkdir_error_emits_tail (PR-G) と相補で、
+    あちらは status=error / category=out-dir-mkdir-error の存在のみ assert、
+    本 test は core 9 field + cost/duration_ms/applied_rules canonical
+    全種を `_assert_v1_payload_common` で一括 lint。
+    """
+    import os as _os
+    import io as _io
+    import sys as _sys
+    import importlib
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="vs_v1_conform_"))
+    bad_out = tmp_dir / "blocking_file"
+    bad_out.write_text("blocks mkdir", encoding="utf-8")
+    try:
+        import visual_smoke as vs
+        importlib.reload(vs)
+
+        _sys.argv = [
+            "visual_smoke.py",
+            "--out-dir", str(bad_out),
+            "--formats", "youtube",
+            "--frames", "30",
+            "--json-log",
+        ]
+        out_buf = _io.StringIO()
+        err_buf = _io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            rc = vs.cli()
+        assert rc == 3, (
+            f"visual_smoke out_dir mkdir error expected rc=3, got rc={rc}, "
+            f"stderr={err_buf.getvalue()!r}"
+        )
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        assert lines, f"stdout must have output, got {out_buf.getvalue()!r}"
+        payload = json.loads(lines[-1])
+
+        _assert_v1_payload_common(
+            payload,
+            expected_script="visual_smoke",
+            expected_status="error",
+            expected_category="out-dir-mkdir-error",
+            expected_ok=False,
+            expected_exit_code=3,
+        )
+
+        # early-error path の minimum payload contract
+        assert payload["counts"] == {}, (
+            f"visual_smoke _emit_early counts must be empty dict, got "
+            f"{payload['counts']!r}"
+        )
+        assert payload["artifacts"] == [], (
+            f"visual_smoke _emit_early artifacts must be empty list, got "
+            f"{payload['artifacts']!r}"
+        )
+        assert payload["redaction"]["applied_rules"] == [], (
+            f"visual_smoke _emit_early redaction.applied_rules must be "
+            f"empty list, got {payload['redaction']!r}"
+        )
+        # cost は None (provider rate 関連なし)
+        assert payload["cost"] is None, (
+            f"visual_smoke cost must be None for early-error, got "
+            f"{payload['cost']!r}"
+        )
+    finally:
+        _sys.argv = saved_argv
+        _os.chdir(saved_cwd)
+        import shutil as _shutil
+        _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -7677,6 +7895,8 @@ def main() -> int:
         test_build_slide_data_v1_schema_emit_conformance,
         test_build_telop_data_v1_schema_emit_conformance,
         test_preflight_video_v1_schema_emit_conformance,
+        test_compare_telop_split_v1_schema_emit_conformance,
+        test_visual_smoke_v1_schema_emit_conformance,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
