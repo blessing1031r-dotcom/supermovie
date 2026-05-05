@@ -4267,6 +4267,94 @@ def test_observability_resolve_run_context_cap_exceeded() -> None:
             _os.environ[TRACE_RUN_ID_ENV] = saved
 
 
+def test_observability_resolve_run_context_cap_boundary() -> None:
+    """env value cap (`MAX_TRACE_CONTEXT_VALUE_LEN = 128`) の境界値 lock-in
+    (Codex 03:28 PR-AG verdict AR、distributed tracing contract drift 防止)。
+
+    既存 `test_observability_resolve_run_context_cap_exceeded` は `129 char`
+    の reject のみ被覆、`127/128 char` accept 側 (boundary inclusive contract)
+    は固定されていなかった。
+
+    `_validate_trace_value` の cap 比較が `> MAX_TRACE_CONTEXT_VALUE_LEN`
+    から `>= ...` 等にリファクタされた場合、`128 char` が突然 reject される
+    silent contract regression を early fail させるため、127 / 128 / 129
+    の 3 boundary 全てを explicit assert する。
+
+    対象 env: TRACE_RUN_ID_ENV / TRACE_PARENT_RUN_ID_ENV / TRACE_STEP_ID_ENV
+    全て同 helper validation 経路 (`_validate_trace_value`) なので、
+    1 env で boundary を固定すれば 3 env 共通の invariant lock-in。本 test
+    は 3 env それぞれで独立 boundary 確認を行う。
+    """
+    import os as _os
+
+    from _observability import (
+        MAX_TRACE_CONTEXT_VALUE_LEN,
+        TRACE_PARENT_RUN_ID_ENV,
+        TRACE_RUN_ID_ENV,
+        TRACE_STEP_ID_ENV,
+        TraceContextError,
+        resolve_run_context,
+    )
+
+    assert MAX_TRACE_CONTEXT_VALUE_LEN == 128, (
+        f"contract: cap is 128, got {MAX_TRACE_CONTEXT_VALUE_LEN}"
+    )
+
+    saved_run = _os.environ.get(TRACE_RUN_ID_ENV)
+    saved_parent = _os.environ.get(TRACE_PARENT_RUN_ID_ENV)
+    saved_step = _os.environ.get(TRACE_STEP_ID_ENV)
+    try:
+        for env_name, ctx_key in [
+            (TRACE_RUN_ID_ENV, "run_id"),
+            (TRACE_PARENT_RUN_ID_ENV, "parent_run_id"),
+            (TRACE_STEP_ID_ENV, "step_id"),
+        ]:
+            # 他 env を空 (unset) にして対象 env 単独で検査
+            for other in (TRACE_RUN_ID_ENV, TRACE_PARENT_RUN_ID_ENV,
+                          TRACE_STEP_ID_ENV):
+                _os.environ.pop(other, None)
+
+            # (1) 127 char accept (boundary 内、`<= cap` 経路)
+            _os.environ[env_name] = "x" * (MAX_TRACE_CONTEXT_VALUE_LEN - 1)
+            ctx = resolve_run_context()
+            assert ctx[ctx_key] == "x" * (MAX_TRACE_CONTEXT_VALUE_LEN - 1), (
+                f"127 char must be accepted as-is for {env_name}, "
+                f"got {ctx[ctx_key]!r}"
+            )
+
+            # (2) 128 char accept (boundary inclusive、`<= cap` 経路)
+            _os.environ[env_name] = "y" * MAX_TRACE_CONTEXT_VALUE_LEN
+            ctx = resolve_run_context()
+            assert ctx[ctx_key] == "y" * MAX_TRACE_CONTEXT_VALUE_LEN, (
+                f"128 char (cap inclusive) must be accepted for {env_name}, "
+                f"got {ctx[ctx_key]!r} (len={len(ctx[ctx_key])})"
+            )
+
+            # (3) 129 char reject (boundary 外、`> cap` 経路)
+            _os.environ[env_name] = "z" * (MAX_TRACE_CONTEXT_VALUE_LEN + 1)
+            try:
+                resolve_run_context()
+            except TraceContextError as e:
+                assert env_name in str(e) or "exceeds" in str(e) or \
+                    "MAX_TRACE_CONTEXT_VALUE_LEN" in str(e), (
+                        f"error msg should reference cap, got {e}"
+                    )
+            else:
+                raise AssertionError(
+                    f"129 char must raise TraceContextError for {env_name}"
+                )
+    finally:
+        for env_name, saved in [
+            (TRACE_RUN_ID_ENV, saved_run),
+            (TRACE_PARENT_RUN_ID_ENV, saved_parent),
+            (TRACE_STEP_ID_ENV, saved_step),
+        ]:
+            if saved is None:
+                _os.environ.pop(env_name, None)
+            else:
+                _os.environ[env_name] = saved
+
+
 def test_observability_run_id_in_payload() -> None:
     """build_status は run_id / parent_run_id / step_id が non-None で payload に乗せる。"""
     from _observability import build_status
@@ -5740,6 +5828,7 @@ def main() -> int:
         test_observability_resolve_run_context_no_generate,
         test_observability_resolve_run_context_empty_env_fallback,
         test_observability_resolve_run_context_cap_exceeded,
+        test_observability_resolve_run_context_cap_boundary,
         test_observability_run_id_in_payload,
         test_generate_slide_plan_run_id_propagation,
         # PR-F (cost abort threshold): 3 件
