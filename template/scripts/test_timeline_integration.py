@@ -1305,16 +1305,27 @@ def test_generate_slide_plan_rate_rejects_nan_inf() -> None:
     import generate_slide_plan as gsp
     import os as _os
 
+    # Codex 22:05 PR7 review P2 fix: v1 env も clear/restore 対象に追加 (alias 動作で
+    # v1 valid + v0 nan の場合 exit 3 になるため、test 環境を clean にする必要)。
+    RATE_ENVS = (
+        "SUPERMOVIE_RATE_INPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
+    )
+
     original_proj = gsp.PROJ
     original_api_key = _os.environ.get("ANTHROPIC_API_KEY")
-    original_env_rate_in = _os.environ.get("SUPERMOVIE_RATE_INPUT_PER_MTOK")
-    original_env_rate_out = _os.environ.get("SUPERMOVIE_RATE_OUTPUT_PER_MTOK")
+    saved_rate_envs = {k: _os.environ.get(k) for k in RATE_ENVS}
 
     with tempfile.TemporaryDirectory() as tmp:
         proj = Path(tmp)
         gsp.PROJ = proj
         # 入力ファイル不要 (cost guard arg validation で先に exit 4)
         _os.environ["ANTHROPIC_API_KEY"] = "fake"
+        # v1 / v0 env を全 clear (alias 動作の干渉を避ける)
+        for k in RATE_ENVS:
+            _os.environ.pop(k, None)
         try:
             # CLI nan
             import sys as _sys
@@ -1332,12 +1343,21 @@ def test_generate_slide_plan_rate_rejects_nan_inf() -> None:
                 assert_eq(ret, 4, "--rate-input=inf → exit 4")
             finally:
                 _sys.argv = old_argv
-            # env nan via SUPERMOVIE_RATE_OUTPUT_PER_MTOK
+            # env nan via v0 alias SUPERMOVIE_RATE_OUTPUT_PER_MTOK
             _os.environ["SUPERMOVIE_RATE_OUTPUT_PER_MTOK"] = "nan"
             _sys.argv = ["generate_slide_plan.py"]
             try:
                 ret = gsp.main()
-                assert_eq(ret, 4, "env rate_output=nan → exit 4")
+                assert_eq(ret, 4, "v0 alias rate_output=nan → exit 4")
+            finally:
+                _sys.argv = old_argv
+            _os.environ.pop("SUPERMOVIE_RATE_OUTPUT_PER_MTOK", None)
+            # env nan via v1 canonical (Codex P2 fix: v1 path も nan reject)
+            _os.environ["SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK"] = "nan"
+            _sys.argv = ["generate_slide_plan.py"]
+            try:
+                ret = gsp.main()
+                assert_eq(ret, 4, "v1 canonical rate_input=nan → exit 4")
             finally:
                 _sys.argv = old_argv
         finally:
@@ -1345,14 +1365,11 @@ def test_generate_slide_plan_rate_rejects_nan_inf() -> None:
                 _os.environ.pop("ANTHROPIC_API_KEY", None)
             else:
                 _os.environ["ANTHROPIC_API_KEY"] = original_api_key
-            if original_env_rate_in is None:
-                _os.environ.pop("SUPERMOVIE_RATE_INPUT_PER_MTOK", None)
-            else:
-                _os.environ["SUPERMOVIE_RATE_INPUT_PER_MTOK"] = original_env_rate_in
-            if original_env_rate_out is None:
-                _os.environ.pop("SUPERMOVIE_RATE_OUTPUT_PER_MTOK", None)
-            else:
-                _os.environ["SUPERMOVIE_RATE_OUTPUT_PER_MTOK"] = original_env_rate_out
+            for k, v in saved_rate_envs.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
             gsp.PROJ = original_proj
 
 

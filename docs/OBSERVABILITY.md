@@ -1,6 +1,6 @@
 # SuperMovie Observability Contract
 
-本 doc は SuperMovie pipeline の observability に関する最小規約を固定する。Codex 19:50 consult verdict (Tech 改善 Medium #3、`/Users/rokumasuda/0_Daily-Workspace/handoff_2026-05-05_1741_supermovie-phase3-pr-cycle.md:60`) に準拠した doc-only PR scope。script migration / env var rename / provider price 記載 / external SaaS 前提は本 doc では扱わない。
+本 doc は SuperMovie pipeline の observability に関する最小規約を固定する。Codex 19:50 consult verdict (Tech 改善 Medium #3、`/Users/rokumasuda/0_Daily-Workspace/handoff_2026-05-05_1741_supermovie-phase3-pr-cycle.md:60`) に準拠した doc 起点 PR scope。env var rename (Anthropic rate v0→v1 alias) は PR-D で実装済 (Rate Env Var Convention 参照)。provider price 記載 / external SaaS 前提は本 doc では扱わない。
 
 ## Scope And Non-Goals
 
@@ -12,11 +12,12 @@
 - test 要件 (regression 防止)
 
 ### Non-Goals (本 doc では扱わない)
-- script 実装 (本 PR は doc-only、migration commit は別 PR)
-- env var rename (既存 `SUPERMOVIE_RATE_INPUT_PER_MTOK` 系の alias 化以上は別 PR)
 - provider 個別 pricing 記載 (network 制約下で未検証、`docs/api-operation-guard` 系参照)
 - external SaaS / GCP / credential 前提 (本 PR では required にしない)
-- distributed tracing / metrics export 実装 (`run_id` reservation のみ、実装は別 PR)
+- distributed tracing / metrics export 実装 (`run_id` reservation のみ、active emission は別 PR)
+- 多 provider への v0 alias 拡張 (Gemini / Kling 等は v1 canonical のみ、Anthropic 限定の後方互換)
+
+(Resolved Non-Goals: script v1 migration → PR-A/B/C で完了。env var rename → PR-D で v0→v1 alias 実装済。)
 
 ## Current Surface
 
