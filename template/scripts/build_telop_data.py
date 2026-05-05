@@ -306,6 +306,25 @@ def main():
     args = ap.parse_args()
     start_time = time.monotonic()
 
+    # Codex 21:46 PR6 review P1 fix: error path も `--json-log` で
+    # v1 status JSON tail emit する。1 invocation 1 emission contract 維持。
+    def _emit_error(v0_status, exit_code, *, category=None, **extra):
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        payload = build_status(
+            script="build_telop_data",
+            v0_status=v0_status,
+            exit_code=exit_code,
+            counts={},
+            artifacts=[],
+            cost=None,
+            duration_ms=duration_ms,
+            category_override=category,
+            redaction_rules=[],
+            **extra,
+        )
+        _obs_emit_json(args.json_log, payload)
+        return exit_code
+
     transcript = json.loads((PROJ / "transcript_fixed.json").read_text(encoding="utf-8"))
     vad = json.loads((PROJ / "vad_result.json").read_text(encoding="utf-8"))
     typo = (PROJ / "typo_dict.json")
@@ -325,7 +344,8 @@ def main():
         try:
             validate_transcript_segment(seg, idx=i, require_timing=True)
         except TranscriptSegmentError as e:
-            raise SystemExit(f"transcript validation failed: {e}")
+            print(f"ERROR: transcript validation failed: {e}", file=_sys.stderr)
+            _sys.exit(_emit_error("build_telop_transcript_invalid", 3, error=str(e)))
 
     # 分割 phase: BudouX 呼出 (一括)
     seg_parts: list[list[str]] = []

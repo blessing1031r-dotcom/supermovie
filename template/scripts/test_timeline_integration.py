@@ -518,8 +518,14 @@ def test_build_slide_data_main_e2e() -> None:
 
 
 def test_build_slide_data_validates_bad_transcript() -> None:
-    """build_slide_data.py が壊れた transcript で SystemExit する."""
+    """build_slide_data.py が壊れた transcript で SystemExit する.
+
+    Codex 21:46 PR6 review P1 fix で SystemExit message → stderr + sys.exit(_emit_error(...))
+    に変更したため、test も stderr 経由 assertion に更新。
+    """
     import build_slide_data as bsd
+    import contextlib as _contextlib
+    import io as _io
 
     with tempfile.TemporaryDirectory() as tmp:
         proj = _setup_temp_project(Path(tmp))
@@ -545,13 +551,20 @@ def test_build_slide_data_validates_bad_transcript() -> None:
             old_argv = _sys.argv
             _sys.argv = ["build_slide_data.py"]
             try:
-                bsd.main()
-                raise AssertionError("build_slide_data should fail with bad transcript")
-            except SystemExit as e:
-                # 期待: validation error message
-                msg = str(e)
-                if "transcript validation failed" not in msg:
-                    raise AssertionError(f"Expected validation error, got: {msg}")
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stderr(err_buf):
+                    try:
+                        bsd.main()
+                        raise AssertionError("build_slide_data should fail with bad transcript")
+                    except SystemExit as e:
+                        # 期待: validation error は stderr に出力 + exit code 3
+                        if e.code != 3:
+                            raise AssertionError(f"Expected exit code 3, got: {e.code}")
+                err_text = err_buf.getvalue()
+                if "transcript validation failed" not in err_text:
+                    raise AssertionError(
+                        f"Expected validation error in stderr, got: {err_text!r}"
+                    )
             finally:
                 _sys.argv = old_argv
         finally:
@@ -624,8 +637,13 @@ def test_build_telop_data_main_e2e() -> None:
 
 
 def test_build_telop_data_validates_bad_transcript() -> None:
-    """build_telop_data.py が壊れた transcript で SystemExit する."""
+    """build_telop_data.py が壊れた transcript で SystemExit する.
+
+    Codex 21:46 PR6 review P1 fix で stderr + sys.exit(_emit_error(...)) に変更。
+    """
     import build_telop_data as btd
+    import contextlib as _contextlib
+    import io as _io
 
     with tempfile.TemporaryDirectory() as tmp:
         proj = _setup_temp_project(Path(tmp))
@@ -653,14 +671,21 @@ def test_build_telop_data_validates_bad_transcript() -> None:
             old_argv = _sys.argv
             _sys.argv = ["build_telop_data.py"]
             try:
-                btd.main()
-                raise AssertionError(
-                    "build_telop_data should fail with bad transcript"
-                )
-            except SystemExit as e:
-                msg = str(e)
-                if "transcript validation failed" not in msg:
-                    raise AssertionError(f"Expected validation error, got: {msg}")
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stderr(err_buf):
+                    try:
+                        btd.main()
+                        raise AssertionError(
+                            "build_telop_data should fail with bad transcript"
+                        )
+                    except SystemExit as e:
+                        if e.code != 3:
+                            raise AssertionError(f"Expected exit code 3, got: {e.code}")
+                err_text = err_buf.getvalue()
+                if "transcript validation failed" not in err_text:
+                    raise AssertionError(
+                        f"Expected validation error in stderr, got: {err_text!r}"
+                    )
             finally:
                 _sys.argv = old_argv
         finally:
@@ -2490,6 +2515,10 @@ def test_observability_helper_status_map() -> None:
         "risks_not_allowed", "format_inference_failed",
         # build_slide_data / build_telop_data (PR-C、Codex 21:01 step 3 S3-5 user_content redaction)
         "build_slide_ok", "build_telop_ok",
+        # build_slide / build_telop error variants (Codex 21:46 PR6 review P1 fix)
+        "build_slide_inputs_missing", "build_slide_transcript_invalid",
+        "build_slide_plan_missing", "build_slide_plan_invalid",
+        "build_telop_transcript_invalid",
     }
     missing = must_have - set(STATUS_MAP.keys())
     assert not missing, f"STATUS_MAP missing v0 statuses: {missing}"

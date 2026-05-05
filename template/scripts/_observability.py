@@ -74,6 +74,12 @@ STATUS_MAP = {
     # build_slide_data / build_telop_data (PR-C、Codex 21:01 step 3 S3-5 user_content redaction)
     "build_slide_ok": ("ok", "slide-build"),
     "build_telop_ok": ("ok", "telop-build"),
+    # build_slide / build_telop error variants (Codex 21:46 PR6 review P1 で error emission 追加)
+    "build_slide_inputs_missing": ("error", "inputs-missing"),
+    "build_slide_transcript_invalid": ("error", "transcript-invalid"),
+    "build_slide_plan_missing": ("error", "plan-missing"),
+    "build_slide_plan_invalid": ("error", "plan-invalid"),
+    "build_telop_transcript_invalid": ("error", "transcript-invalid"),
 }
 
 

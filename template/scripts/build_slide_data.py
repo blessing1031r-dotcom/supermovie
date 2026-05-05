@@ -333,10 +333,31 @@ def main():
     args = ap.parse_args()
     start_time = time.monotonic()
 
+    # Codex 21:46 PR6 review P1 fix: 全 error path も `--json-log` で
+    # v1 status JSON tail emit する。1 invocation 1 emission contract 維持。
+    def _emit_error(v0_status, exit_code, *, category=None, **extra):
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        payload = build_status(
+            script="build_slide_data",
+            v0_status=v0_status,
+            exit_code=exit_code,
+            counts={},
+            artifacts=[],
+            cost=None,
+            duration_ms=duration_ms,
+            category_override=category,
+            redaction_rules=[],
+            **extra,
+        )
+        _obs_emit_json(args.json_log, payload)
+        return exit_code
+
     transcript_path = PROJ / "transcript_fixed.json"
     config_path = PROJ / "project-config.json"
     if not transcript_path.exists() or not config_path.exists():
-        raise SystemExit(f"missing input: transcript_fixed.json or project-config.json under {PROJ}")
+        msg = f"missing input: transcript_fixed.json or project-config.json under {PROJ}"
+        print(f"ERROR: {msg}", file=sys.stderr)
+        sys.exit(_emit_error("build_slide_inputs_missing", 3))
 
     transcript = load_json(transcript_path)
     config = load_json(config_path)
@@ -353,7 +374,8 @@ def main():
         try:
             validate_transcript_segment(seg, idx=i, require_timing=True)
         except TranscriptSegmentError as e:
-            raise SystemExit(f"transcript validation failed: {e}")
+            print(f"ERROR: transcript validation failed: {e}", file=sys.stderr)
+            sys.exit(_emit_error("build_slide_transcript_invalid", 3, error=str(e)))
 
     vad_path = PROJ / "vad_result.json"
     vad = load_json(vad_path) if vad_path.exists() else None
@@ -366,7 +388,8 @@ def main():
         if not plan_path.exists():
             msg = f"--plan path not found: {plan_path}"
             if args.strict_plan:
-                raise SystemExit(msg)
+                print(f"ERROR: {msg}", file=sys.stderr)
+                sys.exit(_emit_error("build_slide_plan_missing", 2, plan_path=str(plan_path)))
             print(f"WARN: {msg} → deterministic fallback")
         else:
             plan = load_json(plan_path)
@@ -376,7 +399,10 @@ def main():
                     print("ERROR: plan validation failed:")
                     for e in errors:
                         print(f"  - {e}")
-                    raise SystemExit(2)
+                    sys.exit(_emit_error(
+                        "build_slide_plan_invalid", 2,
+                        validation_errors=list(errors),
+                    ))
                 print("WARN: plan validation failed, deterministic fallback:")
                 for e in errors:
                     print(f"  - {e}")
