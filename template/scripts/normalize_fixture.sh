@@ -55,10 +55,17 @@ if [ ! -f "$INPUT" ]; then
   exit 2
 fi
 
+# 相対 path で渡された場合の比較失敗を防ぐため、INPUT / OUTPUT を冒頭で絶対 path に正規化。
+# Codex 19:39 PR re-review P1: relative `public/main.mp4` で INPUT != OUTPUT 比較が
+# false になり、idempotent skip と backup が発火しない構造的バグを fix。
 INPUT_DIR=$(cd "$(dirname "$INPUT")" && pwd)
 INPUT_BASE=$(basename "$INPUT")
+INPUT="$INPUT_DIR/$INPUT_BASE"
 if [ -z "$OUTPUT" ]; then
   OUTPUT="$INPUT_DIR/main.mp4"
+else
+  OUTPUT_DIR=$(cd "$(dirname "$OUTPUT")" && pwd)
+  OUTPUT="$OUTPUT_DIR/$(basename "$OUTPUT")"
 fi
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -154,10 +161,14 @@ case "$TARGET_FORMAT" in
 esac
 
 # === 4. transcode (HLG → SDR + tonemap + transpose if rotated) ===
-# mktemp -u で unique pathname を取得 (file は ffmpeg が作成)、$$ は同 PID 連続実行で衝突するため避ける。
-TMP=$(mktemp -u "$INPUT_DIR/.normalize_tmp.XXXXXX").mp4
-TMP2=$(mktemp -u "$INPUT_DIR/.normalize_remux.XXXXXX").mp4
-trap 'rm -f "$TMP" "$TMP2"' EXIT
+# Codex 19:39 PR re-review P2: mktemp -u は path 未予約のまま race window があるため、
+# mktemp -d で directory を atomic に作成してから内部に temp file を置く形に変更。
+# directory 自体は mktemp -d で race-free、ffmpeg が内部 file を作成。
+TMP_DIR=""
+trap 'if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then rm -rf "$TMP_DIR"; fi' EXIT
+TMP_DIR=$(mktemp -d "$INPUT_DIR/.normalize.XXXXXX")
+TMP="$TMP_DIR/transcode.mp4"
+TMP2="$TMP_DIR/remux.mp4"
 
 VF=""
 if [ "$SOURCE_ROT" = "-90" ] || [ "$SOURCE_ROT" = "270" ]; then
@@ -217,8 +228,13 @@ if [ "$POST_EXIT" -ne 0 ] && [ "$POST_EXIT" -ne 2 ]; then
   exit "$POST_EXIT"
 fi
 POST_RISKS=$(echo "$POST_JSON" | python3 -c 'import json,sys;print(",".join(json.load(sys.stdin).get("risks",[])))')
+# Codex 19:39 PR re-review P2: post-condition (risks=[]) を弱い WARN ではなく
+# strict-fail に変更。release note の「正規化完了 = risks=[]」契約と整合させる。
+# rotation-non-canonical / interlaced / multiple-or-missing-* / non-square-sar 等の
+# 残 risk は本 transcode chain で扱えない種類なので、strict-fail で reviewer に通知する。
 if [ -n "$POST_RISKS" ]; then
-  echo "[normalize][WARN] post-normalize risks: [$POST_RISKS]" >&2
+  echo "[normalize][FAIL] post-normalize risks=[$POST_RISKS] (expected empty, transcode chain で扱えない種別の risk が残存)" >&2
+  exit 4
 fi
 
-echo "[normalize][OK] $OUTPUT (Display Matrix removed, risks=[$POST_RISKS])"
+echo "[normalize][OK] $OUTPUT (Display Matrix removed, risks=[])"

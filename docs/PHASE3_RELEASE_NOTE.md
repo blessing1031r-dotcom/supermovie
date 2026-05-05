@@ -1,14 +1,13 @@
 # SuperMovie Phase 3 Release Note (2026-05-04 → 2026-05-05)
 
-`roku/phase3j-timeline` source commit HEAD: `cad6914` (anchor 自身の document commit は drift 1 intrinsic、CONTEXT_ANCHOR.md §Source commit vs Document commit 規約 参照) (Codex CODEX_REVIEW_PHASE3V_FINAL 20260505T064250
-で「P0/P1/P2 なし、Phase 3-V production 品質で止めてよい」 verdict 後、post-freeze
+`roku/fixture-normalize-recipe` source commit HEAD: `5ce2bc5` (anchor 自身の document commit は drift 1 intrinsic、CONTEXT_ANCHOR.md §Source commit vs Document commit 規約 参照、Phase 3-V FINAL の元 source `cad6914` から +4 commits = b1 fixture normalize bundle + Codex 19:39 PR review fix iter)。Codex CODEX_REVIEW_PHASE3V_FINAL 20260505T064250 で「P0/P1/P2 なし、Phase 3-V production 品質で止めてよい」 verdict 後、post-freeze
 backlog 第 1〜3 弾 + P3 logging extension + Codex 4 cycle re-review (P5/2nd-batch/P2/P3-slide-plan
 全 P0/P1 NONE) を反映、Codex CODEX_FULL_SESSION_REVIEW 20260505T113913 で「過剰実装、
-P5 sentinel 以降は黄信号」と判定)
+P5 sentinel 以降は黄信号」と判定。さらに b1 fixture normalize bundle (Codex 18:36 verdict + 18:55 review + 19:39 PR review fix iter) を追加。
 
-Phase 3-A 〜 Phase 3-V の自走実装結果 + 後続 post-freeze backlog 第 1〜3 弾。本 note は
-Roku 不在モード中に Claude+Codex 協働で 112 commit (`roku/phase3i-transcript-alignment..HEAD`、
-main..HEAD は 130 commit、Bash 実測) を積んだ成果物の release assertion を固定する目的。
+Phase 3-A 〜 Phase 3-V の自走実装結果 + 後続 post-freeze backlog 第 1〜3 弾 + b1 fixture normalize bundle。本 note は
+Roku 不在モード中に Claude+Codex 協働で 116 commit (`roku/phase3i-transcript-alignment..HEAD`、
+main..HEAD は 134 commit、Bash 実測) を積んだ成果物の release assertion を固定する目的。
 
 ## Release-readiness statement (2026-05-05 時点、技術 readiness のみ)
 
@@ -215,14 +214,15 @@ bash template/scripts/normalize_fixture.sh /path/to/source.MP4 /path/to/output.m
 ```
 
 期待 exit / status:
-- `0`: 正規化完了 (新規 transcode + remux または idempotent skip)、`OUTPUT`(default `<input dir>/main.mp4`) に H.264 SDR / Display Matrix 不在 / risks=[] が write 済 + backup `main_orig_<codec>_<color>.mp4` 作成
+- `0`: 正規化完了 (新規 transcode + remux または idempotent skip)、`OUTPUT`(default `<input dir>/main.mp4`) に H.264 SDR / Display Matrix 不在 / risks=[] が write 済 + backup `main_orig_<codec>_<color>.mp4` 作成 (in-place 時のみ)
 - `2`: usage error (input 不在 / `--format` 値欠落 / unknown arg)
 - `3`: ffprobe gate 失敗 (Display Matrix 残存)、または preflight が空 JSON 返却
+- `4`: post-normalize risks 残存 (transcode chain で扱えない種別: `rotation-non-canonical` / `interlaced` / `multiple-or-missing-*` / `non-square-sar` 等)
 - 非 0 (above 以外): preflight 内部エラー (ffprobe 不在等) を bubble up
 
-post-condition (script 内蔵 ffprobe gate):
-- `Display Matrix` side data 不在 (P0 fail 条件)
-- preflight 再走行で `risks=[]` (warning ではあるが non-fatal、container 互換性のみ問題なら通る)
+post-condition (script 内蔵 ffprobe + preflight gate):
+- `Display Matrix` side data 不在 (exit 3 fail 条件)
+- preflight 再走行で `risks=[]` (exit 4 fail 条件、strict)
 
 artifact 内部証跡 (PR body 外):
 - `/tmp/codex_b1_verdict.txt` (Codex 18:36 verdict 19,183 line / 157,913 tokens)
