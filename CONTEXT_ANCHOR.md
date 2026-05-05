@@ -74,20 +74,23 @@ git status --short                                   # 空必須
 
 ## External Actions (権限分類)
 
+**Mission frame** (Roku 2026-05-05 18:06 訂正): fork-only 再現作業の完了条件は **Roku 環境 / fork / local project で SuperMovie pipeline を再現可能にし実証すること**。upstream PR の create / review / merge は **completion 条件に含まない optional_later** で、実行時は Roku 判断 + upstream repo 権限が必要。下表の `gh pr create --repo RenTonoduka/...` 行は handoff 時点の選択肢の 1 つで、Roku 判断後にしか動かない。
+
 | action | 実行者 | 理由 |
 |---|---|---|
 | `gh repo fork RenTonoduka/supermovie --clone=false --remote=false` | **Claude 自走可** (Roku 「OK、推奨から進めて」授権済) | 自分の account への fork、外部副作用なし |
 | `git remote add fork https://github.com/blessing1031r-dotcom/supermovie.git` | Claude 自走可 | local 設定 |
 | `git push -u fork roku/phase3j-timeline` | Claude 自走可 (auth scope `repo` あり、fork 先は own account) | 自 account への push |
-| `gh pr create --repo RenTonoduka/supermovie --head blessing1031r-dotcom:roku/phase3j-timeline --base main --title <X> --body-file <Y>` | Claude 自走可 | fork PR 作成 (upstream maintainer = RenTonoduka が review) |
-| PR review / merge | **Roku 判断 + RenTonoduka 操作必要** | upstream maintainer 権限、destructive action |
+| `gh pr create --repo RenTonoduka/supermovie --head blessing1031r-dotcom:roku/phase3j-timeline --base main --title <X> --body-file <Y>` | **Roku 判断** (optional_later、completion 条件外) | upstream への merge 提案 = 段取り判断、外部 owner 経由 |
+| PR review / merge | **Roku 判断 + RenTonoduka 操作必要** (optional_later、completion 条件外) | upstream maintainer 権限、destructive action |
 | `git push --force` (any branch) | **Roku 明示授権必要** | history rewrite、destructive |
 | remote branch delete (`git push fork :branch`) | **Roku 明示授権必要** | destructive |
-| PR close / reopen | **Roku 判断** | upstream PR の段取り |
+| PR close / reopen | **Roku 判断** (optional_later、completion 条件外) | upstream PR の段取り |
 | repo archive 作成 (raw review artifact 別保管用) | **Roku 判断** | 外部 repo 作成、段取り |
 | GitHub re-auth (`gh auth login`) | **Roku 操作必要** (interactive) | Claude bash 経由不可 |
 | rollback (`git revert <sha>`) | Claude 自走可 | local 操作 |
 | force push rollback | **Roku 明示授権必要** | destructive |
+| `template/scripts/normalize_fixture.sh <input>` (b1 fixture transcode + remux) | Claude 自走可 | local 操作、ffprobe gate で Display Matrix 不在を検証 |
 
 ## Codex Review Protocol
 

@@ -167,6 +167,37 @@ bash scripts/regen_phase3_progress.sh --verify  # docs drift 検査 (CI guard)
 Codex review 履歴 table 参照。release-ready 判定 (CODEX_FINAL_VERIFY 20260504T231638) +
 post-freeze loop closure (CODEX_P5_REREVIEW 20260505T101835) で 2 段階 close。
 
+## b1 fixture normalize evidence trail (2026-05-05 18:42-18:55)
+
+Phase 3 release `Required Gates` (本 doc §test gate コマンド) のうち merge 前必須の `npm run test:visual-smoke` + `npm run render` を、proj1 fixture (HEVC Main 10 / HLG / DoVi profile 8.4 / Display Matrix rotation -90 / 4K 60fps 41.93s / 458MB) に対して実行した evidence trail。
+
+### Codex consult / verdict (Bash 実測 18:36)
+- 18:36 Codex Q3 verdict accept (`/tmp/codex_b1_verdict.txt` 19,183 line / 157,913 tokens): b1 transcode (HEVC HDR DoVi → H.264 SDR、tonemap=mobius、scale=lanczos、libx264 preset=medium crf=18 high@4.2、AAC 192kbps、CFR 60fps) を canonical action と確定。Q1 / Q2 (PR base location ベースの invariant 違反判定 / fork-internal merge を canonical strategy 化) は acceptance gate `feedback_codex_output_acceptance_gate.md` で reject (Roku 18:06 mission frame 訂正と矛盾)。
+- 18:55 Codex review verdict (`/tmp/codex_b1_review_verdict.txt` 20,743 line / 115,099 tokens) **PASS**: P0=0、P1×2 (transcode/remux recipe を script 化 + Display Matrix 除去 ffprobe gate / pixel・color metadata 明文化)、P2×2 (anchor の PR optional_later 化 / evidence trail 追加)。本 commit はその全件 fix。
+
+### 実装結果 (Bash 実測 18:42-18:55)
+- transcode: source 458M → main_orig_hevc_hdr.mp4 (backup 保全) → 1080x1920 H.264 High SDR bt709 60fps CFR 2516 frames AAC 197kbps stereo (352M)
+- remux: `-display_rotation 0` 入力 + `-map_metadata:s:v:0 -1` で Display Matrix 除去、Ambient viewing environment metadata のみ残存 (irrelevant)
+- preflight 再走行: risks=[]、requiresConfirmation=false、color=bt709 hdr_suspect=false dovi=null
+- visual-smoke: youtube/short/square × 30/90 frame = 6/6 stills mismatched=0 env_error=None (過去の still_failed 解消)
+- render: 全 2516/2516 frames encoded → out/video.mp4 357M H.264 High yuvj420p 1080x1920 60fps 2516 frames 41.93s + AAC 48kHz stereo 317kbps、5min 8sec (1651s user / 548% CPU)
+- 抽出 stills 1s/10s/25s/40s 全 1080x1920 portrait (orientation 整合)
+
+### completion 条件 (Roku 18:06 訂正) との対応
+- Roku 真の完了条件 = Roku 環境/fork/local project で SuperMovie pipeline を再現可能にし実証
+- 達成: ✓ proj1 で preflight → visual-smoke → render が H.264 SDR fixture で完走、out/video.mp4 生成
+- upstream PR 処理 (8 件 RenTonoduka/supermovie open) は completion 条件**外** (optional_later、Roku 領域)
+
+### 後続 (本 PR scope)
+- `template/scripts/normalize_fixture.sh` で b1 transcode + remux を idempotent recipe 化、ffprobe gate 内蔵 (Display Matrix 不在を fail 条件)
+- `CONTEXT_ANCHOR.md` External Actions table を mission frame 反映 (upstream PR を optional_later に明示)
+- 本 evidence section で b1 trail を anchor 化
+
+### pixel / color metadata 仕様 (現状許容)
+- proj1 render output: `pix_fmt=yuvj420p` / `color_space=bt470bg` / `color_transfer=null` / `color_primaries=null`
+- 入力 main.mp4: `pix_fmt=yuv420p` / `color_space=bt709` / `color_transfer=bt709` / `color_primaries=bt709`
+- 差分は Remotion 4.0.403 default の挙動。`Config.setPixelFormat` / `Config.setColorSpace` (`@remotion/cli/dist/config/index.d.ts:216,284`) で寄せる選択肢ありだが、現状 player 互換性影響不明のため本 PR では設定変更しない。後続 PR で必要なら追加検証。
+
 ## 既知の限界 / 後続 phase 候補
 
 ### 自走可 (npm install 不要、低リスク)
