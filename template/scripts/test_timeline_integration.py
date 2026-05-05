@@ -6911,6 +6911,139 @@ def test_voicevox_narration_v1_schema_emit_conformance() -> None:
         _shutil.rmtree(proj, ignore_errors=True)
 
 
+def test_observability_status_map_caller_usage_lint() -> None:
+    """7 v1 caller script の literal v0_status が全て `STATUS_MAP` に登録済み
+    contract lint (Codex 05:54 PR-AZ verdict BJ、observability v1 emit
+    fallback drift 防止)。
+
+    `map_status()` は未知 v0_status を `("error", v0_status)` に defensive
+    fallback するため、caller が typo / 改名 / 新規追加された status を
+    渡しても runtime では即時 fail せず、category=v0_status (snake_case で
+    PR-AN format invariant 違反するケース) で silent payload 通過してしまう
+    drift。既存 lint (`test_observability_helper_status_map`、PR-T) は手書き
+    `must_have` set 比較で、caller が新規 status を追加するたび lint set を
+    手動更新する必要があり drift 検出が caller 側コミットに依存する。
+
+    本 lint は AST parse で 7 caller script から literal v0_status を 機械
+    抽出し、`STATUS_MAP.keys()` との forward direction (caller→map) を assert
+    する自動 audit:
+
+      - emit_json("<status>", ...) (build_slide_data / build_telop_data /
+        generate_slide_plan / voicevox_narration の wrapper)
+      - _emit_early("<status>", ...) (compare_telop_split / visual_smoke)
+      - _emit("<status>", ...) (preflight_video)
+      - emit_obs("<status>", ...) (compare_telop_split)
+      - _emit_error("<status>", ...) (build_slide_data / build_telop_data)
+      - build_status(v0_status="<status>", ...) (直接呼び)
+      - v0 = "<status>" / v0_status = "<status>" 変数代入 (visual_smoke の
+        条件分岐 v0 fallback、env_error は STATUS_MAP fallback handle 済の
+        ため除外)
+
+    forward 方向の未登録 literal が見つかれば fail。reverse direction
+    (STATUS_MAP entry が caller literal で参照されない) は env_error 等の
+    変数経由間接参照や defensive entry の余地があるため info-only に留める。
+
+    既存 strict 系 (PR-T STATUS_MAP static lint / PR-AN category format
+    invariant / PR-AW caller conformance) と相補な caller↔map 双方向 audit
+    の forward 直接 lock-in。
+    """
+    import ast
+
+    from _observability import STATUS_MAP
+
+    # caller wrapper functions whose 1st positional arg is the v0_status
+    # literal. emit_json / _emit / _emit_early / emit_obs / _emit_error は
+    # 全て (status_str, exit_code, *, ...) signature。
+    WRAPPER_FNS = {
+        "emit_json", "_emit_early", "_emit", "emit_obs", "_emit_error",
+    }
+    # v0 status literal を保持する変数代入 (visual_smoke 条件分岐 fallback
+    # で `v0 = "smoke_ok"` 等の pattern)。env_error は line 516 で `v0 =
+    # env_error if env_error in STATUS_MAP else "env_error"` の guard を
+    # 通って v0 に流れるため、env_error 自体への constant assign は v0_status
+    # に直接到達しない (assign 検出対象外)。
+    V0_VAR_NAMES = {"v0", "v0_status"}
+
+    scripts_dir = Path(__file__).resolve().parent
+    caller_scripts = [
+        "build_slide_data.py", "build_telop_data.py", "preflight_video.py",
+        "compare_telop_split.py", "visual_smoke.py",
+        "generate_slide_plan.py", "voicevox_narration.py",
+    ]
+
+    caller_literals: dict[str, list[tuple[str, int]]] = {}
+
+    def record(literal: str, source: str, lineno: int) -> None:
+        caller_literals.setdefault(literal, []).append((source, lineno))
+
+    for script_name in caller_scripts:
+        path = scripts_dir / script_name
+        assert path.is_file(), f"caller script missing: {path}"
+        src = path.read_text(encoding="utf-8")
+        tree = ast.parse(src, filename=script_name)
+        for node in ast.walk(tree):
+            # Wrapper / build_status call
+            if isinstance(node, ast.Call):
+                fn = node.func
+                fname = (
+                    fn.id if isinstance(fn, ast.Name)
+                    else (fn.attr if isinstance(fn, ast.Attribute) else None)
+                )
+                if fname in WRAPPER_FNS:
+                    if (
+                        node.args
+                        and isinstance(node.args[0], ast.Constant)
+                        and isinstance(node.args[0].value, str)
+                    ):
+                        record(node.args[0].value, script_name, node.lineno)
+                elif fname == "build_status":
+                    for kw in node.keywords:
+                        if (
+                            kw.arg == "v0_status"
+                            and isinstance(kw.value, ast.Constant)
+                            and isinstance(kw.value.value, str)
+                        ):
+                            record(kw.value.value, script_name, node.lineno)
+            # v0 / v0_status = "<literal>" 変数代入
+            elif isinstance(node, ast.Assign) and len(node.targets) == 1:
+                target = node.targets[0]
+                if (
+                    isinstance(target, ast.Name)
+                    and target.id in V0_VAR_NAMES
+                    and isinstance(node.value, ast.Constant)
+                    and isinstance(node.value.value, str)
+                ):
+                    record(node.value.value, script_name, node.lineno)
+
+    assert caller_literals, (
+        "AST extraction collected zero v0_status literals from 7 caller "
+        "scripts — wrapper detection / source path drift?"
+    )
+
+    # Forward direction: caller literal must exist in STATUS_MAP
+    unknown = sorted(set(caller_literals.keys()) - set(STATUS_MAP.keys()))
+    assert not unknown, (
+        f"caller literal v0_status not registered in STATUS_MAP: {unknown}\n"
+        "Each missing literal would trigger map_status() defensive fallback "
+        "to (\"error\", v0_status), causing silent category drift.\n"
+        "Locations:\n"
+        + "\n".join(
+            f"  {lit}: " + ", ".join(f"{src}:{ln}" for src, ln in caller_literals[lit])
+            for lit in unknown
+        )
+    )
+
+    # Sanity: 7 caller 全 script から少なくとも 1 literal は拾えている
+    sources_seen = {
+        src for sources in caller_literals.values() for src, _ in sources
+    }
+    assert sources_seen == set(caller_scripts), (
+        f"caller literal extraction skipped some scripts: missing="
+        f"{set(caller_scripts) - sources_seen}, "
+        f"got={sorted(sources_seen)}"
+    )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -8073,6 +8206,7 @@ def main() -> int:
         test_visual_smoke_v1_schema_emit_conformance,
         test_generate_slide_plan_v1_schema_emit_conformance,
         test_voicevox_narration_v1_schema_emit_conformance,
+        test_observability_status_map_caller_usage_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
