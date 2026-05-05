@@ -511,6 +511,12 @@ def cli() -> int:
         v0 = "smoke_ok"
         exit_code = 0
 
+    # PR-G fix iter 3 (Codex 23:38 P2 #1): env_error が STATUS_MAP 登録済 specific status の時は
+    # category_override=None で STATUS_MAP の specific category を活かす (dimension-regression 上書き回避)。
+    if env_error and env_error in STATUS_MAP:
+        category_override_value = None
+    else:
+        category_override_value = "dimension-regression"
     payload = build_status(
         script="visual_smoke",
         v0_status=v0,
@@ -524,7 +530,7 @@ def cli() -> int:
         artifacts=artifacts,
         cost=None,
         duration_ms=duration_ms,
-        category_override="dimension-regression",
+        category_override=category_override_value,
         redaction_rules=redaction_rules,
         run_id=run_ctx["run_id"],
         parent_run_id=run_ctx["parent_run_id"],
