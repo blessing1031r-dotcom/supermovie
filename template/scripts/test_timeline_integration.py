@@ -3280,6 +3280,80 @@ def test_observability_warn_legacy_cost_extras_env_gated() -> None:
             _os.environ[WARN_LEGACY_COST_EXTRAS_ENV] = saved_env
 
 
+def test_observability_warn_legacy_cost_extras_env_strict_opt_in() -> None:
+    """`warn_legacy_cost_extras()` env gate が strict opt-in (`!= "1"` 全 ignore)
+    であることを lock-in (Codex 02:55 PR-AB verdict AI)。
+
+    PR-X 既存 test (`test_observability_warn_legacy_cost_extras_env_gated`) は
+    unset / "0" / "1" の 3 値しかカバーしない。env が "2" / "true" / "TRUE" /
+    "yes" / "on" / "" / "1\\n" / "  1" / 大文字小文字混在等の「truthy 風だが
+    "1" ではない」 値を渡した時に、誤って warning が emit されない (strict
+    opt-in 契約) ことを explicit に固定する。
+
+    一般的に Python `os.environ.get(...) != "1"` は厳密 string 比較なので
+    truthy 風 string は ignore されるが、リファクタで `bool()` 経由 / 空文字
+    弾き / `.lower() in ("1","true","yes")` 等に変えると warning が広範に
+    emit されて downstream noise が増える regression を起こす。本 test は
+    その drift を early fail させる。
+    """
+    import io
+    import os as _os
+
+    from _observability import (
+        WARN_LEGACY_COST_EXTRAS_ENV,
+        warn_legacy_cost_extras,
+    )
+
+    payload_with_dual = {
+        "cost": {"currency": "USD", "estimate": 0.001},
+        "estimated_input_tokens": 100,
+        "estimated_cost_usd_upper_bound": 0.001,
+        "rate_missing": False,
+    }
+
+    # truthy 風の非"1" env 値群: 全て no-op (False + stream 空) になる契約
+    invalid_truthy_values = [
+        "2", "10", "-1",                      # 数値で 1 でない
+        "true", "TRUE", "True",               # 文字列 truthy
+        "yes", "YES", "y", "Y",
+        "on", "ON",
+        "enabled",
+        "",                                    # 空 string (empty != unset)
+        " ",                                   # whitespace のみ
+        "1 ", " 1", "1\n",                     # padded "1"
+        "11", "01",                            # 部分一致 / leading zero
+        "True\n",
+    ]
+
+    saved_env = _os.environ.get(WARN_LEGACY_COST_EXTRAS_ENV)
+    try:
+        for value in invalid_truthy_values:
+            _os.environ[WARN_LEGACY_COST_EXTRAS_ENV] = value
+            buf = io.StringIO()
+            emitted = warn_legacy_cost_extras(payload_with_dual, stream=buf)
+            assert emitted is False, (
+                f"env={value!r} must be strict-rejected (no-op), "
+                f"got emitted={emitted}"
+            )
+            assert buf.getvalue() == "", (
+                f"env={value!r} must produce no output, got {buf.getvalue()!r}"
+            )
+
+        # positive control: "1" exactly では emit する (gate 機能自体は活きている)
+        _os.environ[WARN_LEGACY_COST_EXTRAS_ENV] = "1"
+        buf = io.StringIO()
+        emitted = warn_legacy_cost_extras(payload_with_dual, stream=buf)
+        assert emitted is True, (
+            f"env='1' positive control must emit, got emitted={emitted}"
+        )
+        assert buf.getvalue() != "", "env='1' positive control must write to stream"
+    finally:
+        if saved_env is None:
+            _os.environ.pop(WARN_LEGACY_COST_EXTRAS_ENV, None)
+        else:
+            _os.environ[WARN_LEGACY_COST_EXTRAS_ENV] = saved_env
+
+
 def test_observability_provider_body_stderr_default_redact() -> None:
     """generate_slide_plan の HTTP error response body と LLM raw text が
     default で stderr に raw 出力されないこと (Codex 20:48 PR3 review P2 #1)。
@@ -5260,6 +5334,7 @@ def main() -> int:
         test_observability_build_status_duration_ms_and_category_override,
         test_observability_build_status_top_level_field_order,
         test_observability_warn_legacy_cost_extras_env_gated,
+        test_observability_warn_legacy_cost_extras_env_strict_opt_in,
         test_observability_provider_body_stderr_default_redact,
         test_observability_emit_json_disabled_no_print,
         test_observability_emit_json_format_lint,
