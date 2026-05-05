@@ -8788,6 +8788,188 @@ def test_observability_path_policy_placeholder_set_docs_code_lint() -> None:
     )
 
 
+def test_observability_status_mapping_policy_docs_code_lint() -> None:
+    """`docs/OBSERVABILITY.md §v0 → v1 status mapping` 表 ↔ `STATUS_MAP`
+    の双方向 (forward strict + 命名 mapping consistency) lint
+    (Codex 08:18 PR-CC verdict、PR-BD/BE/BF/BH/BI/BJ/BK/BL/BM/BN/BO 同型を
+    Migration Policy table の v0 status set + v1 mapping consistency に展開)。
+
+    docs §v0 → v1 status mapping は新規 script 追加時 / regression test 修正時の
+    normative table として、(a) 6 explicit v0 status (`success` slide-plan,
+    `success` narration, `api_key_skipped`, `engine_skipped`, `list_speakers`,
+    `dry_run`) + (b) 5 named error variants の parenthetical (`cost_guard_arg_invalid` /
+    `inputs_missing` / `rate_limited` / `api_http_error` / `llm_json_invalid`) を
+    記載、各 row は v1 canonical (ok / skipped / error / dry_run) を割り当てる。
+    code 側 `STATUS_MAP` は `_observability.py` で v0 → (v1, category) tuple を
+    保持する正準 source。
+
+    docs と code が drift すると、(a) 新規 script を docs に追記した v0 が
+    STATUS_MAP に未登録で `("error", v0_status)` defensive fallback 経路に流れ
+    silent payload misclassification、(b) docs v0 名が typo (例:
+    `api_key_skipped` ↔ `api_key_skip`) で片側だけ rename されると caller / consumer
+    が drift、(c) v1 mapping が table と STATUS_MAP value で食い違う (例: docs に
+    `api_key_skipped → ok` と書いて code は `skipped` のまま) と downstream
+    aggregation の status bucket が崩れる。
+
+    本 lint は forward direction strict + v1 mapping consistency に絞る:
+      1. docs §v0 → v1 status mapping section を heading 直後 ～ 次 heading 直前で
+         section 抽出
+      2. table 1st column の backtick literal から v0 名を集める。`(slide-plan)` /
+         `(narration)` 注釈付き row の v0 識別 token と、`error variants` row の
+         parenthetical 内 backtick literal 5 件を分けて抽出
+      3. `STATUS_MAP` (`_observability.STATUS_MAP`) を import して keys と values
+         を取得
+      4. forward 6 explicit non-error v0 status: それぞれ `STATUS_MAP` に存在 +
+         table の v1_canonical 列 (`ok` / `skipped` / `dry_run`) と
+         `STATUS_MAP[v0][0]` が一致することを assert (mapping consistency)
+      5. forward 5 explicit error variants: それぞれ `STATUS_MAP` に存在 +
+         `STATUS_MAP[v0][0] == "error"` を assert
+      6. reverse direction (STATUS_MAP entry が docs に未掲載) は table 末尾の
+         `等` 拡張表記で開いていて strict 化できないため info-only (assert
+         しない、本 lint は forward + mapping consistency のみ lock-in)
+
+    PR-BD/BE/BF/BH/BI/BJ/BK/BL/BM/BN/BO 同 level の docs/code 双方向 audit、本
+    lint は v0 → v1 status mapping table というMigration Policy normative spec
+    と STATUS_MAP の整合性 axis を fix。
+    """
+    import re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    md = obs_md.read_text(encoding="utf-8")
+
+    # `### v0 → v1 status mapping` section 抽出
+    section_re = re.compile(
+        r"^### v0 → v1 status mapping[^\n]*\n(?P<body>.*?)"
+        r"(?=^## |^### )",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = section_re.search(md)
+    assert m is not None, (
+        "`### v0 → v1 status mapping` の section が docs に見つからない "
+        "(heading rename / 構造変更?)"
+    )
+    body = m.group("body")
+
+    # docs table 行から v0 status / v1 canonical を抽出
+    # 1st column = v0 status, 2nd column = v1 canonical
+    docs_explicit: dict[str, str] = {}
+    docs_error_variants: list[str] = []
+    backtick_re = re.compile(r"`([^`]+)`")
+    for line in body.split("\n"):
+        if not line.startswith("| "):
+            continue
+        if line.startswith("|---"):
+            continue
+        if line.startswith("| v0 status"):
+            continue
+        cells = [c.strip() for c in line.split("|")]
+        if len(cells) < 4:
+            continue
+        v0_cell = cells[1]
+        v1_cell = cells[2]
+        # `error` variants row: 1st backtick literal = "error" 自身、parenthetical
+        # 内 5 件が実 v0 status 名
+        if v0_cell.startswith("`error` variants"):
+            backticks = backtick_re.findall(v0_cell)
+            # backticks[0] == "error" (説明用語)、[1:] が実 v0 status 名
+            docs_error_variants = backticks[1:]
+            continue
+        # 通常 row: 1st backtick = v0 status (slide-plan/narration 注釈は
+        # parenthetical で除去)
+        backticks = backtick_re.findall(v0_cell)
+        if not backticks:
+            continue
+        v0_status = backticks[0]
+        v1_backticks = backtick_re.findall(v1_cell)
+        if not v1_backticks:
+            continue
+        v1_canonical = v1_backticks[0]
+        # `success` (slide-plan/narration) は同 v0 名で 2 row 分かれているため、
+        # mapping は最初の row だけ採用 (両 row の v1 が一致することは別 assert)
+        if v0_status in docs_explicit:
+            assert docs_explicit[v0_status] == v1_canonical, (
+                f"docs §v0 → v1 status mapping 内で v0 '{v0_status}' の v1 "
+                f"mapping が重複行で食い違い: "
+                f"{docs_explicit[v0_status]} vs {v1_canonical}"
+            )
+        else:
+            docs_explicit[v0_status] = v1_canonical
+
+    # docs explicit non-error rows の minimum sanity (drift で row が欠落
+    # していたら fail-loud)
+    EXPECTED_EXPLICIT = {
+        "success",
+        "api_key_skipped",
+        "engine_skipped",
+        "list_speakers",
+        "dry_run",
+    }
+    missing_explicit = sorted(EXPECTED_EXPLICIT - set(docs_explicit.keys()))
+    assert not missing_explicit, (
+        f"docs §v0 → v1 status mapping から explicit row が欠落: "
+        f"{missing_explicit} (table row 削除?)"
+    )
+
+    EXPECTED_ERROR_VARIANTS = {
+        "cost_guard_arg_invalid",
+        "inputs_missing",
+        "rate_limited",
+        "api_http_error",
+        "llm_json_invalid",
+    }
+    docs_error_set = set(docs_error_variants)
+    missing_variants = sorted(EXPECTED_ERROR_VARIANTS - docs_error_set)
+    assert not missing_variants, (
+        f"docs §v0 → v1 status mapping の error variants parenthetical "
+        f"から literal が欠落: {missing_variants} (parenthetical 削除?)"
+    )
+
+    # code 側 STATUS_MAP import
+    sys.path.insert(
+        0, str(repo_root / "template" / "scripts")
+    )
+    try:
+        import _observability as _obs
+
+        status_map = _obs.STATUS_MAP
+    finally:
+        sys.path.pop(0)
+
+    # forward direction strict + v1 mapping consistency: 6 explicit non-error
+    # v0 status (`success` 同 v0 で 2 row 統合済み = 5 unique v0)
+    for v0, docs_v1 in docs_explicit.items():
+        assert v0 in status_map, (
+            f"docs §v0 → v1 status mapping 行に explicit な v0 '{v0}' が "
+            f"STATUS_MAP に未登録 (新規 v0 row 追記後 code 未対応 / "
+            f"defensive fallback `('error', v0_status)` 経路に流れる drift?)"
+        )
+        code_v1 = status_map[v0][0]
+        assert code_v1 == docs_v1, (
+            f"v0 '{v0}' の v1 mapping が docs と STATUS_MAP で不一致: "
+            f"docs='{docs_v1}', STATUS_MAP[{v0!r}][0]='{code_v1}' "
+            f"(片側だけ rename / typo?)"
+        )
+
+    # forward direction: 5 explicit error variants は STATUS_MAP に存在 +
+    # v1 == 'error'
+    for v0 in EXPECTED_ERROR_VARIANTS:
+        assert v0 in status_map, (
+            f"docs §v0 → v1 status mapping の error variants parenthetical "
+            f"の v0 '{v0}' が STATUS_MAP に未登録 (片側だけ削除?)"
+        )
+        code_v1 = status_map[v0][0]
+        assert code_v1 == "error", (
+            f"v0 '{v0}' は docs error variants 行で v1='error' 想定だが "
+            f"STATUS_MAP[{v0!r}][0]='{code_v1}' (mapping drift?)"
+        )
+
+    # reverse direction (STATUS_MAP entry が docs 表 / parenthetical どちらにも
+    # 未掲載) は table 末尾の `等` 拡張表記で開いていて strict 化できないため
+    # info-only (本 lint は forward + mapping consistency のみ lock-in)
+
+
 def test_observability_rate_env_var_convention_docs_code_lint() -> None:
     """`docs/OBSERVABILITY.md §Rate Env Var Convention` ↔ caller の
     `SUPERMOVIE_RATE_*` env name 双方向整合性 lint
@@ -10094,6 +10276,7 @@ def main() -> int:
         test_observability_user_content_policy_docs_meta_key_lint,
         test_observability_path_policy_placeholder_set_docs_code_lint,
         test_observability_rate_env_var_convention_docs_code_lint,
+        test_observability_status_mapping_policy_docs_code_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
