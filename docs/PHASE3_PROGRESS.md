@@ -297,10 +297,11 @@ npm run test:timeline  # pure python integration smoke 単独 (engine 不要、C
 npm run visual-smoke   # 実 main.mp4 + node_modules 必要、3 format × 2 frame still
 ```
 
-`test:timeline` は **43 test ケース** (Phase 3-A〜3-V 23 + post-freeze 第1弾 voicevox sentinel
+`test:timeline` は **52 test ケース** (Phase 3-A〜3-V 23 + post-freeze 第1弾 voicevox sentinel
 4 + 第2弾 visual_smoke 4 + json-log success/skip/strict 3 + cli mismatch+restore 1 + 第3弾 P2
-cost guard 5 + P2 review regression 2 + slide-plan json-log 1 累積、最新 P3 logging extension
-反映時点) で timeline.py / 4 script + visual_smoke の連鎖を engine 不要で高速検証 (新規
+cost guard 5 + P2 review regression 2 + slide-plan json-log 1 + obs migration 9 (PR #3 + PR-A/B/C
+helper / safe_artifact_path / user_content_meta / provider_body redact / build_status v1) +
+PR-D rate alias 1 = 52 累積) で timeline.py / 7 script + visual_smoke の連鎖を engine 不要で高速検証 (新規
 commit 後の regression 早期検出用)。test 一覧は `scripts/test_timeline_integration.py` の
 `main()` 末尾参照。`npm run test` は実際には `lint && test:timeline && test:react` を順次
 実行 (template/package.json:41 で確認、Phase 3-S 以降 React vitest も統合)。test:react は
