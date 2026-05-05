@@ -6854,6 +6854,13 @@ def test_voicevox_narration_v1_schema_emit_conformance() -> None:
         import voicevox_narration as vox
         importlib.reload(vox)
         vox.PROJ = proj
+        # Codex 05:48 PR-AY review P2 fix: 旧実装は実 VOICEVOX engine 起動状況
+        # に依存して engine_skipped 経路に入るかが non-deterministic だった
+        # (localhost で engine 起動中だと別 path に分岐、conformance audit
+        # 対象外 path を踏む)。既存 stub pattern (line 344 / 2008 / 2118 等
+        # で `vn.check_engine = lambda: (True, ...)` を使う流儀の inverse)
+        # で False 固定し engine_skipped 経路を deterministic に。
+        vox.check_engine = lambda: (False, "stubbed: engine unavailable")
 
         _sys.argv = ["voicevox_narration.py", "--json-log"]
         out_buf = _io.StringIO()
