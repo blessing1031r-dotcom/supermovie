@@ -191,6 +191,12 @@ def main():
                     help="output cost rate USD/MTok "
                          "(env v1: SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK、"
                          "env v0 alias: SUPERMOVIE_RATE_OUTPUT_PER_MTOK)")
+    # PR-F: pre-API cost abort threshold (Codex 23:04 next priority verdict)
+    ap.add_argument("--cost-abort-at", type=float, default=None,
+                    help="estimate cost USD upper bound がこの閾値を超えたら API call 前に "
+                         "abort (status=cost_guard_aborted, exit 10)。"
+                         "env: SUPERMOVIE_COST_USD_ABORT_AT (CLI > env > None=無効)。"
+                         "rate 未設定 (estimate=None) 時は閾値設定があっても skip しない。")
     # Phase 3-V P3 logging 拡張 (Codex CODEX_P2_COST_GUARD_DESIGN §4): voicevox_narration の
     # --json-log と同じ pattern で全 return path を status JSON で観測可能に。
     ap.add_argument("--json-log", action="store_true",
@@ -290,6 +296,12 @@ def main():
             "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
             v0_alias="SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
         )
+        # PR-F: pre-API cost abort threshold。CLI > env、None で無効。
+        # rate 未設定 (estimate=None) 時は閾値があっても skip (cost 不明で abort せず通常進行)。
+        cost_abort_at = _resolve_decimal(
+            args.cost_abort_at,
+            "SUPERMOVIE_COST_USD_ABORT_AT",
+        )
     except ValueError as e:
         print(f"ERROR: cost guard arg invalid: {e}", file=sys.stderr)
         return emit_json("cost_guard_arg_invalid", 4, error=str(e))
@@ -339,13 +351,23 @@ def main():
         max_input_words=max_input_words,
     )
 
+    # PR-F: estimate cost を dry-run / 非 dry-run 両 path で共有するため、ここで一度計算。
+    # rate 未設定時は estimate=None で cost-abort スキップ (cost 不明で abort しない)。
+    prompt_chars = len(prompt)
+    estimated_input_tokens = math.ceil(prompt_chars / 4)
+    estimated_output_tokens_upper_bound = max_tokens
+    if rate_input is not None and rate_output is not None:
+        estimated_cost_usd_upper_bound = (
+            estimated_input_tokens / 1_000_000 * rate_input
+            + estimated_output_tokens_upper_bound / 1_000_000 * rate_output
+        )
+    else:
+        estimated_cost_usd_upper_bound = None
+
     # Phase 3-V P2 cost guard --dry-run: API 呼ばず estimate JSON 出力 + exit 0
     # (Codex CODEX_P2_COST_GUARD_DESIGN §1 / §3、HARD RULE「根拠なき具体性」回避で
     # rate hardcode せず env/arg で受領、estimation_method を明示)
     if args.dry_run:
-        prompt_chars = len(prompt)
-        estimated_input_tokens = math.ceil(prompt_chars / 4)
-        estimated_output_tokens_upper_bound = max_tokens
         request_body_bytes_estimate = len(
             json.dumps({
                 "model": args.model,
@@ -353,13 +375,6 @@ def main():
                 "messages": [{"role": "user", "content": prompt}],
             }).encode("utf-8")
         )
-        if rate_input is not None and rate_output is not None:
-            estimated_cost_usd_upper_bound = (
-                estimated_input_tokens / 1_000_000 * rate_input
-                + estimated_output_tokens_upper_bound / 1_000_000 * rate_output
-            )
-        else:
-            estimated_cost_usd_upper_bound = None
         dry_run_payload = {
             "status": "dry_run",
             "api_called": False,
@@ -391,6 +406,27 @@ def main():
                 estimated_cost_usd_upper_bound=estimated_cost_usd_upper_bound,
             )
         return 0
+
+    # PR-F: pre-API cost abort check。dry-run 後 / 実 API call 前に閾値チェック。
+    # rate 未設定 (estimate=None) 時は cost 不明、abort せず通常進行。
+    if cost_abort_at is not None and estimated_cost_usd_upper_bound is not None:
+        if estimated_cost_usd_upper_bound > cost_abort_at:
+            print(
+                f"ERROR: estimated cost USD upper bound "
+                f"{estimated_cost_usd_upper_bound:.6f} > cost-abort-at {cost_abort_at:.6f}、"
+                f"API call abort",
+                file=sys.stderr,
+            )
+            return emit_json(
+                "cost_guard_aborted",
+                10,
+                model=args.model,
+                max_tokens=max_tokens,
+                estimated_input_tokens=estimated_input_tokens,
+                estimated_output_tokens_upper_bound=estimated_output_tokens_upper_bound,
+                estimated_cost_usd_upper_bound=estimated_cost_usd_upper_bound,
+                cost_abort_at=cost_abort_at,
+            )
 
     # Anthropic API 呼び出し (urllib で SDK 不要に保つ)
     import urllib.request

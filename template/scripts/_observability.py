@@ -38,6 +38,7 @@ STATUS_MAP = {
     "dry_run": ("dry_run", None),
     # error variants (slide-plan)
     "cost_guard_arg_invalid": ("error", "cost_guard_arg_invalid"),
+    "cost_guard_aborted": ("error", "cost_guard_aborted"),
     "inputs_missing": ("error", "inputs_missing"),
     "rate_limited": ("error", "rate_limited"),
     "api_http_error": ("error", "api_http_error"),

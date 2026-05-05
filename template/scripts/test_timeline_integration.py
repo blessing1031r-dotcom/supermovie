@@ -3157,6 +3157,276 @@ def test_generate_slide_plan_run_id_propagation() -> None:
         _shutil.rmtree(proj, ignore_errors=True)
 
 
+def test_generate_slide_plan_cost_abort_blocks_api_when_estimate_exceeds() -> None:
+    """estimate cost > cost-abort-at で API 呼ばず exit 10 + status=cost_guard_aborted。
+
+    rate 設定 + ANTHROPIC_API_KEY 設定で本来 API call に進む path を、cost-abort 閾値で
+    pre-flight abort する。urllib.urlopen を fail_if_called で監視、call 0 確認。
+    """
+    import os as _os
+    import io
+    import sys as _sys
+    import importlib
+    import urllib.request as _urlreq
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_env = {k: _os.environ.get(k) for k in (
+        "ANTHROPIC_API_KEY",
+        "SUPERMOVIE_RATE_INPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
+        "SUPERMOVIE_COST_USD_ABORT_AT",
+    )}
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+    saved_urlopen = _urlreq.urlopen
+
+    proj = Path(tempfile.mkdtemp(prefix="cost_abort_"))
+    (proj / "transcript_fixed.json").write_text(
+        json.dumps({
+            "duration_ms": 5000,
+            "words": [{"text": "ab", "start": 0, "end": 500, "confidence": 0.9}],
+            "segments": [{"text": "ab", "start": 0, "end": 500}],
+        }),
+        encoding="utf-8",
+    )
+    (proj / "project-config.json").write_text(
+        json.dumps({"format": "youtube", "videoType": "test", "tone": "test"}),
+        encoding="utf-8",
+    )
+
+    api_called = {"count": 0}
+
+    def _fail_if_called(*args, **kwargs):
+        api_called["count"] += 1
+        raise AssertionError("urllib.urlopen should NOT be called when cost-abort blocks API")
+
+    try:
+        # rate 設定 + ANTHROPIC_API_KEY 設定 (本来 API path)
+        _os.environ["ANTHROPIC_API_KEY"] = "test-key"
+        # rate を高く設定して estimate が確実に閾値超え
+        _os.environ["SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK"] = "100.0"
+        _os.environ["SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK"] = "100.0"
+        _os.environ.pop("SUPERMOVIE_RATE_INPUT_PER_MTOK", None)
+        _os.environ.pop("SUPERMOVIE_RATE_OUTPUT_PER_MTOK", None)
+        # 閾値 0.001 USD (microscopic) → estimate >> threshold で必ず abort
+        _os.environ["SUPERMOVIE_COST_USD_ABORT_AT"] = "0.001"
+        _os.chdir(str(proj))
+
+        import generate_slide_plan as gsp
+        importlib.reload(gsp)
+        gsp.PROJ = proj
+        _urlreq.urlopen = _fail_if_called
+
+        _sys.argv = ["generate_slide_plan.py", "--json-log"]
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            rc = gsp.main()
+
+        assert rc == 10, f"cost-abort should return exit 10, got {rc}"
+        assert api_called["count"] == 0, "urllib.urlopen called despite cost-abort"
+        assert "cost-abort" in err_buf.getvalue() or "cost_abort" in err_buf.getvalue() or "abort" in err_buf.getvalue(), \
+            f"stderr should mention abort, got: {err_buf.getvalue()!r}"
+        # v1 tail
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        v1_tail = json.loads(lines[-1])
+        assert v1_tail["status"] == "error"
+        assert v1_tail["category"] == "cost_guard_aborted"
+        assert v1_tail["exit_code"] == 10
+        assert v1_tail.get("estimated_cost_usd_upper_bound") is not None
+        assert v1_tail.get("cost_abort_at") == 0.001
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        _urlreq.urlopen = saved_urlopen
+        for k, v in saved_env.items():
+            if v is None:
+                _os.environ.pop(k, None)
+            else:
+                _os.environ[k] = v
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
+def test_generate_slide_plan_cost_abort_skipped_when_rate_unset() -> None:
+    """rate 未設定 (estimate=None) 時は閾値設定があっても abort せず通常進行。
+
+    cost 不明状態で勝手に abort すると後方互換が壊れるため、rate 未設定時は閾値スキップ。
+    本テストは API 呼び出しを mock して通常 path に到達することを確認。
+    """
+    import os as _os
+    import io
+    import sys as _sys
+    import importlib
+    import urllib.request as _urlreq
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_env = {k: _os.environ.get(k) for k in (
+        "ANTHROPIC_API_KEY",
+        "SUPERMOVIE_RATE_INPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
+        "SUPERMOVIE_COST_USD_ABORT_AT",
+    )}
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+    saved_urlopen = _urlreq.urlopen
+
+    proj = Path(tempfile.mkdtemp(prefix="cost_abort_skip_"))
+    (proj / "transcript_fixed.json").write_text(
+        json.dumps({
+            "duration_ms": 5000,
+            "words": [{"text": "ab", "start": 0, "end": 500, "confidence": 0.9}],
+            "segments": [{"text": "ab", "start": 0, "end": 500}],
+        }),
+        encoding="utf-8",
+    )
+    (proj / "project-config.json").write_text(
+        json.dumps({"format": "youtube", "videoType": "test", "tone": "test"}),
+        encoding="utf-8",
+    )
+
+    api_called = {"count": 0}
+
+    class _MockResp:
+        def __init__(self, payload):
+            self._payload = payload
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def read(self):
+            return json.dumps(self._payload).encode("utf-8")
+
+    def _mock_urlopen(*args, **kwargs):
+        api_called["count"] += 1
+        return _MockResp({
+            "content": [{"type": "text", "text": json.dumps({
+                "version": "supermovie.slide_plan.v1",
+                "slides": [],
+                "model": "test", "max_tokens": 100,
+            })}],
+        })
+
+    try:
+        _os.environ["ANTHROPIC_API_KEY"] = "test-key"
+        # rate 未設定 (全 unset) → estimate=None
+        for k in ("SUPERMOVIE_RATE_INPUT_PER_MTOK", "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+                  "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+                  "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK"):
+            _os.environ.pop(k, None)
+        # 閾値設定するが、rate 未設定で skip 想定
+        _os.environ["SUPERMOVIE_COST_USD_ABORT_AT"] = "0.001"
+        _os.chdir(str(proj))
+
+        import generate_slide_plan as gsp
+        importlib.reload(gsp)
+        gsp.PROJ = proj
+        _urlreq.urlopen = _mock_urlopen
+
+        _sys.argv = ["generate_slide_plan.py", "--json-log"]
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            rc = gsp.main()
+
+        # rate 未設定だが abort せず通常 path 進行 (API call 1 回)
+        assert api_called["count"] == 1, \
+            f"rate-unset + threshold-set should NOT abort (estimate=None skip), api_called={api_called['count']}"
+        assert rc == 0, f"normal path should return 0, got {rc}"
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        _urlreq.urlopen = saved_urlopen
+        for k, v in saved_env.items():
+            if v is None:
+                _os.environ.pop(k, None)
+            else:
+                _os.environ[k] = v
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
+def test_generate_slide_plan_cost_abort_cli_overrides_env() -> None:
+    """CLI --cost-abort-at が env SUPERMOVIE_COST_USD_ABORT_AT より優先される (precedence: CLI > env)。"""
+    import os as _os
+    import io
+    import sys as _sys
+    import importlib
+    import urllib.request as _urlreq
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_env = {k: _os.environ.get(k) for k in (
+        "ANTHROPIC_API_KEY",
+        "SUPERMOVIE_RATE_INPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
+        "SUPERMOVIE_COST_USD_ABORT_AT",
+    )}
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+    saved_urlopen = _urlreq.urlopen
+
+    proj = Path(tempfile.mkdtemp(prefix="cost_abort_cli_"))
+    (proj / "transcript_fixed.json").write_text(
+        json.dumps({
+            "duration_ms": 5000,
+            "words": [{"text": "ab", "start": 0, "end": 500, "confidence": 0.9}],
+            "segments": [{"text": "ab", "start": 0, "end": 500}],
+        }),
+        encoding="utf-8",
+    )
+    (proj / "project-config.json").write_text(
+        json.dumps({"format": "youtube", "videoType": "test", "tone": "test"}),
+        encoding="utf-8",
+    )
+
+    def _fail_if_called(*args, **kwargs):
+        raise AssertionError("API should not be called when CLI threshold blocks")
+
+    try:
+        _os.environ["ANTHROPIC_API_KEY"] = "test-key"
+        _os.environ["SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK"] = "100.0"
+        _os.environ["SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK"] = "100.0"
+        _os.environ.pop("SUPERMOVIE_RATE_INPUT_PER_MTOK", None)
+        _os.environ.pop("SUPERMOVIE_RATE_OUTPUT_PER_MTOK", None)
+        # env=高い (allow)、CLI=低い (block) → CLI 優先で block されること検証
+        _os.environ["SUPERMOVIE_COST_USD_ABORT_AT"] = "1000.0"
+        _os.chdir(str(proj))
+
+        import generate_slide_plan as gsp
+        importlib.reload(gsp)
+        gsp.PROJ = proj
+        _urlreq.urlopen = _fail_if_called
+
+        _sys.argv = ["generate_slide_plan.py", "--json-log", "--cost-abort-at", "0.001"]
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            rc = gsp.main()
+
+        assert rc == 10, f"CLI override should block, got rc={rc}"
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        v1_tail = json.loads(lines[-1])
+        assert v1_tail["category"] == "cost_guard_aborted"
+        assert v1_tail.get("cost_abort_at") == 0.001  # CLI 値が反映
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        _urlreq.urlopen = saved_urlopen
+        for k, v in saved_env.items():
+            if v is None:
+                _os.environ.pop(k, None)
+            else:
+                _os.environ[k] = v
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -3220,6 +3490,10 @@ def main() -> int:
         test_observability_resolve_run_context_cap_exceeded,
         test_observability_run_id_in_payload,
         test_generate_slide_plan_run_id_propagation,
+        # PR-F (cost abort threshold): 3 件
+        test_generate_slide_plan_cost_abort_blocks_api_when_estimate_exceeds,
+        test_generate_slide_plan_cost_abort_skipped_when_rate_unset,
+        test_generate_slide_plan_cost_abort_cli_overrides_env,
     ]
     failed = []
     for t in tests:
