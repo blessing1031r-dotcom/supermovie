@@ -3608,6 +3608,71 @@ def test_observability_redact_error_message_strips_abs_path() -> None:
         f"file:// URL should be preserved (scheme intact), got {redacted_file_url!r}"
 
 
+def test_observability_redact_error_message_windows_path() -> None:
+    """PR-K (Codex 00:36): Windows abs path (`C:\\...` / `D:/...`) も redact 対象。
+
+    cross-platform error string leak (CI Windows runner / Windows tool 経由) への defense-in-depth。
+    """
+    from _observability import redact_error_message
+
+    # Backslash separator (Windows native)
+    msg = "Error: cannot open C:\\Users\\sensitive\\secret.json"
+    redacted = redact_error_message(msg)
+    assert "C:\\Users\\sensitive" not in redacted, \
+        f"Windows path leaked: {redacted!r}"
+    assert "secret.json" in redacted, f"basename should be preserved: {redacted!r}"
+    assert "<ABS>/" in redacted
+
+    # Forward slash separator (Windows-on-cygwin / cross-platform)
+    msg2 = "fail D:/Projects/private/foo.txt missing"
+    redacted2 = redact_error_message(msg2)
+    assert "D:/Projects/private" not in redacted2, \
+        f"Windows /-separator path leaked: {redacted2!r}"
+    assert "foo.txt" in redacted2
+
+    # 同じ msg 内に POSIX + Windows 両方混在
+    msg3 = "POSIX /tmp/x and Windows C:\\Users\\y both leak"
+    redacted3 = redact_error_message(msg3)
+    assert "/tmp/x" not in redacted3, f"POSIX path should be redacted: {redacted3!r}"
+    assert "C:\\Users\\y" not in redacted3, f"Windows path should be redacted: {redacted3!r}"
+
+
+def test_observability_redact_error_message_ipv6_and_data_uri_safe() -> None:
+    """PR-K: IPv6 アドレスや data: URI を破壊しない。
+
+    `::1/64` の `/64` は path 風だが直前 `1` (alnum) で lookbehind 弾く。
+    `data:image/png` も alnum lookbehind で弾く。回帰防止。
+    """
+    from _observability import redact_error_message
+
+    msg_ipv6 = "bind ::1/64 failed"
+    redacted_ipv6 = redact_error_message(msg_ipv6)
+    assert "::1/64" in redacted_ipv6, f"IPv6 should be preserved: {redacted_ipv6!r}"
+
+    msg_data = "decoded data:image/png;base64,iVBOR... successfully"
+    redacted_data = redact_error_message(msg_data)
+    assert "data:image/png" in redacted_data, f"data: URI should be preserved: {redacted_data!r}"
+
+    # mailto:user@host.com もそのまま
+    msg_mail = "send to mailto:foo@example.com/bar"
+    redacted_mail = redact_error_message(msg_mail)
+    assert "mailto:foo@example.com" in redacted_mail, \
+        f"mailto: should be preserved: {redacted_mail!r}"
+
+
+def test_observability_redact_error_message_multiple_paths_in_one_msg() -> None:
+    """PR-K: 1 メッセージに POSIX abs path 複数 → すべて redact。"""
+    from _observability import redact_error_message
+
+    msg = "ERROR: copy /tmp/a/b.json to /var/log/c.log failed"
+    redacted = redact_error_message(msg)
+    assert "/tmp/a/b.json" not in redacted, f"first path leaked: {redacted!r}"
+    assert "/var/log/c.log" not in redacted, f"second path leaked: {redacted!r}"
+    # 両方 redact されている
+    assert redacted.count("<TMP>") + redacted.count("<ABS>") >= 2, \
+        f"both paths should be redacted: {redacted!r}"
+
+
 def test_compare_telop_split_error_message_redacted() -> None:
     """compare_telop_split で error=str(e) → tail に raw abs path が漏れないこと。
 
@@ -4030,6 +4095,9 @@ def main() -> int:
         test_compare_telop_split_typo_dict_invalid_emits_tail,
         test_preflight_video_write_config_parse_error_emits_tail,
         test_observability_redact_error_message_strips_abs_path,
+        test_observability_redact_error_message_windows_path,
+        test_observability_redact_error_message_ipv6_and_data_uri_safe,
+        test_observability_redact_error_message_multiple_paths_in_one_msg,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,

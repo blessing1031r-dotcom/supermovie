@@ -139,9 +139,14 @@ def _lexical_redact(s, home):
     return s
 
 
-# `/...` 風の path token を抽出。直前が word 文字 (URL の `https:` / `file:` 等の scheme) や
+# `/...` 風の POSIX abs path token を抽出。直前が word 文字 (URL の `https:` / `file:` 等の scheme) や
 # `:` の場合はマッチしない (URL 破壊回避、Codex 23:33 P2 #1)。
 _ABS_PATH_RE = re.compile(r"(?<![A-Za-z0-9_:/])(/[A-Za-z0-9._/\-]+)")
+
+# Windows abs path token (drive letter + `:` + `\` or `/`)。SuperMovie は Darwin/Linux 主だが、
+# CI / cross-platform エラー文字列 / Windows tool 経由で leak する可能性に対する defense-in-depth (PR-K、Codex 00:36)。
+# 例: `C:\Users\name\foo`、`D:/Projects/bar`。直前が word 文字なら非 match (URL 等で誤発火しない)。
+_WIN_PATH_RE = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z]:[\\\/][^\s'\"]+)")
 
 
 def redact_secret(value, *, last_n=4, mask_char="*"):
@@ -184,16 +189,32 @@ def redact_error_message(msg):
 
     URL 破壊回避: `https://...` の `://` 配下は scheme の `:` が直前にあるため非 match。
     純粋な絶対 path のみ redact 対象。
+
+    PR-K (Codex 00:36 approve): Windows path (`C:\\...`、`D:/...`) も `_WIN_PATH_RE` で
+    `<ABS>/<basename>` に置換、cross-platform error string leak への defense-in-depth。
     """
     if not isinstance(msg, str):
         return msg
     home = str(Path.home())
 
-    def _sub(m):
+    def _sub_posix(m):
         path = m.group(1)
         return _lexical_redact(path, home)
 
-    return _ABS_PATH_RE.sub(_sub, msg)
+    def _sub_win(m):
+        path = m.group(1)
+        # Windows path は drive letter 含めて全置換、basename だけ残す (`C:\Users\foo` → `<ABS>/foo`)
+        # OSError str 等で `\\` escaped で来るケースもあるため、最後 `\\` または `/` token を basename とする。
+        for sep in ("\\", "/"):
+            if sep in path:
+                basename = path.rsplit(sep, 1)[-1]
+                if basename:
+                    return f"<ABS>/{basename}"
+        return "<ABS>"
+
+    msg = _ABS_PATH_RE.sub(_sub_posix, msg)
+    msg = _WIN_PATH_RE.sub(_sub_win, msg)
+    return msg
 
 
 def safe_artifact_path(path, *, project_root=None, repo_root=None, unsafe_keep_abs_path=False):
