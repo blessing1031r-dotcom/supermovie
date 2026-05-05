@@ -533,6 +533,28 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
             f"build_status: cost must be dict or None, got "
             f"{type(cost).__name__} ({cost!r})"
         )
+    # PR-AK (Codex 03:51 verdict AP) defense: counts / artifacts は v1
+    # schema common field の構造で、旧実装 `counts or {}` / `artifacts or []`
+    # は falsy 型違いを silent normalize、truthy 型違い (list / str / int / bool /
+    # dict 単体 etc.) をそのまま payload に通していた。caller の bug を helper が
+    # 隠す経路を断ち、payload 構築側責務に固定する。
+    if counts is not None and not isinstance(counts, dict):
+        raise TypeError(
+            f"build_status: counts must be dict or None, got "
+            f"{type(counts).__name__} ({counts!r})"
+        )
+    if artifacts is not None:
+        if not isinstance(artifacts, list):
+            raise TypeError(
+                f"build_status: artifacts must be list or None, got "
+                f"{type(artifacts).__name__} ({artifacts!r})"
+            )
+        for i, item in enumerate(artifacts):
+            if not isinstance(item, dict):
+                raise TypeError(
+                    f"build_status: artifacts[{i}] must be dict, got "
+                    f"{type(item).__name__} ({item!r})"
+                )
     v1_status, v1_category = map_status(v0_status)
     if category_override is not None:
         v1_category = category_override

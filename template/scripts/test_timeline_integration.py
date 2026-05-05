@@ -4290,6 +4290,124 @@ def test_observability_build_status_cost_dict_strict() -> None:
             )
 
 
+def test_observability_build_status_counts_artifacts_strict() -> None:
+    """`build_status(counts=...)` / `build_status(artifacts=...)` の defensive
+    contract lock-in (Codex 03:51 PR-AK verdict AP、observability v1 schema
+    drift 防止)。
+
+    旧実装 `counts or {}` / `artifacts or []` は型 validation なしで以下の
+    drift を silent に通していた:
+
+      - counts=[1,2] (truthy list) → payload に list が schema 違反で乗る
+      - counts="abc" (truthy str)  → payload に str が乗る
+      - counts=5 / True (truthy)   → 同上
+      - artifacts=[{"a":1}, "str", 5] (mixed) → list 内 non-dict 通過
+      - artifacts={"a":1} (dict 単体) → list ではなく dict 通過
+      - artifacts="x" (truthy str) → 同上
+
+    新 contract:
+      - counts: None or dict のみ受理、それ以外 explicit TypeError
+      - artifacts: None or list のみ受理 + list 内全 entry が dict、
+        それ以外 explicit TypeError (entry index 含む詳細 msg)
+
+    既存 strict 系 (PR-AC exit_code int / PR-AD redaction_rules str-only /
+    PR-AF cost dict-or-None) と同 level の defensive lint。
+    """
+    from _observability import build_status
+
+    # ===== counts =====
+    # (1a) None → {} (helper 慣習維持)
+    p1 = build_status(script="x", v0_status="success", exit_code=0,
+                      counts=None)
+    assert p1["counts"] == {}
+
+    # (1b) 通常 dict → そのまま
+    p2 = build_status(script="x", v0_status="success", exit_code=0,
+                      counts={"slides": 10})
+    assert p2["counts"] == {"slides": 10}
+
+    # (1c) empty dict → そのまま
+    p3 = build_status(script="x", v0_status="success", exit_code=0,
+                      counts={})
+    assert p3["counts"] == {}
+
+    # (1d) list / str / int / bool / tuple / set 全部 reject
+    for bad_counts in ([1, 2], [], "abc", "", 5, 0, True, False,
+                       (1, 2), {1, 2}, object()):
+        try:
+            build_status(script="x", v0_status="success", exit_code=0,
+                         counts=bad_counts)
+        except TypeError as e:
+            assert "counts" in str(e) and "dict" in str(e), (
+                f"TypeError msg should mention counts + dict, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"counts={bad_counts!r} ({type(bad_counts).__name__}) "
+                f"must raise TypeError"
+            )
+
+    # ===== artifacts =====
+    # (2a) None → [] (helper 慣習維持)
+    pa1 = build_status(script="x", v0_status="success", exit_code=0,
+                       artifacts=None)
+    assert pa1["artifacts"] == []
+
+    # (2b) 通常 list-of-dict → そのまま
+    arts = [{"path": "x.json", "kind": "output"},
+            {"path": "y.json", "kind": "report"}]
+    pa2 = build_status(script="x", v0_status="success", exit_code=0,
+                       artifacts=arts)
+    assert pa2["artifacts"] == arts
+
+    # (2c) empty list → そのまま
+    pa3 = build_status(script="x", v0_status="success", exit_code=0,
+                       artifacts=[])
+    assert pa3["artifacts"] == []
+
+    # (2d) dict 単体 (not list) reject
+    try:
+        build_status(script="x", v0_status="success", exit_code=0,
+                     artifacts={"path": "x.json"})
+    except TypeError as e:
+        assert "artifacts" in str(e) and "list" in str(e)
+    else:
+        raise AssertionError("dict 単体 artifacts must raise TypeError")
+
+    # (2e) str / int / tuple reject (not list)
+    for bad_arts in ("artifact", "", 5, (1, 2)):
+        try:
+            build_status(script="x", v0_status="success", exit_code=0,
+                         artifacts=bad_arts)
+        except TypeError:
+            pass
+        else:
+            raise AssertionError(
+                f"non-list artifacts={bad_arts!r} must raise TypeError"
+            )
+
+    # (2f) list 内 non-dict entry reject (混在も含む)
+    bad_artifact_lists = [
+        ["str_only"],
+        [{"path": "ok.json"}, "str_in_middle", {"path": "ok2.json"}],
+        [{"a": 1}, 5],
+        [None],
+        [[]],
+    ]
+    for bad_list in bad_artifact_lists:
+        try:
+            build_status(script="x", v0_status="success", exit_code=0,
+                         artifacts=bad_list)
+        except TypeError as e:
+            assert "artifacts" in str(e) and "dict" in str(e), (
+                f"TypeError msg should mention artifacts + dict, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"artifacts={bad_list!r} (mixed/non-dict) must raise TypeError"
+            )
+
+
 def test_observability_resolve_run_context_uses_env() -> None:
     """env (SUPERMOVIE_RUN_ID / PARENT_RUN_ID / STEP_ID) 設定値をそのまま採用する。"""
     import os as _os
@@ -6077,6 +6195,7 @@ def main() -> int:
         test_observability_build_status_redaction_rules_strict,
         test_observability_build_status_reserved_key_collision,
         test_observability_build_status_cost_dict_strict,
+        test_observability_build_status_counts_artifacts_strict,
         test_observability_build_cost_payload_nan_inf_defense,
         # PR-E (distributed tracing run_id active emission): 7 件
         test_observability_resolve_run_context_uses_env,
