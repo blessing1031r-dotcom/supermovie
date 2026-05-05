@@ -6196,12 +6196,14 @@ def test_observability_docs_migration_steps_numbering() -> None:
         f"(append 漏れ / copy-paste 事故?)"
     )
 
-    # (2) 連番 1..N
+    # (2) 連番 1..N + 出現順序が 1, 2, 3, ... になっている (Codex 05:14 PR-AV
+    # P2 fix: sorted 比較だと row 順序入れ替えを検出できない。append-only
+    # 運用 contract を守るため、raw 出現順 == range(1, N+1) を assert)
     expected = list(range(1, len(step_numbers) + 1))
-    assert sorted(step_numbers) == expected, (
-        f"Migration steps が 1..N 連番でない: "
-        f"got sorted={sorted(step_numbers)}, expected={expected} "
-        f"(skip / 1 始まりでない / backfill 漏れ?)"
+    assert step_numbers == expected, (
+        f"Migration steps が 1..N の append 順序でない: "
+        f"got={step_numbers}, expected={expected} "
+        f"(skip / 1 始まりでない / row 順序入れ替え / backfill 漏れ?)"
     )
 
     # (3) 各行の PR cell が空でない (drift 補助 sanity check、最低限の構造維持)
