@@ -8788,6 +8788,271 @@ def test_observability_path_policy_placeholder_set_docs_code_lint() -> None:
     )
 
 
+def test_observability_cost_abort_threshold_docs_code_lint() -> None:
+    """`docs/OBSERVABILITY.md §Cost Abort Threshold` ↔
+    `STATUS_MAP["cost_guard_aborted"]` / `generate_slide_plan.py` の
+    abort 経路 wiring 双方向 lint
+    (Codex 08:34 PR-CE verdict、PR-BD/BE/BF/BH/BI/BJ/BK/BL/BM/BN/BO/CC/CD
+    同型を pre-API cost abort contract axis に展開)。
+
+    docs §Cost Abort Threshold は PR-F で確立した pre-API abort contract
+    を 5 bullet で定義:
+      bullet 1: env `SUPERMOVIE_COST_USD_ABORT_AT` / CLI `--cost-abort-at`、
+                超過時 `status=error / category=cost_guard_aborted /
+                exit_code=10`
+      bullet 2: precedence CLI > env > None
+      bullet 3: rate 未設定 (`estimated_cost_usd_upper_bound=None`) 時は
+                閾値設定があっても skip (cost 不明で勝手に abort せず通常
+                進行)
+      bullet 4: abort emission payload に
+                `estimated_cost_usd_upper_bound` /
+                `cost_abort_at` /
+                `estimated_input_tokens` /
+                `estimated_output_tokens_upper_bound` を含む
+      bullet 5: 関連 test 3 件 (
+                `test_generate_slide_plan_cost_abort_blocks_api_when_estimate_exceeds` /
+                `test_generate_slide_plan_cost_abort_skipped_when_rate_unset` /
+                `test_generate_slide_plan_cost_abort_cli_overrides_env`)
+
+    docs と code が drift すると、(a) docs 仕様で `exit_code=10` だが code
+    が違う値で emit すると runbook / dashboard alarm の trigger 条件が壊れ、
+    (b) `cost_guard_aborted` category 名 rename が片側だけ起きると payload
+    filter が drift、(c) abort emission の token 4 keys が片側だけ削除で
+    cost analytics 欠落、(d) rate 未設定 skip 条件が片側削除で
+    `estimate=None` でも abort 経路に流れ silent failure、(e) docs に挙げた
+    関連 test name が rename / 削除で reference 切れ。
+
+    本 lint は 5-part validation:
+      1. docs §Cost Abort Threshold section に bullet 1-4 contract literal
+         (`SUPERMOVIE_COST_USD_ABORT_AT`, `--cost-abort-at`,
+         `category=cost_guard_aborted`, `exit_code=10`,
+         `CLI > env > None`, `estimated_cost_usd_upper_bound=None` の
+         skip 条件、abort payload 4 keys) の docs presence
+      2. `STATUS_MAP["cost_guard_aborted"] == ("error", "cost_guard_aborted")`
+         mapping consistency
+      3. `generate_slide_plan.py` AST に
+         `emit_json("cost_guard_aborted", 10, ...)` Call literal が存在 +
+         2nd arg exit_code == 10 + abort emit kwargs に
+         `estimated_cost_usd_upper_bound` / `cost_abort_at` /
+         `estimated_input_tokens` /
+         `estimated_output_tokens_upper_bound` の 4 keys 全 presence
+      4. abort 判定 if 文に `cost_abort_at is not None` AND
+         `estimated_cost_usd_upper_bound is not None` の AND ガード存在
+         (rate 未設定 skip 条件 lock-in、片側削除 → silent abort 経路 drift
+         を fail-loud)
+      5. docs bullet 5 の 関連 test 3 件が test_timeline_integration.py に
+         実 FunctionDef として登録済 (rename / 削除で docs reference 切れ
+         を fail-loud)
+
+    PR-BD/BE/BF/BH/BI/BJ/BK/BL/BM/BN/BO/CC/CD 同 level の docs/code 双方向
+    audit、本 lint は pre-API cost abort threshold contract という別 axis
+    を fix + 1 件 regression test。
+    """
+    import ast as _ast_re
+    import re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    md = obs_md.read_text(encoding="utf-8")
+
+    # `### Cost Abort Threshold` section 抽出
+    section_re = re.compile(
+        r"^### Cost Abort Threshold[^\n]*\n(?P<body>.*?)"
+        r"(?=^## |^### )",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = section_re.search(md)
+    assert m is not None, (
+        "`### Cost Abort Threshold` の section が docs に見つからない "
+        "(heading rename / 構造変更?)"
+    )
+    body = m.group("body")
+
+    # docs side contract literal presence (bullet 1-4)
+    DOCS_LITERALS = [
+        "SUPERMOVIE_COST_USD_ABORT_AT",
+        "--cost-abort-at",
+        "category=cost_guard_aborted",
+        "exit_code=10",
+        "CLI > env > None",
+        "estimated_cost_usd_upper_bound=None",
+        "estimated_input_tokens",
+        "estimated_output_tokens_upper_bound",
+        "cost_abort_at",
+    ]
+    for lit in DOCS_LITERALS:
+        assert lit in body, (
+            f"docs §Cost Abort Threshold に contract literal '{lit}' が "
+            f"見つからない (PR-F abort contract drift?)"
+        )
+
+    # bullet 5 docs 関連 test name list
+    DOCS_RELATED_TESTS = [
+        "test_generate_slide_plan_cost_abort_blocks_api_when_estimate_exceeds",
+        "test_generate_slide_plan_cost_abort_skipped_when_rate_unset",
+        "test_generate_slide_plan_cost_abort_cli_overrides_env",
+    ]
+    for tname in DOCS_RELATED_TESTS:
+        assert tname in body, (
+            f"docs §Cost Abort Threshold bullet 5 に test name "
+            f"'{tname}' が見つからない (関連 test 列挙削除?)"
+        )
+
+    # code 側 STATUS_MAP["cost_guard_aborted"] mapping verify
+    sys.path.insert(
+        0, str(repo_root / "template" / "scripts")
+    )
+    try:
+        import _observability as _obs
+
+        cga_entry = _obs.STATUS_MAP.get("cost_guard_aborted")
+        assert cga_entry is not None, (
+            "STATUS_MAP に 'cost_guard_aborted' entry が見つからない "
+            "(PR-F abort path 削除 / rename drift?)"
+        )
+        assert cga_entry == ("error", "cost_guard_aborted"), (
+            f"STATUS_MAP['cost_guard_aborted'] が "
+            f"('error', 'cost_guard_aborted') 想定 / 実測={cga_entry} "
+            f"(docs §Cost Abort Threshold bullet 1 contract と食い違い)"
+        )
+    finally:
+        sys.path.pop(0)
+
+    # generate_slide_plan.py AST audit
+    gsp_path = (
+        repo_root / "template" / "scripts" / "generate_slide_plan.py"
+    )
+    gsp_src = gsp_path.read_text(encoding="utf-8")
+    gsp_tree = _ast_re.parse(gsp_src, filename="generate_slide_plan.py")
+
+    # part 3: emit_json("cost_guard_aborted", 10, ...) Call literal +
+    # abort kwargs 4 keys presence
+    EMIT_FUNC_NAMES = {
+        "emit_json",
+        "_obs_emit_json",
+        "_emit_early",
+        "_emit",
+        "emit_obs",
+        "_emit_error",
+    }
+    EXPECTED_ABORT_KWARGS = {
+        "estimated_cost_usd_upper_bound",
+        "cost_abort_at",
+        "estimated_input_tokens",
+        "estimated_output_tokens_upper_bound",
+    }
+    found_abort_emit = False
+    for node in _ast_re.walk(gsp_tree):
+        if not isinstance(node, _ast_re.Call):
+            continue
+        func = node.func
+        if not (
+            isinstance(func, _ast_re.Name)
+            and func.id in EMIT_FUNC_NAMES
+        ):
+            continue
+        if not (
+            node.args
+            and isinstance(node.args[0], _ast_re.Constant)
+            and node.args[0].value == "cost_guard_aborted"
+        ):
+            continue
+        # 2nd positional arg = exit_code
+        assert len(node.args) >= 2, (
+            "emit_json('cost_guard_aborted', ...) に exit_code 2nd "
+            "positional arg が見つからない"
+        )
+        assert isinstance(node.args[1], _ast_re.Constant), (
+            f"emit_json('cost_guard_aborted', <non-Constant>) (動的 "
+            f"exit_code? / refactor drift)"
+        )
+        assert node.args[1].value == 10, (
+            f"emit_json('cost_guard_aborted', <exit_code>) の exit_code "
+            f"が 10 でない: {node.args[1].value!r} (docs §Cost Abort "
+            f"Threshold bullet 1 'exit_code=10' contract と drift)"
+        )
+        # kwargs に 4 keys 全 presence
+        kwarg_names = {kw.arg for kw in node.keywords if kw.arg}
+        missing = EXPECTED_ABORT_KWARGS - kwarg_names
+        assert not missing, (
+            f"emit_json('cost_guard_aborted', 10, ...) の kwargs に "
+            f"abort payload key が欠落: {sorted(missing)} (docs §Cost "
+            f"Abort Threshold bullet 4 emission payload contract drift?)"
+        )
+        found_abort_emit = True
+    assert found_abort_emit, (
+        "generate_slide_plan.py AST に "
+        "`emit_json('cost_guard_aborted', 10, ...)` Call literal が "
+        "見つからない (PR-F abort 経路 wiring 削除 / rename drift?)"
+    )
+
+    # part 4: rate 未設定 skip 条件 (cost_abort_at is not None AND
+    # estimated_cost_usd_upper_bound is not None) の AND ガード presence
+    found_skip_guard = False
+    for node in _ast_re.walk(gsp_tree):
+        if not isinstance(node, _ast_re.If):
+            continue
+        # `if cost_abort_at is not None and estimated_cost_usd_upper_bound is not None:`
+        # のような BoolOp(And, [Compare(...), Compare(...)]) を探す
+        if not isinstance(node.test, _ast_re.BoolOp):
+            continue
+        if not isinstance(node.test.op, _ast_re.And):
+            continue
+        names_in_test: set[str] = set()
+        for cmp_node in node.test.values:
+            if not isinstance(cmp_node, _ast_re.Compare):
+                continue
+            # left side が Name で is not None compare
+            if not isinstance(cmp_node.left, _ast_re.Name):
+                continue
+            if not cmp_node.ops or not isinstance(
+                cmp_node.ops[0], _ast_re.IsNot
+            ):
+                continue
+            if not (
+                cmp_node.comparators
+                and isinstance(cmp_node.comparators[0], _ast_re.Constant)
+                and cmp_node.comparators[0].value is None
+            ):
+                continue
+            names_in_test.add(cmp_node.left.id)
+        if {
+            "cost_abort_at",
+            "estimated_cost_usd_upper_bound",
+        }.issubset(names_in_test):
+            found_skip_guard = True
+            break
+    assert found_skip_guard, (
+        "generate_slide_plan.py AST に rate 未設定 skip 条件の AND "
+        "ガード `if cost_abort_at is not None and "
+        "estimated_cost_usd_upper_bound is not None:` が見つからない "
+        "(片側削除で silent abort 経路 drift / docs §Cost Abort "
+        "Threshold bullet 3 contract drift?)"
+    )
+
+    # part 5: docs 関連 test 3 件 が本 file の FunctionDef として
+    # 登録済であることを確認 (rename / 削除で docs reference 切れ
+    # fail-loud)
+    test_file_path = (
+        repo_root / "template" / "scripts" / "test_timeline_integration.py"
+    )
+    test_src = test_file_path.read_text(encoding="utf-8")
+    test_tree = _ast_re.parse(test_src, filename="test_timeline_integration.py")
+    defined_funcs = {
+        n.name
+        for n in _ast_re.walk(test_tree)
+        if isinstance(n, _ast_re.FunctionDef)
+    }
+    missing_tests = [t for t in DOCS_RELATED_TESTS if t not in defined_funcs]
+    assert not missing_tests, (
+        f"docs §Cost Abort Threshold bullet 5 で挙げられた関連 test が "
+        f"test_timeline_integration.py に FunctionDef として登録されて "
+        f"いない: {missing_tests} (test rename / 削除で docs reference "
+        f"切れ?)"
+    )
+
+
 def test_observability_missing_rate_behavior_docs_code_lint() -> None:
     """`docs/OBSERVABILITY.md §Missing Rate Behavior` ↔
     `_resolve_decimal()` / `STATUS_MAP["cost_guard_arg_invalid"]` /
@@ -10537,6 +10802,7 @@ def main() -> int:
         test_observability_rate_env_var_convention_docs_code_lint,
         test_observability_status_mapping_policy_docs_code_lint,
         test_observability_missing_rate_behavior_docs_code_lint,
+        test_observability_cost_abort_threshold_docs_code_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
