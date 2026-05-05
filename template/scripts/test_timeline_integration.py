@@ -3424,19 +3424,21 @@ def test_observability_emit_json_format_lint() -> None:
 
     from _observability import build_status, emit_json
 
-    # (1) plain payload で 1 line + trailing newline
+    # (1) plain payload で exactly 1 newline (= 1 line + final \n)、blank
+    # 行混入なし。Codex 02:38 PR-Y review P2 fix: `out.count("\n") == 1`
+    # で blank line 検出を tighten (downstream `splitlines()[-1]` が空行を
+    # 拾って壊れる risk を closure)。
     payload = build_status(script="x", v0_status="success", exit_code=0)
     buf = io.StringIO()
     with redirect_stdout(buf):
         rc = emit_json(True, payload)
     out = buf.getvalue()
     assert out.endswith("\n"), f"emit_json output must end with newline, got {out!r}"
-    lines = out.split("\n")
-    # split で末尾 "" 1 個発生 (trailing \n 後)、内容行は 1 件
-    assert len([ln for ln in lines if ln]) == 1, (
-        f"expected exactly 1 content line, got {len([ln for ln in lines if ln])}: {out!r}"
+    assert out.count("\n") == 1, (
+        f"emit_json output must contain exactly 1 newline (no blank lines), "
+        f"got {out.count('\n')}: {out!r}"
     )
-    parsed = json.loads(out.rstrip("\n"))
+    parsed = json.loads(out[:-1])
     assert parsed["status"] == "ok"
     assert parsed["script"] == "x"
     assert rc == 0
@@ -3451,8 +3453,13 @@ def test_observability_emit_json_format_lint() -> None:
         emit_json(True, extras_with_ctrl)
     out2 = buf2.getvalue()
     assert out2.endswith("\n"), f"output must end with newline: {out2!r}"
-    # control char の literal newline が body に含まれていない (escape 済)
-    body2 = out2.rstrip("\n")
+    # exactly 1 newline (control char escape の double check、blank line nor
+    # body 内 raw \n がない)
+    assert out2.count("\n") == 1, (
+        f"control-char case must produce exactly 1 newline, got "
+        f"{out2.count('\n')}: {out2!r}"
+    )
+    body2 = out2[:-1]
     assert "\n" not in body2, (
         f"emit_json body must not contain raw newline (must be escaped): {body2!r}"
     )
@@ -3473,7 +3480,11 @@ def test_observability_emit_json_format_lint() -> None:
         emit_json(True, extras_jp)
     out3 = buf3.getvalue()
     assert out3.endswith("\n")
-    body3 = out3.rstrip("\n")
+    assert out3.count("\n") == 1, (
+        f"non-ASCII case must produce exactly 1 newline, got "
+        f"{out3.count('\n')}: {out3!r}"
+    )
+    body3 = out3[:-1]
     assert "\n" not in body3, "single-line invariant broken with non-ASCII"
     assert "日本語テスト" in body3, (
         f"ensure_ascii=False expected to keep literal JP, got {body3!r}"
@@ -3497,7 +3508,11 @@ def test_observability_emit_json_format_lint() -> None:
         rc5 = emit_json(True, err_payload)
     out5 = buf5.getvalue()
     assert out5.endswith("\n")
-    parsed5 = json.loads(out5.rstrip("\n"))
+    assert out5.count("\n") == 1, (
+        f"error case must produce exactly 1 newline, got "
+        f"{out5.count('\n')}: {out5!r}"
+    )
+    parsed5 = json.loads(out5[:-1])
     assert parsed5["status"] == "error"
     assert parsed5["exit_code"] == 2
     assert rc5 == 2, f"emit_json must return payload exit_code, got {rc5}"
