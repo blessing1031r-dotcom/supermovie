@@ -8488,8 +8488,6 @@ def test_observability_stdout_stderr_stream_contract_lint() -> None:
     # は `import sys as _sys` で `file=_sys.stderr` 経由する
     # (build_telop_data.py:354) ので、AST で keyword 'file' の value を抽
     # 出して `<name>.stderr` を含むか判定する形。
-    json_tail_re = re.compile(r"\b(?:_obs_)?emit_json\(")
-
     def _is_stderr_value(node: _ast.AST) -> bool:
         """`<name>.stderr` / 素の `stderr` を AST で判定。"""
         if isinstance(node, _ast.Attribute) and node.attr == "stderr":
@@ -8507,6 +8505,7 @@ def test_observability_stdout_stderr_stream_contract_lint() -> None:
         print_calls_no_file: list[int] = []
         print_calls_to_stderr: list[int] = []
         stderr_write_calls: list[int] = []
+        emit_json_calls: list[int] = []
         for node in _ast.walk(tree):
             if not isinstance(node, _ast.Call):
                 continue
@@ -8520,6 +8519,15 @@ def test_observability_stdout_stderr_stream_contract_lint() -> None:
                     print_calls_no_file.append(node.lineno)
                 elif _is_stderr_value(file_kw.value):
                     print_calls_to_stderr.append(node.lineno)
+            # emit_json(...) / _obs_emit_json(...) call detection.
+            # Codex 07:36 review P2 fix: 旧 raw regex は `def emit_json(`
+            # の wrapper 定義行も match して、call site が消えた drift
+            # (definition だけ残る) を見逃した。AST で Call node のみ拾い
+            # 関数定義は対象外、確実な call presence を判定。
+            elif isinstance(fn, _ast.Name) and fn.id in (
+                "emit_json", "_obs_emit_json",
+            ):
+                emit_json_calls.append(node.lineno)
             # <name>.stderr.write(...) call detection
             elif isinstance(fn, _ast.Attribute) and fn.attr == "write":
                 # fn.value が <name>.stderr 形式
@@ -8538,12 +8546,13 @@ def test_observability_stdout_stderr_stream_contract_lint() -> None:
             f"stream が caller から消えた / 全 print が stderr に追放?)"
         )
 
-        # json tail: _obs_emit_json / emit_json call (regex のままで OK、
-        # call name は確実に literal text なので false-positive 余地小)
-        assert json_tail_re.search(src), (
+        # json tail: _obs_emit_json / emit_json call site (definition では
+        # なく Call node) が 1 件以上
+        assert emit_json_calls, (
             f"{caller_name}: docs §Stdout And Stderr 'stdout (json tail)' "
-            f"に対応する `_obs_emit_json(...)` / `emit_json(...)` 呼び出しが "
-            f"見つからない (v1 schema tail emit 経路が caller から消えた?)"
+            f"に対応する `_obs_emit_json(...)` / `emit_json(...)` AST Call "
+            f"node が見つからない (v1 schema tail emit 経路が caller から "
+            f"消えた / wrapper 定義だけ残って call site が消える drift?)"
         )
 
         # stderr: print(..., file=<...>.stderr) または <...>.stderr.write
