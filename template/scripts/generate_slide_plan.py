@@ -23,6 +23,7 @@ from pathlib import Path
 # 既存 v0 emit pattern は build_status の **extra で互換維持。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _observability import (
+    build_cost_payload,
     build_status,
     compute_rate_missing,
     emit_json as _obs_emit_json,
@@ -221,7 +222,7 @@ def main():
     # dry-run JSON は本 helper を使わず既存 schema を維持 (OBSERVABILITY.md §v0 dry-run JSON legacy)。
     # extra kwargs は build_status で v1 schema に top-level merge され v0 emit pattern と互換。
     # output 等の path field は safe_artifact_path で project-root 相対化 (--unsafe-keep-abs-path で raw)。
-    def emit_json(status: str, exit_code: int, **extra) -> int:
+    def emit_json(status: str, exit_code: int, *, cost=None, **extra) -> int:
         # Apply abs_path redaction to known path-bearing fields
         redaction_rules = []
         if "output" in extra and extra["output"] is not None:
@@ -236,6 +237,7 @@ def main():
             script="generate_slide_plan",
             v0_status=status,
             exit_code=exit_code,
+            cost=cost,  # PR-S: nested cost object emit (None で legacy null payload 維持)
             redaction_rules=redaction_rules,
             run_id=run_ctx["run_id"],
             parent_run_id=run_ctx["parent_run_id"],
@@ -405,8 +407,15 @@ def main():
         # PR-E: --json-log 時は v1 status tail も emit (run_id propagation、2-emission pattern)。
         # dry-run legacy JSON は本 helper を通さず維持 (OBSERVABILITY.md §v0 dry-run JSON legacy)。
         if args.json_log:
+            # PR-S: nested cost object も emit (top-level extras は backward compat で残す)
+            cost_payload = build_cost_payload(
+                estimated_cost_usd_upper_bound, rate_input, rate_output,
+                tokens_input=estimated_input_tokens,
+                tokens_output=estimated_output_tokens_upper_bound,
+            )
             return emit_json(
                 "dry_run", 0,
+                cost=cost_payload,
                 model=args.model,
                 max_tokens=max_tokens,
                 estimated_input_tokens=estimated_input_tokens,
@@ -427,9 +436,16 @@ def main():
                 f"API call abort",
                 file=sys.stderr,
             )
+            # PR-S: cost_guard_aborted も nested cost object emit (rate 設定済 path のみ到達)。
+            cost_payload = build_cost_payload(
+                estimated_cost_usd_upper_bound, rate_input, rate_output,
+                tokens_input=estimated_input_tokens,
+                tokens_output=estimated_output_tokens_upper_bound,
+            )
             return emit_json(
                 "cost_guard_aborted",
                 10,
+                cost=cost_payload,
                 model=args.model,
                 max_tokens=max_tokens,
                 estimated_input_tokens=estimated_input_tokens,

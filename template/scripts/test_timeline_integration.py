@@ -3927,6 +3927,119 @@ def test_observability_compute_rate_missing_helper() -> None:
     assert compute_rate_missing(0.0) is False
 
 
+def test_observability_build_cost_payload_helper() -> None:
+    """PR-S (Codex 01:46 X approve): build_cost_payload() が docs §Cost JSON Shape の
+    nested cost object schema を返すこと。
+    """
+    from _observability import build_cost_payload
+
+    # rate 設定済 case: estimate / rate / tokens 全埋め
+    p = build_cost_payload(
+        estimate=0.000123,
+        rate_input=1.0,
+        rate_output=5.0,
+        tokens_input=100,
+        tokens_output=50,
+    )
+    assert p["currency"] == "USD"
+    assert p["estimate"] == 0.000123
+    assert p["rate_input_usd_per_mtok"] == 1.0
+    assert p["rate_output_usd_per_mtok"] == 5.0
+    assert p["tokens_input"] == 100
+    assert p["tokens_output"] == 50
+    assert p["rate_missing"] is False
+    assert "rate_source" in p
+
+    # rate 未設定 case: estimate=None / rate=None / rate_missing=True
+    p_unset = build_cost_payload(estimate=None, rate_input=None, rate_output=None)
+    assert p_unset["estimate"] is None
+    assert p_unset["rate_input_usd_per_mtok"] is None
+    assert p_unset["rate_output_usd_per_mtok"] is None
+    assert p_unset["rate_missing"] is True
+    assert p_unset["tokens_input"] is None
+    assert p_unset["tokens_output"] is None
+
+
+def test_generate_slide_plan_dry_run_emits_nested_cost() -> None:
+    """PR-S: generate_slide_plan dry-run --json-log の v1 tail に nested cost object が
+    含まれ、rate 設定時 estimate=finite / rate_missing=false、未設定時 estimate=null /
+    rate_missing=true が一致すること (top-level extras と nested cost で discriminator 整合)。
+    """
+    import os as _os
+    import io
+    import sys as _sys
+    import importlib
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+    saved_env = {k: _os.environ.get(k) for k in (
+        "ANTHROPIC_API_KEY",
+        "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
+        "SUPERMOVIE_RATE_INPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+    )}
+
+    proj = Path(tempfile.mkdtemp(prefix="cost_nested_set_"))
+    (proj / "transcript_fixed.json").write_text(
+        json.dumps({"duration_ms": 5000, "words": [], "segments": [{"text": "x", "start": 0, "end": 100}]}),
+        encoding="utf-8",
+    )
+    (proj / "project-config.json").write_text(
+        json.dumps({"format": "youtube", "videoType": "test", "tone": "test"}),
+        encoding="utf-8",
+    )
+    try:
+        _os.environ["SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK"] = "1.0"
+        _os.environ["SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK"] = "5.0"
+        for k in ("SUPERMOVIE_RATE_INPUT_PER_MTOK", "SUPERMOVIE_RATE_OUTPUT_PER_MTOK"):
+            _os.environ.pop(k, None)
+        _os.environ.pop("ANTHROPIC_API_KEY", None)
+        _os.chdir(str(proj))
+
+        import generate_slide_plan as gsp
+        importlib.reload(gsp)
+        gsp.PROJ = proj
+
+        _sys.argv = ["generate_slide_plan.py", "--dry-run", "--json-log"]
+        out_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(io.StringIO()):
+            gsp.main()
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        v1_tail = json.loads(lines[-1])
+
+        # nested cost object 存在確認
+        cost = v1_tail.get("cost")
+        assert isinstance(cost, dict), f"cost should be nested dict, got {cost!r}"
+        assert cost.get("currency") == "USD"
+        assert isinstance(cost.get("estimate"), (int, float))
+        assert cost.get("rate_input_usd_per_mtok") == 1.0
+        assert cost.get("rate_output_usd_per_mtok") == 5.0
+        assert cost.get("rate_missing") is False
+        assert "rate_source" in cost
+        # tokens は dry-run の時点では estimated_input_tokens / output_upper_bound が入る
+        assert cost.get("tokens_input") is not None
+        assert cost.get("tokens_output") is not None
+
+        # backward compat: top-level extras も維持
+        assert v1_tail.get("estimated_cost_usd_upper_bound") is not None
+        assert v1_tail.get("rate_missing") is False
+        # discriminator 整合性 (nested と top-level)
+        assert cost["rate_missing"] == v1_tail["rate_missing"]
+        assert cost["estimate"] == v1_tail["estimated_cost_usd_upper_bound"]
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        for k, v in saved_env.items():
+            if v is None:
+                _os.environ.pop(k, None)
+            else:
+                _os.environ[k] = v
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
 def test_observability_redaction_applied_rules_canonicalized() -> None:
     """PR-Q (Codex 01:30 AC approve): build_status() が redaction.applied_rules を
     sorted(set(...)) で正規化すること。caller 側 dedup 漏れ / 順序差を helper で吸収、
@@ -4437,6 +4550,9 @@ def main() -> int:
         test_generate_slide_plan_rate_missing_false_when_rate_set,
         # PR-O (compute_rate_missing helper sink、Codex 01:12 approve): 1 件
         test_observability_compute_rate_missing_helper,
+        # PR-S (nested cost={...} schema migration、Codex 01:46 X approve): 2 件
+        test_observability_build_cost_payload_helper,
+        test_generate_slide_plan_dry_run_emits_nested_cost,
         # PR-P (entry exit code propagation audit、Codex 01:21 approve): 1 件 (lint-style)
         test_all_seven_scripts_use_sys_exit_in_main,
         # PR-Q (redaction.applied_rules canonicalize、Codex 01:30 approve): 1 件

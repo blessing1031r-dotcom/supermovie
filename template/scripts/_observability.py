@@ -306,6 +306,40 @@ def compute_rate_missing(estimate):
     return estimate is None
 
 
+def build_cost_payload(estimate, rate_input, rate_output, *,
+                       currency="USD",
+                       tokens_input=None, tokens_output=None,
+                       rate_source="env:SUPERMOVIE_RATE_<PROVIDER>_<DIR>_USD_PER_MTOK"):
+    """Nested cost payload builder per docs/OBSERVABILITY.md §Cost JSON Shape (PR-S)。
+
+    PR-N で top-level discriminator (estimated_cost_usd_upper_bound / rate_missing 等) を
+    導入したが、docs §Cost JSON Shape は nested `cost` object を future canonical と定義。
+    本 helper で nested form を emission に追加、downstream parser が nested cost.* で
+    consume できるよう migrate (top-level extras は backward compat で残す)。
+
+    Args:
+      estimate: float | None。rate 未設定時は None、cost.estimate にそのまま load。
+      rate_input / rate_output: float | None。MTok 単価。
+      currency: str default "USD"。
+      tokens_input / tokens_output: int | None。実 API 呼び出し前は None。
+      rate_source: str。env var convention の placeholder。
+
+    Returns:
+      dict: nested cost object per Cost JSON Shape contract。`rate_missing` は
+      `compute_rate_missing(estimate)` で算出 (single source of truth)。
+    """
+    return {
+        "currency": currency,
+        "estimate": estimate,
+        "rate_source": rate_source,
+        "rate_input_usd_per_mtok": rate_input,
+        "rate_output_usd_per_mtok": rate_output,
+        "tokens_input": tokens_input,
+        "tokens_output": tokens_output,
+        "rate_missing": compute_rate_missing(estimate),
+    }
+
+
 def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
                  cost=None, redaction_rules=None,
                  duration_ms=None, category_override=None,
