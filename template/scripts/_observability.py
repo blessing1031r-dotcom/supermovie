@@ -689,6 +689,33 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
             f"build_status: counts must be dict or None, got "
             f"{type(counts).__name__} ({counts!r})"
         )
+    # PR-BC (Codex 06:18 verdict BN) defense: counts 内 cell value 型は
+    # PR-AK で dict shape のみ検査されていたが、value 型は未検査だった。
+    # downstream aggregator (release dashboard / log analytics) は
+    # counts 内 value で sum/avg/diff を取るため、float (precision drift) /
+    # bool (True == 1 conflate) / None (NoneType arith error) / tuple/set/
+    # object (JSON encode 不能) の混入は contract 違反。各 caller の現状は
+    # int (build_slide_data:input_segments/output_slides/used_plan、
+    # build_telop_data:telop_count/weaknesses、visual_smoke:total/mismatched/
+    # formats_count/frames_count) と dict (compare_telop_split:baseline_kpi/
+    # new_kpi/gates) のみで、本 contract で許容型を {int, str, dict, list} に
+    # 限定。bool は int subclass で True == 1 の conflate を避けるため明示
+    # reject (caller 側で int(bool) に正規化)。PR-AK counts dict shape /
+    # PR-BB artifact kind enum と同 level の cell-value strict contract。
+    if counts is not None:
+        for k, v in counts.items():
+            if not isinstance(k, str):
+                raise TypeError(
+                    f"build_status: counts key must be str, got "
+                    f"{type(k).__name__} ({k!r})"
+                )
+            # bool is a subclass of int, so check bool first to reject.
+            if isinstance(v, bool) or not isinstance(v, (int, str, dict, list)):
+                raise TypeError(
+                    f"build_status: counts[{k!r}] value must be int / str / "
+                    f"dict / list (bool / float / None / tuple / set / "
+                    f"object reject)、got {type(v).__name__} ({v!r})"
+                )
     if artifacts is not None:
         if not isinstance(artifacts, list):
             raise TypeError(

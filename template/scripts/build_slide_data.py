@@ -469,7 +469,12 @@ def main():
         counts={
             "input_segments": len(segments),
             "output_slides": len(slides),
-            "used_plan": used_plan,
+            # PR-BC (Codex 06:18 verdict BN) caller fix: counts cell value
+            # contract で bool reject → int 1/0 に正規化。downstream
+            # aggregator が True == 1 と int の混在で sum/avg を歪めるのを
+            # 防ぎ、build_telop_data / visual_smoke / compare_telop_split
+            # の他 counts shape (int / dict のみ) と統一。
+            "used_plan": int(used_plan),
         },
         artifacts=artifacts,
         cost=None,

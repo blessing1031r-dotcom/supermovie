@@ -7325,6 +7325,140 @@ def test_observability_build_status_artifact_kind_enum_contract() -> None:
             )
 
 
+def test_observability_build_status_counts_value_contract() -> None:
+    """`build_status()` の counts 内 cell value 型 contract lock-in
+    (Codex 06:18 PR-BC verdict BN、observability counts aggregator drift 防止)。
+
+    PR-AK で counts dict shape (counts is None or isinstance(dict)) は固定
+    済だが、dict 内 value 型は未検査だった。downstream aggregator (release
+    dashboard / log analytics) は counts 内 value で sum / avg / diff を
+    取るため、float (precision drift) / bool (True == 1 と int の conflate) /
+    None (NoneType arith error) / tuple / set / object (JSON encode 不能)
+    の混入は contract 違反。
+
+    新 contract:
+      - counts key 必須 str (TypeError on non-str key)
+      - counts value ∈ {int, str, dict, list} のみ accept (TypeError on
+        bool / float / None / tuple / set / object)
+      - bool は int subclass だが True == 1 の conflate を避けるため明示
+        reject (caller 側で int(bool) 正規化)
+
+    既存 caller (build_slide_data の input_segments/output_slides/used_plan、
+    build_telop_data の telop_count/weaknesses、visual_smoke の
+    total/mismatched/formats_count/frames_count、compare_telop_split の
+    baseline_kpi/new_kpi/gates) は本 contract に整合。build_slide_data の
+    `used_plan: bool` は本 PR の caller fix で `int(used_plan)` (1/0) に
+    正規化。
+
+    既存 PR-AK counts dict shape / PR-BB artifact kind enum と同 level の
+    cell-value strict contract 層。
+    """
+    from _observability import build_status
+
+    # ===== accept: 全 valid value types =====
+    # int / str / dict / list の各 value type
+    ok_counts = {
+        "int_val": 5,
+        "int_zero": 0,
+        "int_neg": -1,
+        "str_val": "ok",
+        "str_empty": "",
+        "dict_val": {"nested": 1},
+        "dict_empty": {},
+        "list_val": [1, 2, 3],
+        "list_empty": [],
+    }
+    p_ok = build_status(
+        script="x", v0_status="success", exit_code=0,
+        counts=ok_counts,
+    )
+    assert p_ok["counts"] == ok_counts
+
+    # ===== accept: 既存 caller shape regression guard =====
+    caller_shapes = [
+        # build_slide_data (post-PR-BC fix: used_plan は int)
+        {"input_segments": 12, "output_slides": 8, "used_plan": 1},
+        {"input_segments": 0, "output_slides": 0, "used_plan": 0},
+        # build_telop_data
+        {"telop_count": 50, "weaknesses": 3},
+        # visual_smoke
+        {"total": 6, "mismatched": 0, "formats_count": 3, "frames_count": 2},
+        # compare_telop_split (counts 内に dict cell)
+        {"baseline_kpi": {"telop_count": 10}, "new_kpi": {"telop_count": 12}},
+        # empty
+        {},
+    ]
+    for shape in caller_shapes:
+        p = build_status(
+            script="x", v0_status="success", exit_code=0,
+            counts=shape,
+        )
+        assert p["counts"] == shape, f"regression: {shape!r}"
+
+    # ===== reject: bool value (True == 1 conflate) =====
+    for bool_val in (True, False):
+        try:
+            build_status(
+                script="x", v0_status="success", exit_code=0,
+                counts={"flag": bool_val},
+            )
+        except TypeError as e:
+            assert "counts" in str(e) and "bool" in str(e), (
+                f"TypeError msg should mention counts + bool reject, "
+                f"got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"bool counts value={bool_val!r} must raise TypeError"
+            )
+
+    # ===== reject: float / None / tuple / set / object value =====
+    bad_value_cases = [
+        ("float_val", 1.5),
+        ("float_zero", 0.0),
+        ("none_val", None),
+        ("tuple_val", (1, 2)),
+        ("set_val", {1, 2}),
+        ("object_val", object()),
+    ]
+    for key, bad_v in bad_value_cases:
+        try:
+            build_status(
+                script="x", v0_status="success", exit_code=0,
+                counts={key: bad_v},
+            )
+        except TypeError as e:
+            assert (
+                "counts" in str(e)
+                and ("int" in str(e) or "str" in str(e))
+            ), (
+                f"TypeError msg should mention counts + valid type, "
+                f"got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"counts[{key!r}]={bad_v!r} ({type(bad_v).__name__}) "
+                f"must raise TypeError"
+            )
+
+    # ===== reject: non-str key =====
+    bad_keys = [5, 1.5, None, (), True]
+    for bad_k in bad_keys:
+        try:
+            build_status(
+                script="x", v0_status="success", exit_code=0,
+                counts={bad_k: 1},
+            )
+        except TypeError as e:
+            assert "counts" in str(e) and "str" in str(e), (
+                f"TypeError msg should mention counts + str key, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"non-str counts key={bad_k!r} must raise TypeError"
+            )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -8490,6 +8624,7 @@ def main() -> int:
         test_observability_status_map_caller_usage_lint,
         test_observability_build_status_exit_code_consistency,
         test_observability_build_status_artifact_kind_enum_contract,
+        test_observability_build_status_counts_value_contract,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
