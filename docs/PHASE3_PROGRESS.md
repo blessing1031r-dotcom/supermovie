@@ -16,7 +16,7 @@ main
  │     : Phase 3-H per-segment <Sequence> + 9 件 fix + vstack letterbox
  ├─ roku/phase3i-transcript-alignment
  │     : Phase 3-I transcript timing alignment + cut-aware mapping
- └─ roku/human-stdout-path-audit (HEAD)
+ └─ roku/stderr-path-leak-audit (HEAD)
        : Phase 3-J timeline.py 共通化 + 6 件 fix
        : Phase 3-K core 1 integration smoke test
        : Phase 3-K core 2 build_slide / build_telop transcript validation
@@ -138,10 +138,11 @@ main
 - supermovie-se 統合 (素材判断)
 - SadTalker / HeyGen / Kling 統合 (法的 / モラルリスク + API 課金)
 
-## 全 commit count (roku/human-stdout-path-audit branch、最新 135 件)
+## 全 commit count (roku/stderr-path-leak-audit branch、最新 136 件)
 
 ```
-83b2900 feat(observability): human stdout path leak audit (PR-I、Codex 00:08 approve)
+7ac9837 feat(observability): stderr path leak audit (PR-J、Codex 00:22 approve)
+32ea7bf feat(observability): human stdout path leak audit (PR-I、Codex 00:08 approve) (#12)
 1362c84 feat(observability): helper-level secret redaction (PR-H、Codex 23:58 approve) (#11)
 07d29f2 feat(observability): error path tail emit consistency audit (PR-G、Codex 23:18 next priority) (#10)
 00ed6d4 feat(observability): pre-API cost abort threshold (PR-F、Codex 23:04 next priority) (#9)
@@ -278,7 +279,7 @@ e2a1a39 fix(timeline): Codex Phase 3-J review 4 件 fix (P1×1 + P2×2 + P3×1)
 66e2aeb feat(timeline): timeline.py 共通化 + Phase 3-I review 6 件 fix (Phase 3-J)
 ```
 
-(更新: 2026-05-06_00:14、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
+(更新: 2026-05-06_00:26、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
 本 script で regen → docs commit する形のため、docs 上の commit chain は
 docs commit を作る前の HEAD を反映する設計 (off-by-one は intrinsic、
 `--verify` mode で count drift を CI 検査可)。)
