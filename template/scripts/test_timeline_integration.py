@@ -8383,19 +8383,25 @@ def test_observability_redaction_rules_helper_mapping_lint() -> None:
             f"(flag rename / docs spec drift?)、"
             f"section body excerpt: {body[:300]!r}..."
         )
-        # code 側で 7 v1 caller のいずれかが flag 名を持つ
-        # (個別 audit は PR-M `test_unsafe_keep_abs_path_flag_present_in_all_seven_scripts`
-        # に任せて、本 lint は flag が code base 全体に存在することのみ確認)
+        # code 側で 7 v1 caller のいずれかが flag 名を持つ。
+        # Codex 07:21 review P2 fix: 旧実装は `template/scripts/*.py` 全体
+        # から test_timeline_integration.py だけ除外する scan で、
+        # _observability.py / timeline.py / 将来 non-caller file でも
+        # found_in を満たして lint pass する drift。docs §Redaction Rules
+        # は v1 caller 経路の flag 経由 redaction を契約しているので、
+        # PR-BH module-level `V1_CALLER_SCRIPTS` (canonical 7-script set) を
+        # 直接 source に使い、flag presence の scan 範囲を 7 caller に限定。
         found_in = []
-        for path in scripts_dir.glob("*.py"):
-            if path.name == "test_timeline_integration.py":
+        for caller_name in V1_CALLER_SCRIPTS:
+            path = scripts_dir / caller_name
+            if not path.is_file():
                 continue
             txt = path.read_text(encoding="utf-8")
             if flag in txt:
-                found_in.append(path.name)
+                found_in.append(caller_name)
         assert found_in, (
             f"docs §Redaction Rules に書かれた flag '{flag}' が "
-            f"template/scripts/*.py のどこにも登場しない "
+            f"7 v1 caller {sorted(V1_CALLER_SCRIPTS)} のどこにも登場しない "
             f"(flag rename / 実装削除 / docs spec drift?)"
         )
 
