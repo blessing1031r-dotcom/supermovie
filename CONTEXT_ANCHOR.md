@@ -12,19 +12,19 @@
 
 ## Verified Snapshot (作成時点で Bash 実測、push/PR 前に再更新)
 
-| 項目 | 値 (Bash 実測 2026-05-06 00:00) |
+| 項目 | 値 (Bash 実測 2026-05-06 00:11) |
 |---|---|
-| HEAD (source commit) | `136a5ec` (PR-H feat: redact_secret helper + 4 件 regression test + docs §Redaction Rules secret update + Migration step 9) |
-| prev source commit | `07d29f2` (= fork/main、PR #10 PR-G error path tail audit squash merge commit、PR-H 着手前 base) |
-| branch | `roku/secret-redaction-helper` (`fork/main=07d29f2` 起点、PR #1-#10 全 merged 後の **PR-H** = helper-level secret redaction cycle) |
-| main..HEAD | 1 commit (本 anchor refresh 前の feat、refresh 後 2 commits) |
+| HEAD (source commit) | PR-I 着手中 (CONTEXT_ANCHOR + 6 script print(path) site safe_artifact_path 経由化 + 1 件 test 完了、commit 直前) |
+| prev source commit | `1362c84` (= fork/main、PR #11 PR-H secret redaction helper squash merge commit、PR-I 着手前 base) |
+| branch | `roku/human-stdout-path-audit` (`fork/main=1362c84` 起点、PR #1-#11 全 merged 後の **PR-I** = human stdout path leak audit cycle) |
+| main..HEAD | 0 commits (commit 直前) |
 | roku/phase3i-transcript-alignment..HEAD | merge commit を含むため raw count は意味薄、source 内訳は別 doc 参照 |
 | origin remote | `https://github.com/RenTonoduka/supermovie.git` (READ only) |
 | origin viewerPermission | READ (Roku gh account `blessing1031r-dotcom` は write 権限なし) |
-| fork remote | `https://github.com/blessing1031r-dotcom/supermovie.git` (PR #1-#10 全 merged into fork/main = `07d29f2`、本 PR #11 は **secret-redaction-helper (PR-H)** helper-level secret redaction (last-4 mask contract enforcement)、fork-internal squash merge 予定) |
+| fork remote | `https://github.com/blessing1031r-dotcom/supermovie.git` (PR #1-#11 全 merged into fork/main = `1362c84`、本 PR #12 は **human-stdout-path-audit (PR-I)** human stdout path leak audit + abs_path contract 改訂 (default redact / unsafe-keep-abs-path で raw)、fork-internal squash merge 予定) |
 | gh auth status | ✓ Logged in (account: blessing1031r-dotcom、scopes: gist read:org repo workflow、Claude Code 側 12:00 / 12:32 / 12:38 / 12:41 で 4 回 valid 確認。Codex `--ephemeral` sandbox 内では token 不可視 = invalid 表示されるが Claude Code 実行環境に影響なし) |
 | worktree | clean (cleanup commit `e0f5107` で `docs/reviews/**` 38 files + `docs/roadmap/FUTURE_FEATURES_REQUIREMENTS_v0.md` を release scope から外し済み、future doc は別 worktree `../supermovie-future-features-v0` の `roku/future-features-v0` branch `72a6ef4` に保全済) |
-| 7 gate composite | ALL PASS at 136a5ec (env / worktree clean / regen drift 1 / **73/73 python smoke (69 PR-G + 4 PR-H)** / lint exit 0 / React 22/22 / **gate 7 anchor drift = 1 intrinsic OK**、Bash 実測 00:01) |
+| 7 gate composite | ALL PASS at PR-I 着手中 (env / worktree clean / **75/75 python smoke (74 PR-H + 1 PR-I: build_slide_data_human_stdout_path_redacted_by_default)** / lint exit 0 / React 22/22、Bash 実測 00:11) |
 | b1 fixture e2e (`npm run test:visual-smoke` + `npm run render`) | proj1 で全 PASS (Bash 実測 2026-05-05 18:42-18:55、HEVC HDR DoVi 4K → H.264 SDR 1080x1920 60fps + 2516 frames render、`docs/PHASE3_RELEASE_NOTE.md` `b1 fixture normalize evidence trail` 参照) — PR #1 merged into fork/main |
 | obs migration core | helper module `template/scripts/_observability.py` (~150 line) + slide-plan/narration helper 経由 refactor + redaction default strict + 6 regression test 全 PASS (Bash 実測 2026-05-05 20:42) |
 

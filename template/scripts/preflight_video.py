@@ -428,7 +428,9 @@ def main():
             print(f"ERROR: write-config write failed: {e}", file=sys.stderr)
             sys.exit(_emit("write_config_write_error", 3,
                            error=redact_error_message(str(e))))
-        print(f"\nwrote: {cfg_path}", file=sys.stderr)
+        # PR-I: default redact、--unsafe-keep-abs-path で raw。stderr も同 contract。
+        _safe_cfg = safe_artifact_path(cfg_path, project_root=PROJ_ROOT, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
+        print(f"\nwrote: {_safe_cfg}", file=sys.stderr)
 
     if unhandled:
         print(f"\nrisks not allowed: {unhandled}", file=sys.stderr)

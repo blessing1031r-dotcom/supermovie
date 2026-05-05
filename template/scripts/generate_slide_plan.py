@@ -508,7 +508,9 @@ def main():
 
     out_path = Path(args.output)
     out_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"wrote: {out_path}")
+    # PR-I: default redact、--unsafe-keep-abs-path で raw。
+    _safe_out = safe_artifact_path(out_path, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
+    print(f"wrote: {_safe_out}")
     print(f"slides: {len(plan.get('slides', []))}")
     return emit_json(
         "success", 0,

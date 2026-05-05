@@ -465,7 +465,9 @@ def cli() -> int:
     except OSError as e:
         print(f"ERROR: summary.json write failed: {e}", file=sys.stderr)
         return _emit_early("summary_write_error", 3, error=redact_error_message(str(e)))
-    print(f"\nsummary: {summary_path}")
+    # PR-I: default redact、--unsafe-keep-abs-path で raw。
+    _safe_summary = safe_artifact_path(summary_path, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
+    print(f"\nsummary: {_safe_summary}")
     print(f"  total={len(results)}, mismatched={mismatched}, env_error={env_error}, grid={grid_status}")
 
     # Phase 3 obs migration step 3: --json-log で v1 status を stdout 末尾に追加。

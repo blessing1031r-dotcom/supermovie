@@ -734,8 +734,11 @@ def main():
     total_frames = max(
         (s["startFrame"] + s["durationInFrames"] for s in segments), default=0
     )
-    print(f"wrote: {ts_path} ({len(segments)} segments, total_frames={total_frames})")
-    print(f"wrote: {meta_path}")
+    # PR-I (human stdout path leak audit、Codex 00:08): default redact、--unsafe-keep-abs-path で raw。
+    _safe_ts = safe_artifact_path(ts_path, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
+    _safe_meta = safe_artifact_path(meta_path, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
+    print(f"wrote: {_safe_ts} ({len(segments)} segments, total_frames={total_frames})")
+    print(f"wrote: {_safe_meta}")
 
     # Phase 3-N race fix: narrationData.ts を書いた後で narration.wav を書く
     # (これで Studio hot-reload で chunks 経路が先に成立、legacy fallback が
@@ -770,7 +773,9 @@ def main():
             error=f"{type(e).__name__}: {e}",
             out_path=str(out_path),
         )
-    print(f"\nwrote: {out_path} ({out_path.stat().st_size} bytes)")
+    # PR-I: default redact、--unsafe-keep-abs-path で raw。
+    _safe_out = safe_artifact_path(out_path, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
+    print(f"\nwrote: {_safe_out} ({out_path.stat().st_size} bytes)")
     print(f"chunks succeeded: {len(chunk_paths)} / {len(chunks)} synthesized")
 
     # Phase 3-V post-freeze P5: publish 完了 signal sentinel を最後に書く
@@ -816,7 +821,9 @@ def main():
             error=f"{type(e).__name__}: {e}",
             out_path=str(out_path),
         )
-    print(f"wrote: {NARRATION_READY_JSON} (publish 完了 signal sentinel)")
+    # PR-I: default redact、--unsafe-keep-abs-path で raw。
+    _safe_ready = safe_artifact_path(NARRATION_READY_JSON, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
+    print(f"wrote: {_safe_ready} (publish 完了 signal sentinel)")
 
     summary = {
         "speaker": args.speaker,

@@ -490,7 +490,8 @@ def main():
 
     mode_label = "baseline" if args.baseline else "BudouX"
     print(f"=== telopData.ts 生成 ({mode_label}) ===")
-    print(f"path: {out_path}")
+    # PR-I (human stdout path leak audit、Codex 00:08): default redact、--unsafe-keep-abs-path で raw。
+    print(f"path: {safe_artifact_path(out_path, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)}")
     print(f"telop count: {len(telop_segments)}")
     print(f"weaknesses: {len(weaknesses)}")
     print()

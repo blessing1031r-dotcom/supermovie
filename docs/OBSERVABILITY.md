@@ -126,7 +126,7 @@ post-migration (v1) では `generate_slide_plan.py` / `voicevox_narration.py` / 
   - external structured log / json tail: `length` / `hash` のみ、raw 禁止 (default / debug 共通)。
   - debug opt-in 時も secret-bearing input (transcript 内に API key 等) は事前 detection + 削除。
 - abs_path:
-  - human stdout: 出してよい (local debug 用途)。
+  - human stdout: **default redact** (PR-I で contract 改訂、`safe_artifact_path()` 経由で project-root 相対 / `<HOME>` / `<TMP>` / `<ABS>` placeholder)、`--unsafe-keep-abs-path` で raw 切替 (json tail と同 knob で一貫)。stdout を log capture / pipe / shared screenshot 等で意図せず外部公開する事故への defense-in-depth。
   - json tail / artifact path / external log: repo root or project root 相対 path に変換。`~` 展開後の絶対 path には `<HOME>` placeholder を適用。
 - provider_response_body (LLM API の raw response):
   - **stderr であっても default は raw 禁止** (request_id / status_code / token_usage の structured summary のみ出す)。raw body は `--unsafe-dump-response` 等 debug opt-in flag 時に限定。
@@ -262,6 +262,7 @@ cap: 全 3 field に `MAX_TRACE_CONTEXT_VALUE_LEN = 128` 適用、超過時は `
 | 7 | pre-API cost abort threshold 実装 (`SUPERMOVIE_COST_USD_ABORT_AT` env + `--cost-abort-at` CLI + `cost_guard_aborted` status_map 追加 + estimate 共通化 + 3 件 regression test) | PR-F |
 | 8 | error path tail emit consistency audit (`compare_telop_split` の transcript / typo_dict / telop ts read failure を `_emit_early` 経由化、`preflight_video` の `--write-config` parse / write failure を `_emit` 経由化、`visual_smoke` の `out_dir.mkdir` / `videoConfig.ts read` failure を `_emit_early` 経由化、9 status 追加 + 4 件 regression test) | PR-G |
 | 9 | helper-level secret redaction 実装 (`redact_secret()` で last-4 mask + short-value 全 mask + non-string passthrough、`docs/OBSERVABILITY.md:123` secret class contract enforcement、4 件 regression test) | PR-H |
+| 10 | human stdout path leak audit (build_slide_data / build_telop_data / voicevox_narration / visual_smoke / preflight_video / generate_slide_plan の 9 `print(f"... {path}")` 経路を `safe_artifact_path()` 経由化、`--unsafe-keep-abs-path` で raw 切替 unified knob、abs_path contract 改訂 + 1 件 regression test) | PR-I |
 
 ## Test Requirements
 
