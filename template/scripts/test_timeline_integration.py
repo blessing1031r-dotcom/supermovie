@@ -4203,10 +4203,13 @@ def test_observability_build_status_redaction_rules_strict() -> None:
                                  redaction_rules=())
     assert p_empty_tuple["redaction"]["applied_rules"] == []
 
-    # (3) list of str → sorted unique
+    # (3) list of str → sorted unique。PR-BJ で REDACTION_CLASSES 制約化
+    # (PR-BB ARTIFACT_KIND_ENUM と同型) のため、"a"/"b" → 実 enum value
+    # ("user_content" / "abs_path") に置換、duplicate / order を維持。
     p_dup = build_status(script="x", v0_status="success", exit_code=0,
-                         redaction_rules=["b", "a", "a", "b"])
-    assert p_dup["redaction"]["applied_rules"] == ["a", "b"]
+                         redaction_rules=["user_content", "abs_path",
+                                          "abs_path", "user_content"])
+    assert p_dup["redaction"]["applied_rules"] == ["abs_path", "user_content"]
 
     # (4) tuple of str も accept
     p_tuple = build_status(script="x", v0_status="success", exit_code=0,
@@ -8128,6 +8131,164 @@ def test_observability_trace_context_docs_code_lint() -> None:
         )
 
 
+def test_observability_sensitive_classes_docs_code_lint() -> None:
+    """`docs/OBSERVABILITY.md §Sensitive Classes` 表 ↔ code `REDACTION_CLASSES`
+    set の双方向整合性 lint
+    (Codex 07:14 PR-BJ verdict BV-redact、PR-BD/BE/BF/BH/BI 同型を sensitive
+    class set に展開)。
+
+    docs §Sensitive Classes は v1 redaction contract の正準 source として
+    4 class を表で定義 (secret / user_content / abs_path /
+    provider_response_body)。code は `REDACTION_CLASSES = frozenset({...})`
+    を module 定数として保持し、`_normalize_redaction_rules()` が
+    `applied_rules` の literal を本 enum で reject する。
+
+    docs と code が drift すると:
+      - docs に追記した新 class が code 未対応で caller 側 fail-loud
+      - code に追加した class が docs 未掲載で consumer の class-by-class
+        audit に欠落
+      - typo (secret_key vs secret / user-content vs user_content) が
+        片側だけ起きる
+
+    PR-BD §Common Fields key / PR-BE §Cost JSON Shape key / PR-BF §Status
+    Naming value / PR-BH §Script Coverage Matrix / PR-BI §Trace Context env
+    と同 level の docs/code 双方向 audit、本 lint は redaction sensitive
+    class set という別 axis を fix。
+    """
+    import re
+    from pathlib import Path
+
+    from _observability import REDACTION_CLASSES
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    md = obs_md.read_text(encoding="utf-8")
+
+    # `### Sensitive Classes` heading 直後 markdown table を抽出
+    section_re = re.compile(
+        r"^### Sensitive Classes[^\n]*\n.*?\n(?P<table>(?:\|[^\n]+\n)+)",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = section_re.search(md)
+    assert m is not None, (
+        "`### Sensitive Classes` の markdown table が docs に見つからない "
+        "(heading rename / 表 形式変更?)"
+    )
+    table = m.group("table")
+
+    # 1 列目 class 名 (backtick なし plain identifier)。row pattern:
+    # `| <name> | <例> | <source> |`、header (`| class | 例 | source |`) +
+    # separator (`|---|---|---|`) は class 値ではないので個別 reject。
+    row_re = re.compile(
+        r"^\|\s*([a-z_][a-z_0-9]*)\s*\|", re.MULTILINE,
+    )
+    docs_classes = set(row_re.findall(table))
+    # header の "class" literal は当然落とす (実 class 名が `class` だと
+    # 衝突するが、本 schema にそんな class は存在しない)
+    docs_classes.discard("class")
+    assert docs_classes, (
+        "docs Sensitive Classes table から class 名が 0 件 抽出 "
+        "(table format 変更?)"
+    )
+
+    code_classes = set(REDACTION_CLASSES)
+    assert code_classes, (
+        "REDACTION_CLASSES set が空 / import 失敗"
+    )
+
+    # 双方向 set diff
+    missing_in_code = sorted(docs_classes - code_classes)
+    extra_in_code = sorted(code_classes - docs_classes)
+    assert not missing_in_code, (
+        f"docs §Sensitive Classes に列挙された class が REDACTION_CLASSES "
+        f"set に存在しない: {missing_in_code}\n"
+        f"docs に追記された新 class が code 未対応 / typo?"
+    )
+    assert not extra_in_code, (
+        f"REDACTION_CLASSES set に存在するが docs §Sensitive Classes に "
+        f"未掲載: {extra_in_code}\n"
+        f"code に追加された class を docs 表に追記する必要、または "
+        f"code 側の typo / 不正値。"
+    )
+    assert docs_classes == code_classes, (
+        f"docs Sensitive Classes != REDACTION_CLASSES "
+        f"(missing_in_code={missing_in_code}, extra_in_code={extra_in_code})"
+    )
+
+
+def test_observability_normalize_redaction_rules_membership_reject() -> None:
+    """`_normalize_redaction_rules()` が `REDACTION_CLASSES` enum 外を reject
+    する contract lock-in (Codex 07:14 PR-BJ verdict BV-redact、
+    docs §Sensitive Classes contract の helper-side enforcement)。
+
+    PR-AD で list/tuple of str / non-str / bare str の型 contract は固定済だ
+    が、value membership (typo / 改名 / 旧名) は未検査だった。本 contract で
+    docs §Sensitive Classes 4 class set 外を ValueError reject、PR-BB
+    ARTIFACT_KIND_ENUM と同型の single source of truth で運用。
+    """
+    from _observability import (
+        REDACTION_CLASSES,
+        _normalize_redaction_rules,
+    )
+
+    # ===== accept: 4 class 全 entry single =====
+    for cls in sorted(REDACTION_CLASSES):
+        out = _normalize_redaction_rules([cls])
+        assert out == [cls]
+
+    # ===== accept: multiple valid + sorted unique =====
+    out_multi = _normalize_redaction_rules(
+        ["abs_path", "user_content", "abs_path", "secret"]
+    )
+    assert out_multi == ["abs_path", "secret", "user_content"]
+
+    # ===== accept: empty / None / empty tuple =====
+    assert _normalize_redaction_rules([]) == []
+    assert _normalize_redaction_rules(None) == []
+    assert _normalize_redaction_rules(()) == []
+
+    # ===== reject: 未知 single rule =====
+    bad_rules_single = [
+        "user-content",  # hyphen drift
+        "Path",          # PascalCase drift
+        "secret_key",    # 旧名 / 似た名
+        "credential",    # 別名
+        "credit_card",   # docs 未掲載 class
+        "PII",           # uppercase + 別 class label
+        "",              # 空文字
+        "secret ",       # trailing space
+    ]
+    for bad in bad_rules_single:
+        try:
+            _normalize_redaction_rules([bad])
+        except ValueError as e:
+            assert "REDACTION_CLASSES" in str(e) and "unknown" in str(e), (
+                f"ValueError msg should mention REDACTION_CLASSES + "
+                f"unknown, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"unknown rule={bad!r} must raise ValueError"
+            )
+
+    # ===== reject: 未知 + valid 混在 (valid だけ accept されてしまう drift 防止) =====
+    try:
+        _normalize_redaction_rules(["abs_path", "user-content", "secret"])
+    except ValueError as e:
+        # mixed の場合 unknown だけ pull out して列挙される
+        assert "user-content" in str(e), (
+            f"ValueError msg should list the unknown literal, got {e!r}"
+        )
+    else:
+        raise AssertionError(
+            "mixed valid + unknown must raise ValueError"
+        )
+
+    # ===== regression: caller 側で実際に使う {abs_path, user_content} 組み合わせ =====
+    out_caller = _normalize_redaction_rules(["abs_path", "user_content"])
+    assert out_caller == ["abs_path", "user_content"]
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -9292,6 +9453,8 @@ def main() -> int:
         test_observability_build_cost_payload_currency_tokens_value_contract,
         test_observability_script_coverage_matrix_docs_code_lint,
         test_observability_trace_context_docs_code_lint,
+        test_observability_sensitive_classes_docs_code_lint,
+        test_observability_normalize_redaction_rules_membership_reject,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,

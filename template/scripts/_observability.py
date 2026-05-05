@@ -20,6 +20,22 @@ from pathlib import Path
 SCHEMA_VERSION = 1
 REDACTION_VERSION = 1
 
+# PR-BJ (Codex 07:14 verdict BV-redact) sensitive class enum。
+# docs/OBSERVABILITY.md §Sensitive Classes は v1 redaction contract の正準
+# source として 4 class を定義 (secret / user_content / abs_path /
+# provider_response_body)。`build_status(redaction_rules=[...])` の applied
+# rule 名はこの set に閉じる必要があり、外れた literal (typo / 改名) を
+# silent payload 通過させると downstream consumer の class-by-class redaction
+# audit が誤分類する drift を起こす。caller の bug を helper が隠す経路を
+# 断つため、`_normalize_redaction_rules()` で membership reject を fail-loud
+# 化、PR-BB ARTIFACT_KIND_ENUM と同型 single source of truth で運用。
+REDACTION_CLASSES = frozenset({
+    "secret",                  # API key / token / credential
+    "user_content",            # transcript / segments / telop raw text
+    "abs_path",                # /Users/<name>/... machine-local path
+    "provider_response_body",  # LLM API raw response body
+})
+
 # PR-BB (Codex 06:11 verdict BO) artifact kind enum。
 # docs/OBSERVABILITY.md §Common Fields の `kind: json|wav|ts|png|...` を
 # canonical set として固定。既存 caller (build_slide_data:460 / build_telop_data:516 /
@@ -628,6 +644,17 @@ def _normalize_redaction_rules(rules):
                 f"redaction_rules entries must be str, got "
                 f"{type(item).__name__} ({item!r}) in {rules!r}"
             )
+    # PR-BJ (Codex 07:14 verdict BV-redact) defense: redaction_rules entry は
+    # docs §Sensitive Classes の 4 class set に閉じる。typo / 改名 / 旧名の
+    # 残存 (例: "user-content" / "Path" / "secret_key") を silent payload
+    # 通過させると downstream class-by-class audit の誤分類を生む。set
+    # membership reject で fail-loud 化、PR-BB ARTIFACT_KIND_ENUM と同型。
+    unknown_rules = sorted(set(rules) - REDACTION_CLASSES)
+    if unknown_rules:
+        raise ValueError(
+            f"redaction_rules entries must be in REDACTION_CLASSES "
+            f"{sorted(REDACTION_CLASSES)}, got unknown: {unknown_rules}"
+        )
     return sorted(set(rules))
 
 
