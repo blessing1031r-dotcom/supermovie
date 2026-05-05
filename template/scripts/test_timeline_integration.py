@@ -2667,6 +2667,93 @@ def test_observability_helper_status_map() -> None:
     assert map_status("nonexistent_v0") == ("error", "nonexistent_v0")
 
 
+def test_observability_status_map_lint() -> None:
+    """STATUS_MAP の static 整合性を lint する (Codex 01:57 verdict AB)。
+
+    `test_observability_helper_status_map` は emit site 追加漏れ
+    (must_have set diff) と 6 件の代表 mapping spot assert を行うが、
+    STATUS_MAP 内部の構造的不整合は検出しない:
+      - dict literal silent overwrite (重複 key)
+      - 不正 v1_status (typo: "okay" / "skip" / "errror")
+      - 空文字列 / 不正型 category
+      - tuple shape mismatch (要素数 != 2)
+
+    map_status() の defensive fallback `("error", v0_status)` が
+    unknown key を silent fallback するため、上記 drift は runtime
+    では即座に表面化せず category lint や consumer 集計で contract
+    drift を起こす。本 test は AST parse + value scan で early fail
+    させる lint 層。
+    """
+    import ast
+
+    from _observability import STATUS_MAP
+
+    # (1) value shape: 全 entry は 2-tuple、key は非空 str
+    for k, v in STATUS_MAP.items():
+        assert isinstance(k, str) and k, f"STATUS_MAP key invalid: {k!r}"
+        assert isinstance(v, tuple) and len(v) == 2, (
+            f"STATUS_MAP[{k!r}] must be 2-tuple, got {v!r}"
+        )
+
+    # (2) v1_status は schema 定義の 4 値のみ
+    valid_v1_statuses = {"ok", "skipped", "error", "dry_run"}
+    for k, (v1_status, _v1_category) in STATUS_MAP.items():
+        assert v1_status in valid_v1_statuses, (
+            f"STATUS_MAP[{k!r}] has invalid v1_status {v1_status!r}, "
+            f"must be one of {sorted(valid_v1_statuses)}"
+        )
+
+    # (3) v1_category は str か None、空文字列・空白のみ禁止
+    for k, (_v1_status, v1_category) in STATUS_MAP.items():
+        if v1_category is None:
+            continue
+        assert isinstance(v1_category, str), (
+            f"STATUS_MAP[{k!r}] category must be str-or-None, "
+            f"got {type(v1_category).__name__}"
+        )
+        assert v1_category.strip(), (
+            f"STATUS_MAP[{k!r}] category is empty/whitespace-only: {v1_category!r}"
+        )
+
+    # (4) duplicate key 検出: dict literal は silent overwrite なので
+    # _observability.py を AST parse して dict literal の key node を集計
+    obs_path = SCRIPTS / "_observability.py"
+    tree = ast.parse(obs_path.read_text(encoding="utf-8"))
+    found = False
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1):
+            continue
+        target = node.targets[0]
+        if not (isinstance(target, ast.Name) and target.id == "STATUS_MAP"):
+            continue
+        assert isinstance(node.value, ast.Dict), (
+            "STATUS_MAP must be a dict literal (lint 前提)"
+        )
+        literal_keys: list[str] = []
+        for key_node in node.value.keys:
+            assert isinstance(key_node, ast.Constant) and isinstance(
+                key_node.value, str
+            ), (
+                f"STATUS_MAP key must be a literal str, "
+                f"got {ast.dump(key_node) if key_node else 'None (dict-unpack)'}"
+            )
+            literal_keys.append(key_node.value)
+        duplicates = sorted({k for k in literal_keys if literal_keys.count(k) > 1})
+        assert not duplicates, (
+            f"STATUS_MAP has duplicate keys (dict literal silent overwrite): "
+            f"{duplicates}"
+        )
+        # AST literal key 数 = runtime dict key 数 でもあるべき
+        # (overwrite が起きていれば dict は短くなる)
+        assert len(literal_keys) == len(STATUS_MAP), (
+            f"STATUS_MAP literal has {len(literal_keys)} keys but dict has "
+            f"{len(STATUS_MAP)} (silent overwrite suspected)"
+        )
+        found = True
+        break
+    assert found, "STATUS_MAP assignment not found in _observability.py"
+
+
 def test_observability_safe_artifact_path_redacts() -> None:
     """abs_path が project_root 相対 / <HOME> placeholder に正規化されること。
 
@@ -4506,6 +4593,7 @@ def main() -> int:
         test_build_slide_data_plan_strict_failure,
         # Phase 3 obs migration core: helper module regression test (6 件)
         test_observability_helper_status_map,
+        test_observability_status_map_lint,
         test_observability_safe_artifact_path_redacts,
         test_observability_user_content_meta_no_raw,
         test_observability_redact_provider_body_default_strict,

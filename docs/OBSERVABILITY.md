@@ -284,6 +284,7 @@ cap: 全 3 field に `MAX_TRACE_CONTEXT_VALUE_LEN = 128` 適用、超過時は `
 | 17 | `redaction.applied_rules` canonicalize (`build_status()` で `sorted(set(...))` 正規化、caller の dedup 漏れ / 順序差を helper 側で吸収、downstream diff / regression test 安定性確保 + 1 件 unit test) | PR-Q |
 | 18 | `redact_error_message()` URL edge case lock-in test (port `:8080` / query string `?key=value` / fragment `#anchor` / git+ssh:// scheme / URL+abs_path 混在 path 7 case を preserve regression、PR-K の `_ABS_PATH_RE` URL 破壊回避ロジック未被覆 edge を閉じる + 1 件 regression test) | PR-R |
 | 19 | nested `cost={...}` schema migration (`build_cost_payload()` helper 追加、`generate_slide_plan` dry-run + cost_guard_aborted で `build_status(cost=cost_dict)` 経由 nested cost emit、top-level extras は backward compat で残す dual emission、§Cost JSON Shape 改訂 + 2 件 regression test) | PR-S |
+| 20 | STATUS_MAP static lint test 追加 (`test_observability_status_map_lint`)。AST parse で dict literal 重複 key を検出 (silent overwrite 防止)、value shape (2-tuple) / v1_status 4 値 set / category str-or-non-empty を一括 verify。`map_status()` の defensive fallback `("error", v0_status)` が unknown を silent fallback するため、emit site 追加漏れ系の `must_have` set diff (`test_observability_helper_status_map`) で拾えない内部 contract drift を early fail させる lint 層 + 1 件 regression test | PR-T |
 
 ## Test Requirements
 
