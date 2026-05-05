@@ -8,7 +8,7 @@
 - status JSON emission の canonical な仕様 (`--json-log` 動作、stdout/stderr 区別、common fields)
 - log redaction の対象種別と適用 rule
 - cost telemetry の単位・rate env var convention・missing rate 時の挙動
-- migration policy (current v0 → future v1)
+- migration policy (legacy v0 → current v1、完了履歴と新規 script 追加時の reference)
 - test 要件 (regression 防止)
 
 ### Non-Goals (本 doc では扱わない)
@@ -21,7 +21,7 @@
 
 ## Current Surface
 
-実装済の observability surface (Bash 実測 2026-05-05 21:24、PR #3 + PR-A merged 後):
+実装済の observability surface (Bash 実測 2026-05-05 22:14、PR #3 + PR-A/B/C merged + PR-D rate alias 実装後):
 
 | script | --json-log | cost guard | dry-run | redaction status |
 |---|---|---|---|---|
@@ -122,7 +122,7 @@ post-migration (v1) では `generate_slide_plan.py` / `voicevox_narration.py` / 
 
 - secret: 値の最後 4 文字以外をマスク (`sk-...XXXX`)。env name / config key 名は出して可。stderr / json tail / human stdout 全て同 rule。
 - user_content (transcript / segments / chunk text / telop raw):
-  - human stdout: **default は `length` / `hash` のみ表示**、raw 出力は debug opt-in flag (`--unsafe-show-user-content` 等) 限定。`first-N-chars` 等の partial preview も default では出さない (raw partial も raw の subset とみなす)。現 `voicevox_narration.py:626` chunk text human log は migration 対象。
+  - human stdout: **default は `length` / `hash` のみ表示**、raw 出力は debug opt-in flag (`--unsafe-show-user-content` 等) 限定。`first-N-chars` 等の partial preview も default では出さない (raw partial も raw の subset とみなす)。`voicevox_narration.py` chunk text human log は PR #3 で `--unsafe-show-user-content` 化済み。
   - external structured log / json tail: `length` / `hash` のみ、raw 禁止 (default / debug 共通)。
   - debug opt-in 時も secret-bearing input (transcript 内に API key 等) は事前 detection + 削除。
 - abs_path:
@@ -131,16 +131,16 @@ post-migration (v1) では `generate_slide_plan.py` / `voicevox_narration.py` / 
 - provider_response_body (LLM API の raw response):
   - **stderr であっても default は raw 禁止** (request_id / status_code / token_usage の structured summary のみ出す)。raw body は `--unsafe-dump-response` 等 debug opt-in flag 時に限定。
   - secret-bearing header (Authorization / x-api-key 等) は事前 strip。
-  - 現 `generate_slide_plan.py:347` (HTTP error response body) / `:351` (non-429 HTTP error で `body[:500]` partial を stderr 出力) / `:366` (LLM raw text on JSON parse error) は stderr 経由で raw を出している経路で、migration 対象。
-  - migration test 必須事項: HTTP body / LLM raw text を含む test fixture で、default emission に raw が現れず、`--unsafe-dump-response` 指定時のみ出ることを `test_timeline_integration.py` で regression test 化する。
+  - `generate_slide_plan.py` の HTTP error response body / partial body / LLM raw text 経路 (旧 `:347` / `:351` / `:366`) は PR #3 で provider_response_body redaction 適用済 (`--unsafe-dump-response` opt-in 時のみ raw 出力)。
+  - regression test 既存: HTTP body / LLM raw text を含む test fixture で default emission に raw が現れないことを `test_timeline_integration.py` の `test_observability_provider_body_stderr_default_redact` で検証済 (PR #3)。
 
 ### Path Policy
 
-artifact `path` field は repo root or project root からの **相対 path** で記録する。絶対 path は `redaction.applied_rules` に `abs_path` を含めて redacted variant を記録するか、user invocation context で必要なら明示 opt-in flag (`--unsafe-keep-abs-path`) を script 側に追加 (本 doc は規約のみ、実装は別 PR)。
+artifact `path` field は repo root or project root からの **相対 path** で記録する。絶対 path は `redaction.applied_rules` に `abs_path` を含めて redacted variant を記録する (PR #3 helper `safe_artifact_path` で `<HOME>` / `<TMP>` / `<ABS>` placeholder を機械置換、全 7 script 適用済)。明示 opt-in flag (`--unsafe-keep-abs-path`) は本 doc では予約のみ、現在実装なし。
 
 ### User Content Policy
 
-`build_slide_data.py:388` / `build_telop_data.py:453` のように raw title/telop text を human stdout に出している script は、json tail には length / hash のみを出す形に migration する (別 PR)。raw text を残す合理理由 (debug 等) がある場合は flag 化して default off。
+`build_slide_data.py` / `build_telop_data.py` の raw title/telop text 経路は PR-C で `--unsafe-show-user-content` opt-in 化済。default は json tail に `user_content_meta` (length / sha256 hash) のみ emit、raw text は flag 指定時のみ stdout/json に出す。
 
 ## Cost Telemetry Contract
 
@@ -207,9 +207,9 @@ artifact `path` field は repo root or project root からの **相対 path** �
 
 ### v0 dry-run JSON legacy
 
-`generate_slide_plan.py:279` の dry-run path は `--json-log` flag なしでも JSON を stdout に出す legacy 動作 (cost estimate を即時出すため)。schema v1 contract では:
+`generate_slide_plan.py` の dry-run path は `--json-log` flag なしでも JSON を stdout に出す legacy 動作を維持する (cost estimate を即時出すため)。schema v1 contract では:
 - v0 dry-run JSON は `--json-log` 強制を要さず legacy として正規化済とみなす。
-- migration helper (`_observability.py`、別 PR) で wrap する場合、dry-run output に schema_version=1 を後付けする選択肢あり (互換性維持)。
+- helper (`_observability.py`) は dry-run legacy JSON を wrap しない設計 (PR #3 で確定)。dry-run は cost estimate を即時 stdout に出す独立 path で、`--json-log` 指定時は別途 helper 経由で v1 status JSON を末尾 1 行に emit する 2-emission pattern。
 
 ### Migration steps (完了履歴)
 
@@ -223,9 +223,9 @@ artifact `path` field は repo root or project root からの **相対 path** �
 
 ## Test Requirements
 
-- `test_timeline_integration.py` に redaction regression test (sensitive class 4 種が json tail に raw で出ないこと) を追加 (別 PR)。
-- 各 script の `--json-log` を CI で smoke test (parse + schema_version 確認)。
-- cost telemetry の missing rate behavior を test fixture で確認。
+- `test_timeline_integration.py` に redaction regression test を実装済 (PR #3、`test_observability_safe_artifact_path_redacts` / `test_observability_user_content_meta_no_raw` / `test_observability_redact_provider_body_default_strict` / `test_observability_provider_body_stderr_default_redact` が sensitive class 4 種を網羅)。
+- 各 script の `--json-log` smoke test (parse + schema_version 確認) は `test_timeline_integration.py` 内 v1 schema test (`test_observability_build_status_v1_schema` 等) でカバー済。
+- cost telemetry の missing rate behavior は `test_generate_slide_plan_skip_preserves_with_bad_env` / `test_generate_slide_plan_rate_rejects_nan_inf` / `test_generate_slide_plan_rate_v0_v1_alias_precedence` (PR-D) で網羅済。
 
 ## Open Questions
 
