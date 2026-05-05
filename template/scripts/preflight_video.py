@@ -412,7 +412,7 @@ def main():
             try:
                 cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError) as e:
-                print(f"ERROR: existing write-config parse failed: {e}", file=sys.stderr)
+                print(f"ERROR: existing write-config parse failed: {redact_error_message(str(e))}", file=sys.stderr)
                 sys.exit(_emit("write_config_parse_error", 3,
                                error=redact_error_message(str(e))))
         else:
@@ -428,7 +428,7 @@ def main():
         try:
             cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError as e:
-            print(f"ERROR: write-config write failed: {e}", file=sys.stderr)
+            print(f"ERROR: write-config write failed: {redact_error_message(str(e))}", file=sys.stderr)
             sys.exit(_emit("write_config_write_error", 3,
                            error=redact_error_message(str(e))))
         # PR-I: default redact、--unsafe-keep-abs-path で raw。stderr も同 contract。

@@ -313,7 +313,7 @@ def cli() -> int:
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
-        print(f"ERROR: out_dir mkdir failed: {e}", file=sys.stderr)
+        print(f"ERROR: out_dir mkdir failed: {redact_error_message(str(e))}", file=sys.stderr)
         return _emit_early("out_dir_mkdir_error", 3, error=redact_error_message(str(e)))
 
     # 環境チェック (Codex Phase 3-G review P1 #1 反映、render 失敗を環境問題として早期検知)
@@ -350,7 +350,7 @@ def cli() -> int:
     try:
         original = VIDEO_CONFIG.read_text(encoding="utf-8")
     except OSError as e:
-        print(f"ERROR: videoConfig.ts read failed: {e}", file=sys.stderr)
+        print(f"ERROR: videoConfig.ts read failed: {redact_error_message(str(e))}", file=sys.stderr)
         return _emit_early("video_config_read_error", 3, error=redact_error_message(str(e)))
 
     results: list[dict] = []
@@ -365,7 +365,7 @@ def cli() -> int:
             try:
                 patched = patch_format(original, fmt)
             except ValueError as e:
-                print(f"ERROR: {e}", file=sys.stderr)
+                print(f"ERROR: {redact_error_message(str(e))}", file=sys.stderr)
                 return _emit_early("usage_error_patch_format", 4,
                                    error=redact_error_message(str(e)))
             # PR-G: videoConfig.ts patch write failure (PermissionError 等) を tail emit。
@@ -373,7 +373,7 @@ def cli() -> int:
             try:
                 VIDEO_CONFIG.write_text(patched, encoding="utf-8")
             except OSError as e:
-                print(f"ERROR: videoConfig.ts patch write failed: {e}", file=sys.stderr)
+                print(f"ERROR: videoConfig.ts patch write failed: {redact_error_message(str(e))}", file=sys.stderr)
                 env_error = "video_config_write_error"
                 break
             print(f"\n[smoke] format={fmt} に切替て still を出力します")
@@ -475,7 +475,7 @@ def cli() -> int:
             encoding="utf-8",
         )
     except OSError as e:
-        print(f"ERROR: summary.json write failed: {e}", file=sys.stderr)
+        print(f"ERROR: summary.json write failed: {redact_error_message(str(e))}", file=sys.stderr)
         return _emit_early("summary_write_error", 3, error=redact_error_message(str(e)))
     # PR-I: default redact、--unsafe-keep-abs-path で raw。
     _safe_summary = safe_artifact_path(summary_path, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
