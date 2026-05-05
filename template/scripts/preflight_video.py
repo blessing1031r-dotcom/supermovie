@@ -454,4 +454,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # PR-P (Codex 01:21 Z approve): main() return int (sys.exit(_emit(...)) 経由含む) を
+    # exit code に propagate。本 script は内部で sys.exit() 直呼びも併用するが、明示的
+    # 終了せず main 終端に到達する path もあるため defensive に統一。
+    sys.exit(main() or 0)

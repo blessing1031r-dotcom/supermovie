@@ -3875,6 +3875,50 @@ def test_observability_compute_rate_missing_helper() -> None:
     assert compute_rate_missing(0.0) is False
 
 
+def test_all_seven_scripts_use_sys_exit_in_main() -> None:
+    """PR-P (Codex 01:21 Z approve): 7 script すべてが `if __name__ == "__main__":` で
+    `sys.exit(...)` 経由で exit code を propagate していることを static check。
+
+    `main()` 直呼びだと `_emit_error` 経由 return int が shell rc=0 に潰れる。PR-G fix
+    iter で compare_telop_split.py で発見・修正された pattern を全 script に展開。
+    """
+    scripts_dir = Path(__file__).resolve().parent
+    target_scripts = [
+        "build_slide_data.py",
+        "build_telop_data.py",
+        "voicevox_narration.py",
+        "visual_smoke.py",
+        "compare_telop_split.py",
+        "preflight_video.py",
+        "generate_slide_plan.py",
+    ]
+    missing_sys_exit = []
+    for name in target_scripts:
+        src = (scripts_dir / name).read_text(encoding="utf-8")
+        # __main__ block 内に sys.exit(...) があること検査
+        # `if __name__ == "__main__":` 以降の最後の non-empty 行を見る
+        lines = src.splitlines()
+        in_main_block = False
+        body_lines = []
+        for line in lines:
+            if 'if __name__ == "__main__":' in line:
+                in_main_block = True
+                continue
+            if in_main_block:
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#"):
+                    body_lines.append(stripped)
+        if not body_lines:
+            missing_sys_exit.append(f"{name}: __main__ block empty")
+            continue
+        # body 内に sys.exit( 呼び出しがあること
+        if not any("sys.exit(" in bl for bl in body_lines):
+            missing_sys_exit.append(f"{name}: __main__ block missing sys.exit() ({body_lines[-1]!r})")
+    assert not missing_sys_exit, \
+        f"sys.exit() in __main__ block 漏れ (exit code propagation 不可、PR-G fix iter pattern):\n" + \
+        "\n".join(f"  - {m}" for m in missing_sys_exit)
+
+
 def test_generate_slide_plan_rate_missing_true_when_rate_unset() -> None:
     """PR-N (Codex 01:02): rate 未設定時の dry-run payload に rate_missing=true、
     estimated_cost_usd_upper_bound=null 両方が出ること (downstream discriminator)。
@@ -4302,6 +4346,8 @@ def main() -> int:
         test_generate_slide_plan_rate_missing_false_when_rate_set,
         # PR-O (compute_rate_missing helper sink、Codex 01:12 approve): 1 件
         test_observability_compute_rate_missing_helper,
+        # PR-P (entry exit code propagation audit、Codex 01:21 approve): 1 件 (lint-style)
+        test_all_seven_scripts_use_sys_exit_in_main,
         # PR-I (human stdout path leak audit、Codex 00:08 approve): 2 件 (1 feat + 1 fix iter voicevox summary redact)
         test_build_slide_data_human_stdout_path_redacted_by_default,
         test_voicevox_narration_summary_path_redacted_by_default,

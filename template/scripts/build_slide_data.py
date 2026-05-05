@@ -485,4 +485,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # PR-P (Codex 01:21 Z approve): main() の return int を exit code に propagate。
+    # `main()` 直呼びだと `_emit_error` 経由 return 3 が shell rc=0 に潰れる
+    # (PR-G fix iter で compare_telop_split.py で発見・修正された pattern と同型)。
+    # `or 0` で main returns None も許容。
+    sys.exit(main() or 0)

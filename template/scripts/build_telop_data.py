@@ -540,4 +540,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # PR-P (Codex 01:21 Z approve): main() return int を exit code に propagate。
+    sys.exit(main() or 0)
