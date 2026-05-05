@@ -36,6 +36,7 @@ _sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _observability import (  # noqa: E402
     build_status,
     emit_json as _obs_emit_json,
+    resolve_run_context,
     safe_artifact_path,
     user_content_meta,
 )
@@ -306,6 +307,9 @@ def main():
     args = ap.parse_args()
     start_time = time.monotonic()
 
+    # PR-E: trace context resolve、_emit_error / 本走 emit 両方で共有
+    run_ctx = resolve_run_context()
+
     # Codex 21:46 PR6 review P1 fix: error path も `--json-log` で
     # v1 status JSON tail emit する。1 invocation 1 emission contract 維持。
     def _emit_error(v0_status, exit_code, *, category=None, **extra):
@@ -320,6 +324,9 @@ def main():
             duration_ms=duration_ms,
             category_override=category,
             redaction_rules=[],
+            run_id=run_ctx["run_id"],
+            parent_run_id=run_ctx["parent_run_id"],
+            step_id=run_ctx["step_id"],
             **extra,
         )
         _obs_emit_json(args.json_log, payload)
@@ -523,6 +530,9 @@ def main():
         duration_ms=duration_ms,
         category_override="telop-build",
         redaction_rules=redaction_rules,
+        run_id=run_ctx["run_id"],
+        parent_run_id=run_ctx["parent_run_id"],
+        step_id=run_ctx["step_id"],
         mode=mode_label,
     )
     _obs_emit_json(args.json_log, payload)

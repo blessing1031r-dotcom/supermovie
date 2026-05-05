@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _observability import (
     build_status,
     emit_json as _obs_emit_json,
+    resolve_run_context,
     redact_provider_body,
     safe_artifact_path,
 )
@@ -205,6 +206,9 @@ def main():
                          "(default: project-root 相対 / <HOME> placeholder、debug 専用)")
     args = ap.parse_args()
 
+    # PR-E (distributed tracing): main 冒頭で 1 回 resolve、全 emission に同 run_ctx を渡す。
+    run_ctx = resolve_run_context()
+
     # Phase 3 obs migration core: 全 return path で v1 schema 経由で emit。
     # dry-run JSON は本 helper を使わず既存 schema を維持 (OBSERVABILITY.md §v0 dry-run JSON legacy)。
     # extra kwargs は build_status で v1 schema に top-level merge され v0 emit pattern と互換。
@@ -225,6 +229,9 @@ def main():
             v0_status=status,
             exit_code=exit_code,
             redaction_rules=redaction_rules,
+            run_id=run_ctx["run_id"],
+            parent_run_id=run_ctx["parent_run_id"],
+            step_id=run_ctx["step_id"],
             **extra,
         )
         return _obs_emit_json(args.json_log, payload)
@@ -372,6 +379,17 @@ def main():
             "estimation_method": "ceil(prompt_chars/4)",
         }
         print(json.dumps(dry_run_payload, ensure_ascii=False))
+        # PR-E: --json-log 時は v1 status tail も emit (run_id propagation、2-emission pattern)。
+        # dry-run legacy JSON は本 helper を通さず維持 (OBSERVABILITY.md §v0 dry-run JSON legacy)。
+        if args.json_log:
+            return emit_json(
+                "dry_run", 0,
+                model=args.model,
+                max_tokens=max_tokens,
+                estimated_input_tokens=estimated_input_tokens,
+                estimated_output_tokens_upper_bound=estimated_output_tokens_upper_bound,
+                estimated_cost_usd_upper_bound=estimated_cost_usd_upper_bound,
+            )
         return 0
 
     # Anthropic API 呼び出し (urllib で SDK 不要に保つ)

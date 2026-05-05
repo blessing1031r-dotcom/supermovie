@@ -56,6 +56,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _observability import (  # noqa: E402
     build_status,
     emit_json as _obs_emit_json,
+    resolve_run_context,
     safe_artifact_path,
     user_content_meta,
 )
@@ -539,6 +540,9 @@ def main():
                          "(default: project-root 相対 / <HOME> placeholder、debug 専用)")
     args = ap.parse_args()
 
+    # PR-E (distributed tracing): main 冒頭で 1 回 resolve、全 emission に同 run_ctx を渡す。
+    run_ctx = resolve_run_context()
+
     # Phase 3 obs migration core: helper 経由で v1 schema 経由 emit。
     # Codex 20:48 PR3 review P1 #2 fix: redact key 名を実 payload と一致させる。
     # 旧 (output / narration_data_path / chunk_meta_path) は誤、実 emit は
@@ -569,6 +573,9 @@ def main():
             v0_status=status,
             exit_code=exit_code,
             redaction_rules=redaction_rules,
+            run_id=run_ctx["run_id"],
+            parent_run_id=run_ctx["parent_run_id"],
+            step_id=run_ctx["step_id"],
             **extra,
         )
         return _obs_emit_json(args.json_log, payload)

@@ -2925,6 +2925,238 @@ def test_observability_emit_json_disabled_no_print(capsys=None) -> None:
     assert rc2 == 0
 
 
+def test_observability_resolve_run_context_uses_env() -> None:
+    """env (SUPERMOVIE_RUN_ID / PARENT_RUN_ID / STEP_ID) 設定値をそのまま採用する。"""
+    import os as _os
+    from _observability import (
+        resolve_run_context,
+        TRACE_RUN_ID_ENV,
+        TRACE_PARENT_RUN_ID_ENV,
+        TRACE_STEP_ID_ENV,
+    )
+
+    keys = (TRACE_RUN_ID_ENV, TRACE_PARENT_RUN_ID_ENV, TRACE_STEP_ID_ENV)
+    saved = {k: _os.environ.get(k) for k in keys}
+    try:
+        _os.environ[TRACE_RUN_ID_ENV] = "run-abc"
+        _os.environ[TRACE_PARENT_RUN_ID_ENV] = "parent-xyz"
+        _os.environ[TRACE_STEP_ID_ENV] = "step-1"
+        ctx = resolve_run_context()
+        assert ctx == {
+            "run_id": "run-abc",
+            "parent_run_id": "parent-xyz",
+            "step_id": "step-1",
+        }, f"env override should be passed through, got {ctx}"
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                _os.environ.pop(k, None)
+            else:
+                _os.environ[k] = v
+
+
+def test_observability_resolve_run_context_generates_when_missing() -> None:
+    """env 未設定時 + generate_if_missing=True → uuid4 hex (32 char) を生成。
+
+    parent / step は env のみ、未設定なら None (auto-generate しない)。
+    """
+    import os as _os
+    import re
+    from _observability import (
+        resolve_run_context,
+        TRACE_RUN_ID_ENV,
+        TRACE_PARENT_RUN_ID_ENV,
+        TRACE_STEP_ID_ENV,
+    )
+
+    keys = (TRACE_RUN_ID_ENV, TRACE_PARENT_RUN_ID_ENV, TRACE_STEP_ID_ENV)
+    saved = {k: _os.environ.get(k) for k in keys}
+    try:
+        for k in keys:
+            _os.environ.pop(k, None)
+        ctx = resolve_run_context()
+        assert ctx["run_id"] is not None, "missing env should auto-generate run_id"
+        assert re.fullmatch(r"[0-9a-f]{32}", ctx["run_id"]), \
+            f"generated run_id should be 32-char hex, got {ctx['run_id']!r}"
+        assert ctx["parent_run_id"] is None, "parent should remain None when env unset"
+        assert ctx["step_id"] is None, "step should remain None when env unset"
+        # 連続 call で違う run_id が出る (uuid4 由来)
+        ctx2 = resolve_run_context()
+        assert ctx2["run_id"] != ctx["run_id"], "uuid4 collision suspected"
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                _os.environ.pop(k, None)
+            else:
+                _os.environ[k] = v
+
+
+def test_observability_resolve_run_context_no_generate() -> None:
+    """generate_if_missing=False で env 未設定 → run_id=None (生成しない)。"""
+    import os as _os
+    from _observability import resolve_run_context, TRACE_RUN_ID_ENV
+
+    saved = _os.environ.get(TRACE_RUN_ID_ENV)
+    try:
+        _os.environ.pop(TRACE_RUN_ID_ENV, None)
+        ctx = resolve_run_context(generate_if_missing=False)
+        assert ctx["run_id"] is None, f"generate_if_missing=False should return None, got {ctx['run_id']!r}"
+    finally:
+        if saved is None:
+            _os.environ.pop(TRACE_RUN_ID_ENV, None)
+        else:
+            _os.environ[TRACE_RUN_ID_ENV] = saved
+
+
+def test_observability_resolve_run_context_empty_env_fallback() -> None:
+    """env が空文字列 → 未設定扱い、generate_if_missing=True で uuid4 生成。"""
+    import os as _os
+    from _observability import resolve_run_context, TRACE_RUN_ID_ENV
+
+    saved = _os.environ.get(TRACE_RUN_ID_ENV)
+    try:
+        _os.environ[TRACE_RUN_ID_ENV] = ""
+        ctx = resolve_run_context()
+        assert ctx["run_id"] is not None, "empty env should be treated as missing"
+        assert len(ctx["run_id"]) == 32, "empty env should fall through to uuid4"
+    finally:
+        if saved is None:
+            _os.environ.pop(TRACE_RUN_ID_ENV, None)
+        else:
+            _os.environ[TRACE_RUN_ID_ENV] = saved
+
+
+def test_observability_resolve_run_context_cap_exceeded() -> None:
+    """env 値が MAX_TRACE_CONTEXT_VALUE_LEN 超過 → TraceContextError raise (truncation せず error)。"""
+    import os as _os
+    from _observability import (
+        resolve_run_context,
+        TRACE_RUN_ID_ENV,
+        MAX_TRACE_CONTEXT_VALUE_LEN,
+        TraceContextError,
+    )
+
+    saved = _os.environ.get(TRACE_RUN_ID_ENV)
+    try:
+        _os.environ[TRACE_RUN_ID_ENV] = "x" * (MAX_TRACE_CONTEXT_VALUE_LEN + 1)
+        try:
+            resolve_run_context()
+        except TraceContextError as e:
+            assert "exceeds" in str(e) or "MAX_TRACE_CONTEXT_VALUE_LEN" in str(e), \
+                f"error should mention cap, got {e}"
+        else:
+            assert False, "should raise TraceContextError on cap exceed"
+    finally:
+        if saved is None:
+            _os.environ.pop(TRACE_RUN_ID_ENV, None)
+        else:
+            _os.environ[TRACE_RUN_ID_ENV] = saved
+
+
+def test_observability_run_id_in_payload() -> None:
+    """build_status は run_id / parent_run_id / step_id が non-None で payload に乗せる。"""
+    from _observability import build_status
+
+    p1 = build_status(
+        script="x", v0_status="success", exit_code=0,
+        run_id="run-1", parent_run_id="parent-1", step_id="step-1",
+    )
+    assert p1["run_id"] == "run-1"
+    assert p1["parent_run_id"] == "parent-1"
+    assert p1["step_id"] == "step-1"
+
+    # parent / step が None の時は payload に含めない (legacy 互換)
+    p2 = build_status(
+        script="x", v0_status="success", exit_code=0,
+        run_id="run-2", parent_run_id=None, step_id=None,
+    )
+    assert p2["run_id"] == "run-2"
+    assert "parent_run_id" not in p2
+    assert "step_id" not in p2
+
+
+def test_generate_slide_plan_run_id_propagation() -> None:
+    """generate_slide_plan dry-run --json-log 経由で v1 tail に run_id が乗る (env 設定時)。
+
+    既存 dry-run legacy JSON は維持、--json-log 時のみ v1 tail を追加 emit (2-emission pattern)。
+    """
+    import os as _os
+    import io
+    import sys as _sys
+    import importlib
+    from contextlib import redirect_stdout
+
+    saved_env = {k: _os.environ.get(k) for k in (
+        "ANTHROPIC_API_KEY",
+        "SUPERMOVIE_RUN_ID",
+        "SUPERMOVIE_PARENT_RUN_ID",
+        "SUPERMOVIE_STEP_ID",
+        "SUPERMOVIE_RATE_INPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
+    )}
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+
+    import shutil as _shutil
+    proj = Path(tempfile.mkdtemp(prefix="run_id_prop_"))
+    (proj / "transcript_fixed.json").write_text(
+        json.dumps({
+            "duration_ms": 5000,
+            "words": [{"text": "hi", "start": 0, "end": 500, "confidence": 0.9}],
+            "segments": [{"text": "hi", "start": 0, "end": 500}],
+        }),
+        encoding="utf-8",
+    )
+    (proj / "project-config.json").write_text(
+        json.dumps({"format": "youtube", "videoType": "test", "tone": "test"}),
+        encoding="utf-8",
+    )
+    try:
+        _os.environ["SUPERMOVIE_RUN_ID"] = "run-prop-test"
+        _os.environ["SUPERMOVIE_PARENT_RUN_ID"] = "parent-prop"
+        _os.environ["SUPERMOVIE_STEP_ID"] = "step-prop"
+        _os.environ.pop("ANTHROPIC_API_KEY", None)
+        for k in (
+            "SUPERMOVIE_RATE_INPUT_PER_MTOK",
+            "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+            "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+            "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
+        ):
+            _os.environ.pop(k, None)
+        _os.chdir(str(proj))
+
+        import generate_slide_plan as gsp
+        importlib.reload(gsp)
+        gsp.PROJ = proj
+
+        _sys.argv = ["generate_slide_plan.py", "--dry-run", "--json-log"]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = gsp.main()
+        assert rc == 0, f"dry-run --json-log should return 0, got {rc}"
+        lines = [l for l in buf.getvalue().splitlines() if l.strip()]
+        # 2 emission: dry-run legacy JSON + v1 tail
+        assert len(lines) >= 2, f"expected >=2 lines (legacy + v1 tail), got {len(lines)}: {lines}"
+        v1_tail = json.loads(lines[-1])
+        assert v1_tail.get("schema_version") == 1, f"v1 tail missing schema_version: {v1_tail}"
+        assert v1_tail.get("run_id") == "run-prop-test", \
+            f"run_id propagation failed: {v1_tail.get('run_id')!r}"
+        assert v1_tail.get("parent_run_id") == "parent-prop"
+        assert v1_tail.get("step_id") == "step-prop"
+        assert v1_tail.get("status") == "dry_run"
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        for k, v in saved_env.items():
+            if v is None:
+                _os.environ.pop(k, None)
+            else:
+                _os.environ[k] = v
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -2980,6 +3212,14 @@ def main() -> int:
         test_observability_build_status_duration_ms_and_category_override,
         test_observability_provider_body_stderr_default_redact,
         test_observability_emit_json_disabled_no_print,
+        # PR-E (distributed tracing run_id active emission): 6 件
+        test_observability_resolve_run_context_uses_env,
+        test_observability_resolve_run_context_generates_when_missing,
+        test_observability_resolve_run_context_no_generate,
+        test_observability_resolve_run_context_empty_env_fallback,
+        test_observability_resolve_run_context_cap_exceeded,
+        test_observability_run_id_in_payload,
+        test_generate_slide_plan_run_id_propagation,
     ]
     failed = []
     for t in tests:

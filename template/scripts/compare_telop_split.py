@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _observability import (  # noqa: E402
     build_status,
     emit_json as _obs_emit_json,
+    resolve_run_context,
     safe_artifact_path,
 )
 
@@ -151,6 +152,9 @@ def main():
                     help="json tail の artifact path を絶対 path のまま emit (debug 専用)")
     args = ap.parse_args()
 
+    # PR-E: trace context resolve (1 invocation 1 resolve、emit closure に閉じ込め)
+    run_ctx = resolve_run_context()
+
     start_time = time.monotonic()
     baseline_path = Path(args.baseline)
     new_path = Path(args.new)
@@ -207,6 +211,9 @@ def main():
             duration_ms=duration_ms,
             category_override="kpi-comparison",
             redaction_rules=redaction_rules,
+            run_id=run_ctx["run_id"],
+            parent_run_id=run_ctx["parent_run_id"],
+            step_id=run_ctx["step_id"],
         )
         return _obs_emit_json(args.json_log, payload)
 

@@ -62,6 +62,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _observability import (  # noqa: E402
     build_status,
     emit_json as _obs_emit_json,
+    resolve_run_context,
     safe_artifact_path,
 )
 
@@ -252,6 +253,9 @@ def cli() -> int:
     args = ap.parse_args()
     start_time = time.monotonic()
 
+    # PR-E: trace context resolve (1 invocation 1 resolve、_emit_early / 本走 emit 両方で共有)
+    run_ctx = resolve_run_context()
+
     # Phase 3 obs migration step 3 (Codex 21:14 PR4 review P1 #1):
     # contract は --json-log 時 1 invocation 1 emission。validation/env early return も
     # tail emit する helper closure を冒頭で定義し、全 return path で使う。
@@ -273,6 +277,9 @@ def cli() -> int:
             cost=None,
             duration_ms=duration_ms,
             redaction_rules=[],
+            run_id=run_ctx["run_id"],
+            parent_run_id=run_ctx["parent_run_id"],
+            step_id=run_ctx["step_id"],
             **extra,
         )
         _obs_emit_json(args.json_log, payload)
@@ -483,6 +490,9 @@ def cli() -> int:
         duration_ms=duration_ms,
         category_override="dimension-regression",
         redaction_rules=redaction_rules,
+        run_id=run_ctx["run_id"],
+        parent_run_id=run_ctx["parent_run_id"],
+        step_id=run_ctx["step_id"],
         env_error=env_error,
         grid_status=grid_status,
     )

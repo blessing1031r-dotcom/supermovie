@@ -12,10 +12,19 @@ Design:
 import hashlib
 import json
 import os
+import uuid
 from pathlib import Path
 
 SCHEMA_VERSION = 1
 REDACTION_VERSION = 1
+
+# Trace context (run_id active emission, PR-E、Codex 22:40 next priority verdict)。
+# `SUPERMOVIE_RUN_ID` 未設定時は uuid4().hex (32 char) を auto-generate、parent / step は env のみ
+# (None default、関係性情報なので auto-generate しない)。
+TRACE_RUN_ID_ENV = "SUPERMOVIE_RUN_ID"
+TRACE_PARENT_RUN_ID_ENV = "SUPERMOVIE_PARENT_RUN_ID"
+TRACE_STEP_ID_ENV = "SUPERMOVIE_STEP_ID"
+MAX_TRACE_CONTEXT_VALUE_LEN = 128
 
 # v0 → v1 status mapping per docs/OBSERVABILITY.md §Migration Policy.
 # Update both this dict and the doc table together.
@@ -258,3 +267,50 @@ def emit_json(enabled, payload):
     if enabled:
         print(json.dumps(payload, ensure_ascii=False))
     return int(payload.get("exit_code", 0))
+
+
+class TraceContextError(ValueError):
+    """env value invalid for trace context (length cap exceeded etc.)."""
+
+
+def _validate_trace_value(name, value):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TraceContextError(f"{name} must be str, got {type(value).__name__}")
+    if len(value) > MAX_TRACE_CONTEXT_VALUE_LEN:
+        raise TraceContextError(
+            f"env {name}={value[:16]}... exceeds MAX_TRACE_CONTEXT_VALUE_LEN={MAX_TRACE_CONTEXT_VALUE_LEN}"
+        )
+    return value
+
+
+def resolve_run_context(*,
+                        run_id_env=TRACE_RUN_ID_ENV,
+                        parent_env=TRACE_PARENT_RUN_ID_ENV,
+                        step_env=TRACE_STEP_ID_ENV,
+                        generate_if_missing=True):
+    """Resolve run_id / parent_run_id / step_id from env, fallback to uuid4 hex.
+
+    precedence:
+      1. `SUPERMOVIE_RUN_ID` 設定 + 非空 → そのまま使用 (cap 検証のみ)
+      2. 未設定 + generate_if_missing=True → uuid.uuid4().hex (32 char) auto-generate
+      3. 未設定 + generate_if_missing=False → None
+      parent / step は env のみ、未設定なら None (auto-generate しない)
+
+    `MAX_TRACE_CONTEXT_VALUE_LEN` (default 128) 超は TraceContextError raise (truncation せず error)。
+
+    Returns: dict with keys "run_id" / "parent_run_id" / "step_id" (str | None)
+    """
+    raw_run_id = os.environ.get(run_id_env) or None
+    raw_parent = os.environ.get(parent_env) or None
+    raw_step = os.environ.get(step_env) or None
+
+    run_id = _validate_trace_value(run_id_env, raw_run_id)
+    if run_id is None and generate_if_missing:
+        run_id = uuid.uuid4().hex
+
+    parent = _validate_trace_value(parent_env, raw_parent)
+    step = _validate_trace_value(step_env, raw_step)
+
+    return {"run_id": run_id, "parent_run_id": parent, "step_id": step}

@@ -303,6 +303,7 @@ def main():
     from _observability import (
         build_status,
         emit_json as _obs_emit_json,
+        resolve_run_context,
         safe_artifact_path,
     )
 
@@ -319,6 +320,9 @@ def main():
     args = ap.parse_args()
     start_time = _time.monotonic()
     PROJ_ROOT = Path(__file__).resolve().parent.parent
+
+    # PR-E: trace context resolve、_emit closure に閉じ込め
+    run_ctx = resolve_run_context()
 
     def _emit(v0_status, exit_code, *, category=None, **extra):
         """v1 status JSON tail emit (preflight)。Codex 21:34 PR5 review P2 fix:
@@ -350,6 +354,9 @@ def main():
             duration_ms=duration_ms,
             category_override=category,
             redaction_rules=redaction_rules,
+            run_id=run_ctx["run_id"],
+            parent_run_id=run_ctx["parent_run_id"],
+            step_id=run_ctx["step_id"],
             **extra,
         )
         _obs_emit_json(args.json_log, payload)
