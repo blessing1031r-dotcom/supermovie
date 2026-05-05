@@ -142,12 +142,23 @@ def _lexical_redact(s, home):
 
 # `/...` 風の POSIX abs path token を抽出。直前が word 文字 (URL の `https:` / `file:` 等の scheme) や
 # `:` の場合はマッチしない (URL 破壊回避、Codex 23:33 P2 #1)。
-_ABS_PATH_RE = re.compile(r"(?<![A-Za-z0-9_:/])(/[A-Za-z0-9._/\-]+)")
+# PR-AS (Codex 04:46 verdict BD): 直前 `>` も reject set に追加。`<HOME>` / `<TMP>` /
+# `<ABS>` placeholder の直後 `/...` を再マッチさせて二重 redact を起こさない (例:
+# tilde sub 経路で `<HOME>/secret/file.json` → 旧実装は `<HOME><ABS>/file.json` の
+# 残留 leak、`>` reject で `<HOME>/secret/file.json` を保持)。
+_ABS_PATH_RE = re.compile(r"(?<![A-Za-z0-9_:/>])(/[A-Za-z0-9._/\-]+)")
 
 # Windows abs path token (drive letter + `:` + `\` or `/`)。SuperMovie は Darwin/Linux 主だが、
 # CI / cross-platform エラー文字列 / Windows tool 経由で leak する可能性に対する defense-in-depth (PR-K、Codex 00:36)。
 # 例: `C:\Users\name\foo`、`D:/Projects/bar`。直前が word 文字なら非 match (URL 等で誤発火しない)。
 _WIN_PATH_RE = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z]:[\\\/][^\s'\"]+)")
+
+# `~` 始まりの home path token (tilde expansion)。`~/foo` / `~user/foo` / `~` / `~user` 全形を greedy
+# 捕捉。直前が word 文字なら非 match (`foo~bar` 等で誤発火しない、PR-AS Codex 04:46 verdict BD)。
+# `_ABS_PATH_RE` は `/` 始まりのみ捕捉するため、`~/secret` の `/secret` 部分が独立に match して
+# `~<ABS>/...` という `~` 残留 leak を起こしていた。本 regex を `_ABS_PATH_RE` より先に sub すること
+# で `~/...` 全体を 1 token として placeholder 化、`~` 残留を closure。
+_TILDE_PATH_RE = re.compile(r"(?<![A-Za-z0-9_])(~[A-Za-z0-9_]*(?:/[A-Za-z0-9._/\-]+)?)")
 
 
 def redact_secret(value, *, last_n=4, mask_char="*"):
@@ -230,6 +241,23 @@ def redact_error_message(msg):
                     return f"<ABS>/{basename}"
         return "<ABS>"
 
+    def _sub_tilde(m):
+        # PR-AS (Codex 04:46 verdict BD) defense: `~/...` / `~user/...` の path
+        # token を `_lexical_redact` 経路に流す。`os.path.expanduser` で展開
+        # できれば `<HOME>/...` placeholder に正規化、unknown user 等で展開
+        # 失敗 (`~unknownuser/...` は同じ str を返す) なら `<ABS>/<basename>`。
+        # `_ABS_PATH_RE` より先に sub して `~/secret` の `/secret` 部分を
+        # 独立 match させない (旧実装の `~<ABS>/...` 残留 leak を closure)。
+        token = m.group(1)
+        expanded = os.path.expanduser(token)
+        if expanded != token and expanded.startswith("/"):
+            return _lexical_redact(expanded, home)
+        # expanduser 失敗 (unknown user) or `~` 単独 → ABS placeholder
+        if "/" in token:
+            return f"<ABS>/{Path(token).name}"
+        return "<ABS>"
+
+    msg = _TILDE_PATH_RE.sub(_sub_tilde, msg)
     msg = _ABS_PATH_RE.sub(_sub_posix, msg)
     msg = _WIN_PATH_RE.sub(_sub_win, msg)
     return msg

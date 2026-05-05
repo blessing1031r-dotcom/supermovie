@@ -5811,6 +5811,84 @@ def test_observability_redact_error_message_multiple_paths_in_one_msg() -> None:
         f"both paths should be redacted: {redacted!r}"
 
 
+def test_observability_redact_error_message_tilde_path_token() -> None:
+    """`redact_error_message()` の `~/...` / `~user/...` tilde path token redact
+    contract lock-in (Codex 04:46 PR-AS verdict BD、observability redaction
+    contract gap 防止)。
+
+    error message に `~/secret/file.json` 等の tilde-prefixed path が含まれた
+    場合、PR-V `safe_artifact_path` の `~` expansion fix と同型の redaction が
+    必要。旧実装は `_ABS_PATH_RE` のみで `/...` 部分しか拾わず、
+    `~/secret/file.json` を `~<ABS>/file.json` という `~` 残留 leak として
+    出力していた (`~` literal は path token 由来であることを示唆して partial
+    leak)。
+
+    fix:
+      - `_TILDE_PATH_RE` を新設 (`~/...` / `~user/...` / `~` / `~user` greedy match)
+      - `_sub_tilde` で `os.path.expanduser` → `_lexical_redact` 経由で
+        `<HOME>/...` placeholder 化 (PR-V 同型)
+      - 未知 user (`~unknownuser/...`) は `<ABS>/<basename>` に落とす
+      - `_ABS_PATH_RE` lookbehind に `>` 追加で `<HOME>/...` placeholder の
+        `/...` 部分を再 match させない (二重 redact 防止)
+
+    8 case で contract lock-in: `~/path` / `~/dir-only` / `~/.dotfile` /
+    `~unknownuser/data` / mixed (`~/x` + `/etc/y`) / abs HOME (regression
+    guard) / URL+tilde (URL preserve) / `~` 単独。
+    """
+    from _observability import redact_error_message
+
+    # (1) `~/secret/file.json` → `<HOME>/secret/file.json`
+    out1 = redact_error_message("failed to read ~/secret/file.json")
+    assert "<HOME>" in out1, f"~/path must be redacted to <HOME>, got {out1!r}"
+    assert "~/secret" not in out1, f"raw ~/path leaked: {out1!r}"
+    assert "<ABS>" not in out1, f"unwanted <ABS> in tilde path: {out1!r}"
+
+    # (2) `~/secret` (no file) → `<HOME>/secret`
+    out2 = redact_error_message("cannot access ~/secret")
+    assert "<HOME>" in out2
+    assert "~/secret" not in out2
+
+    # (3) `~/.config/credentials` (dotfile path)
+    out3 = redact_error_message("see at ~/.config/credentials")
+    assert "<HOME>" in out3
+    assert "~/.config" not in out3
+
+    # (4) `~unknownuser/data` (expanduser fails) → `<ABS>/data`
+    out4 = redact_error_message("access ~unknownuser/data error")
+    assert "~unknownuser" not in out4, (
+        f"unknown user tilde must be redacted: {out4!r}"
+    )
+    assert "<ABS>" in out4
+
+    # (5) mixed: `/etc/conf` + `~/private/x.json` → 両方 redact
+    out5 = redact_error_message(
+        "config at /etc/conf and ~/private/x.json"
+    )
+    assert "<HOME>" in out5
+    assert "<ABS>" in out5
+    assert "~/private" not in out5
+    assert "/etc/conf" not in out5
+
+    # (6) regression guard: 旧来の abs HOME path も従来通り redact
+    out6 = redact_error_message("failed at /Users/rokumasuda/secret/file.json")
+    assert "<HOME>" in out6
+    assert "/Users/rokumasuda" not in out6
+
+    # (7) URL + tilde 混在: URL preserve + tilde redact
+    out7 = redact_error_message(
+        "POST https://api.example.com/v1/foo failed at ~/x.json"
+    )
+    assert "https://api.example.com" in out7, "URL must be preserved"
+    assert "<HOME>" in out7
+    assert "~/x.json" not in out7
+
+    # (8) `~` 単独 → `<HOME>` placeholder
+    out8 = redact_error_message("go to ~ now")
+    assert "<HOME>" in out8
+    # `~ ` (tilde + space) が raw のままでないこと (token として redact 済)
+    assert "go to ~ " not in out8
+
+
 def test_observability_redact_error_message_url_path_order_independence() -> None:
     """`redact_error_message()` の URL+path 混在 input で order-independent
     redaction lock-in (Codex 04:35 PR-AR verdict AY、observability redaction
@@ -6826,6 +6904,7 @@ def main() -> int:
         test_observability_redact_error_message_url_with_port_query_fragment,
         test_observability_redact_error_message_multiple_paths_in_one_msg,
         test_observability_redact_error_message_url_path_order_independence,
+        test_observability_redact_error_message_tilde_path_token,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
