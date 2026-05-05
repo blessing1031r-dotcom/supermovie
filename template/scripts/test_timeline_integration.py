@@ -8839,14 +8839,31 @@ def test_observability_emit_json_disabled_silent_caller_ast_lint() -> None:
     repo_root = Path(__file__).resolve().parent.parent.parent
 
     # part 1: docs §Emission Contract literal presence
+    # PR-BR P2 fix (Codex 08:58): 全文検索 → §Emission Contract section
+    # slice に scope (`### Emission Contract` heading 直後 ～ 次 `## ` /
+    # `### ` heading 直前) で literal を audit、docs 内の別 section
+    # 残存で false-pass する drift を fail-loud
+    import re as _re_obs
     obs_md = repo_root / "docs" / "OBSERVABILITY.md"
     md = obs_md.read_text(encoding="utf-8")
+    section_re = _re_obs.compile(
+        r"^### Emission Contract[^\n]*\n(?P<body>.*?)"
+        r"(?=^## |^### )",
+        _re_obs.MULTILINE | _re_obs.DOTALL,
+    )
+    sec_match = section_re.search(md)
+    assert sec_match is not None, (
+        "`### Emission Contract` の section が docs に見つからない "
+        "(heading rename / 構造変更?)"
+    )
+    section_body = sec_match.group("body")
     DOCS_LITERALS = ["--json-log", "指定された時のみ"]
     for lit in DOCS_LITERALS:
-        assert lit in md, (
-            f"docs/OBSERVABILITY.md §Emission Contract に "
+        assert lit in section_body, (
+            f"docs/OBSERVABILITY.md §Emission Contract section に "
             f"`--json-log` disabled silent contract literal '{lit}' が "
-            f"見つからない (docs spec drift?)"
+            f"見つからない (docs spec drift / 別 section 残存で "
+            f"false-pass risk?)"
         )
 
     SCRIPT_NAMES = (
