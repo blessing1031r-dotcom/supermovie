@@ -3857,6 +3857,43 @@ def test_observability_redact_secret_last_n_zero_or_negative_full_mask() -> None
     assert redacted_zero == "*" * len("sk-1234567890")
 
 
+def test_unsafe_keep_abs_path_flag_present_in_all_seven_scripts() -> None:
+    """PR-M (Codex 00:54 approve): 7 script すべてが `--unsafe-keep-abs-path` argparse flag を
+    受け取り、`safe_artifact_path()` 等で `args.unsafe_keep_abs_path` を使っていることを
+    static check で verify。将来 script 追加時に flag 漏れた場合の regression 防止。
+
+    PR-I/J/K で abs_path contract が unified knob 化された前提を維持する lint。
+    """
+    scripts_dir = Path(__file__).resolve().parent
+    target_scripts = [
+        "build_slide_data.py",
+        "build_telop_data.py",
+        "voicevox_narration.py",
+        "visual_smoke.py",
+        "compare_telop_split.py",
+        "preflight_video.py",
+        "generate_slide_plan.py",
+    ]
+    missing_argparse = []
+    missing_usage = []
+    for name in target_scripts:
+        src = (scripts_dir / name).read_text(encoding="utf-8")
+        if "--unsafe-keep-abs-path" not in src:
+            missing_argparse.append(name)
+            continue
+        # add_argument 呼び出しで flag 定義していること (action="store_true" パターン)
+        if 'add_argument("--unsafe-keep-abs-path"' not in src:
+            missing_argparse.append(name)
+        # 受け取った args を実際に safe_artifact_path に渡していること
+        # (args.unsafe_keep_abs_path 参照あり)
+        if "args.unsafe_keep_abs_path" not in src:
+            missing_usage.append(name)
+    assert not missing_argparse, \
+        f"--unsafe-keep-abs-path argparse 定義漏れ: {missing_argparse}"
+    assert not missing_usage, \
+        f"args.unsafe_keep_abs_path 使用漏れ: {missing_usage}"
+
+
 def test_voicevox_narration_summary_path_redacted_by_default() -> None:
     """PR-I fix iter (Codex 00:13 P1 #1): voicevox_narration の human stdout summary JSON で
     raw path leak しない (engine 不在で skip 経由しないため、内部 helper 関数を直接 audit)。
@@ -4107,6 +4144,8 @@ def main() -> int:
         test_observability_redact_secret_non_string_passthrough,
         test_observability_redact_secret_custom_last_n_and_mask_char,
         test_observability_redact_secret_last_n_zero_or_negative_full_mask,
+        # PR-M (--unsafe-keep-abs-path flag audit、Codex 00:54 approve): 1 件 (lint-style)
+        test_unsafe_keep_abs_path_flag_present_in_all_seven_scripts,
         # PR-I (human stdout path leak audit、Codex 00:08 approve): 2 件 (1 feat + 1 fix iter voicevox summary redact)
         test_build_slide_data_human_stdout_path_redacted_by_default,
         test_voicevox_narration_summary_path_redacted_by_default,
