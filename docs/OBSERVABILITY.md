@@ -277,6 +277,7 @@ cap: 全 3 field に `MAX_TRACE_CONTEXT_VALUE_LEN = 128` 適用、超過時は `
 | 12 | `redact_error_message()` regex 強化 (Windows path `C:\...` / `D:/...` 検出 + 置換、IPv6 / data: URI / mailto: の false-positive 防御維持、複数 path 同時 redact + 3 件 edge case test) | PR-K |
 | 13 | `--unsafe-keep-abs-path` flag 7 script audit (`build_slide_data` / `build_telop_data` / `voicevox_narration` / `visual_smoke` / `compare_telop_split` / `preflight_video` / `generate_slide_plan` の argparse + `args.unsafe_keep_abs_path` 使用を verify、将来 script 追加時の漏れ防止 lint test 1 件追加) | PR-M |
 | 14 | `rate_missing` discriminator 追加 (generate_slide_plan dry-run legacy JSON + v1 tail / cost_guard_aborted payload に `rate_missing: bool` 明示、`estimate is None` から推論する fragile downstream parse を回避、§Cost JSON Shape contract enforcement + 2 件 regression test) | PR-N |
+| 15 | `compute_rate_missing()` helper sink (`estimate is None ⇔ rate_missing=true` 算出規約を helper に集約、caller (legacy JSON / v1 tail / cost_guard_aborted) の重複式 3 site を `compute_rate_missing(estimate)` 単一呼び出しに統一、single source of truth + 1 件 unit test) | PR-O |
 
 ## Test Requirements
 

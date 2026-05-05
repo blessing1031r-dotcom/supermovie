@@ -3857,6 +3857,24 @@ def test_observability_redact_secret_last_n_zero_or_negative_full_mask() -> None
     assert redacted_zero == "*" * len("sk-1234567890")
 
 
+def test_observability_compute_rate_missing_helper() -> None:
+    """PR-O (Codex 01:12): compute_rate_missing(estimate) helper の discriminator 算出規約。
+
+    `estimated_cost_usd_upper_bound is None ⇔ rate_missing=true` を helper で集約、
+    caller の重複削減 (PR-N の 3 site で同式) の single source of truth。
+    """
+    from _observability import compute_rate_missing
+
+    # estimate=None (rate unset case) → rate_missing=True
+    assert compute_rate_missing(None) is True
+    # estimate=finite float (rate set case) → rate_missing=False
+    assert compute_rate_missing(0.0) is False
+    assert compute_rate_missing(0.001) is False
+    assert compute_rate_missing(123.456) is False
+    # 0.0 を「false-y」と扱わないこと (Python `if estimate:` バグ回避の意図確認)
+    assert compute_rate_missing(0.0) is False
+
+
 def test_generate_slide_plan_rate_missing_true_when_rate_unset() -> None:
     """PR-N (Codex 01:02): rate 未設定時の dry-run payload に rate_missing=true、
     estimated_cost_usd_upper_bound=null 両方が出ること (downstream discriminator)。
@@ -4282,6 +4300,8 @@ def main() -> int:
         # PR-N (cost.estimate / rate_missing schema verification、Codex 01:02 approve): 2 件
         test_generate_slide_plan_rate_missing_true_when_rate_unset,
         test_generate_slide_plan_rate_missing_false_when_rate_set,
+        # PR-O (compute_rate_missing helper sink、Codex 01:12 approve): 1 件
+        test_observability_compute_rate_missing_helper,
         # PR-I (human stdout path leak audit、Codex 00:08 approve): 2 件 (1 feat + 1 fix iter voicevox summary redact)
         test_build_slide_data_human_stdout_path_redacted_by_default,
         test_voicevox_narration_summary_path_redacted_by_default,

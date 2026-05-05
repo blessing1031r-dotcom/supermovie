@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _observability import (
     build_status,
+    compute_rate_missing,
     emit_json as _obs_emit_json,
     resolve_run_context,
     redact_provider_body,
@@ -397,7 +398,7 @@ def main():
             # PR-N (Codex 01:02): rate_missing discriminator を明示。
             # rate_input / rate_output どちらか None で True、両方 finite で False。
             # downstream parser が `estimate is None` から推論する fragile 実装を避ける契約。
-            "rate_missing": estimated_cost_usd_upper_bound is None,
+            "rate_missing": compute_rate_missing(estimated_cost_usd_upper_bound),
             "estimation_method": "ceil(prompt_chars/4)",
         }
         print(json.dumps(dry_run_payload, ensure_ascii=False))
@@ -412,7 +413,7 @@ def main():
                 estimated_output_tokens_upper_bound=estimated_output_tokens_upper_bound,
                 estimated_cost_usd_upper_bound=estimated_cost_usd_upper_bound,
                 # PR-N: v1 tail にも rate_missing discriminator を含める (legacy JSON / v1 tail 両方で同 contract)
-                rate_missing=estimated_cost_usd_upper_bound is None,
+                rate_missing=compute_rate_missing(estimated_cost_usd_upper_bound),
             )
         return 0
 
@@ -435,9 +436,10 @@ def main():
                 estimated_output_tokens_upper_bound=estimated_output_tokens_upper_bound,
                 estimated_cost_usd_upper_bound=estimated_cost_usd_upper_bound,
                 cost_abort_at=cost_abort_at,
-                # PR-N: cost_guard_aborted は rate 設定済 path のみ (上の条件で estimate is not None)、
-                # rate_missing=False を明示しておくと downstream parse が discriminator 統一可能。
-                rate_missing=False,
+                # PR-N: cost_guard_aborted は rate 設定済 path のみ (上の条件で estimate is not None)。
+                # PR-O: compute_rate_missing(estimate) で discriminator 算出を helper 統一
+                # (estimate is not None なので結果は False、helper 経由で全 site 同一式)。
+                rate_missing=compute_rate_missing(estimated_cost_usd_upper_bound),
             )
 
     # Anthropic API 呼び出し (urllib で SDK 不要に保つ)

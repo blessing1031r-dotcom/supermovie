@@ -289,6 +289,23 @@ def redact_provider_body(body, *, unsafe_dump=False, max_preview=80):
     return {"kind": "summary", "type": type(body).__name__}
 
 
+def compute_rate_missing(estimate):
+    """Cost rate_missing discriminator helper (PR-O、Codex 01:12)。
+
+    `estimated_cost_usd_upper_bound is None ⇔ rate_missing=true` の判定式を
+    一箇所に集約。caller (generate_slide_plan の dry-run legacy JSON / v1 tail /
+    cost_guard_aborted) で同式を重複していた分散を削減、`docs/OBSERVABILITY.md`
+    §Cost JSON Shape の `rate_missing` discriminator 算出ルールの single source of truth。
+
+    Args:
+      estimate: float (rate 設定済) | None (rate 未設定で estimate 算出不能)
+
+    Returns:
+      bool: True iff estimate is None (rate_missing).
+    """
+    return estimate is None
+
+
 def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
                  cost=None, redaction_rules=None,
                  duration_ms=None, category_override=None,
