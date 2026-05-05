@@ -289,16 +289,66 @@ def is_10bit_codec(source: dict) -> bool:
 
 
 def main():
+    # Phase 3 obs migration step 3 PR-B (Codex 21:01 step 3 verdict S3-3):
+    # 既存 stdout の source JSON は維持、--json-log 時のみ末尾 1 行に v1 status を追加。
+    # 既存 schema を helper schema に置換しない (downstream parser 互換性維持)。
+    import time as _time
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _observability import (
+        build_status,
+        emit_json as _obs_emit_json,
+        safe_artifact_path,
+    )
+
     ap = argparse.ArgumentParser()
     ap.add_argument("input_video")
     ap.add_argument("--write-config", help="project-config.json path to write")
     ap.add_argument("--force-format", choices=list(FORMAT_TARGETS.keys()))
     ap.add_argument("--allow-risk", default="", help="comma-separated risk keys")
+    ap.add_argument("--json-log", action="store_true",
+                    help="末尾に summary を 1 行純 JSON として emit "
+                         "(downstream observability、既存 stdout source JSON は維持)")
+    ap.add_argument("--unsafe-keep-abs-path", action="store_true",
+                    help="json tail の artifact path を絶対 path のまま emit (debug 専用)")
     args = ap.parse_args()
+    start_time = _time.monotonic()
+    PROJ_ROOT = Path(__file__).resolve().parent.parent
+
+    def _emit(v0_status, exit_code, **extra):
+        """v1 status JSON tail emit (preflight)。category_override="preflight-source-meta"。
+        既存 stdout (source JSON dump + write-config message) は維持される。"""
+        duration_ms = int((_time.monotonic() - start_time) * 1000)
+        artifacts = []
+        if args.write_config:
+            artifacts.append({
+                "path": safe_artifact_path(
+                    args.write_config,
+                    project_root=PROJ_ROOT,
+                    unsafe_keep_abs_path=args.unsafe_keep_abs_path,
+                ),
+                "kind": "json",
+            })
+        redaction_rules = []
+        if not args.unsafe_keep_abs_path:
+            redaction_rules.append("abs_path")
+        payload = build_status(
+            script="preflight_video",
+            v0_status=v0_status,
+            exit_code=exit_code,
+            counts={},
+            artifacts=artifacts,
+            cost=None,
+            duration_ms=duration_ms,
+            category_override="preflight-source-meta",
+            redaction_rules=redaction_rules,
+            **extra,
+        )
+        _obs_emit_json(args.json_log, payload)
+        return exit_code
 
     if not Path(args.input_video).exists():
         print(f"ERROR: input not found: {args.input_video}", file=sys.stderr)
-        sys.exit(3)
+        sys.exit(_emit("input_not_found", 3))
 
     probe = run_ffprobe(args.input_video)
     streams = probe.get("streams", []) or []
@@ -308,7 +358,7 @@ def main():
     data_streams = [s for s in streams if s.get("codec_type") == "data"]
     if not video_streams:
         print("ERROR: no video stream", file=sys.stderr)
-        sys.exit(3)
+        sys.exit(_emit("no_video_stream", 3))
     video = video_streams[0]
 
     source = build_source(
@@ -325,6 +375,7 @@ def main():
     allow = {k.strip() for k in args.allow_risk.split(",") if k.strip()}
     unhandled = [r for r in risks if r not in allow]
 
+    # 既存 stdout: source JSON dump (downstream consumer はこの形式を読む、互換性維持)
     print(json.dumps(source, ensure_ascii=False, indent=2))
 
     if args.write_config:
@@ -346,11 +397,14 @@ def main():
 
     if unhandled:
         print(f"\nrisks not allowed: {unhandled}", file=sys.stderr)
-        sys.exit(2)
+        sys.exit(_emit(
+            "risks_not_allowed", 2,
+            unhandled_risks=unhandled, chosen_format=chosen_format,
+        ))
     if chosen_format is None:
         print("\nERROR: format could not be inferred (--force-format required)", file=sys.stderr)
-        sys.exit(2)
-    sys.exit(0)
+        sys.exit(_emit("format_inference_failed", 2))
+    sys.exit(_emit("preflight_ok", 0, chosen_format=chosen_format, risks=risks))
 
 
 if __name__ == "__main__":
