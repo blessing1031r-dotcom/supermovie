@@ -138,9 +138,10 @@ main
 - supermovie-se 統合 (素材判断)
 - SadTalker / HeyGen / Kling 統合 (法的 / モラルリスク + API 課金)
 
-## 全 commit count (roku/obs-rate-alias branch、最新 139 件)
+## 全 commit count (roku/obs-rate-alias branch、最新 140 件)
 
 ```
+e7dc2bf fix: PR-D fix iter 5 — Codex 22:30 P2×2 (regen 動的 branch / Migration table wording)
 fdccad7 docs(phase3): refresh anchor/progress to 86abf83 / 156 — PR-D fix iter 4 (P2×3 Codex 22:23)
 86abf83 docs: PR-D fix iter 4 — Codex 22:23 P2×3 (v0 gap section legacy 化 / Test wording / anchor branch label)
 8808f6e docs(phase3): refresh anchor/progress to b837430 / 154 — PR-D fix iter 3 (P2×2 Codex 22:14)
@@ -282,7 +283,7 @@ e2a1a39 fix(timeline): Codex Phase 3-J review 4 件 fix (P1×1 + P2×2 + P3×1)
 66e2aeb feat(timeline): timeline.py 共通化 + Phase 3-I review 6 件 fix (Phase 3-J)
 ```
 
-(更新: 2026-05-05_22:32、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
+(更新: 2026-05-05_22:33、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
 本 script で regen → docs commit する形のため、docs 上の commit chain は
 docs commit を作る前の HEAD を反映する設計 (off-by-one は intrinsic、
 `--verify` mode で count drift を CI 検査可)。)
