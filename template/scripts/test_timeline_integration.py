@@ -2619,8 +2619,8 @@ def test_observability_helper_status_map() -> None:
         # success / skip / dry-run
         "success", "api_key_skipped", "engine_skipped", "engine_unavailable_strict",
         "list_speakers", "dry_run",
-        # slide-plan error variants
-        "cost_guard_arg_invalid", "inputs_missing", "rate_limited",
+        # slide-plan error variants (PR-F で cost_guard_aborted 追加)
+        "cost_guard_arg_invalid", "cost_guard_aborted", "inputs_missing", "rate_limited",
         "api_http_error", "llm_json_invalid",
         # voicevox error variants (voicevox_narration.py 全 emit_json("error_status",...) 経路)
         "transcript_missing", "transcript_invalid", "no_chunks", "invalid_fps",

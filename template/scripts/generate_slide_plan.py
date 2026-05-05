@@ -196,7 +196,8 @@ def main():
                     help="estimate cost USD upper bound がこの閾値を超えたら API call 前に "
                          "abort (status=cost_guard_aborted, exit 10)。"
                          "env: SUPERMOVIE_COST_USD_ABORT_AT (CLI > env > None=無効)。"
-                         "rate 未設定 (estimate=None) 時は閾値設定があっても skip しない。")
+                         "rate 未設定 (estimate=None) 時は閾値設定があっても abort skip "
+                         "(cost 不明状態で勝手に止めず通常進行、後方互換)。")
     # Phase 3-V P3 logging 拡張 (Codex CODEX_P2_COST_GUARD_DESIGN §4): voicevox_narration の
     # --json-log と同じ pattern で全 return path を status JSON で観測可能に。
     ap.add_argument("--json-log", action="store_true",
