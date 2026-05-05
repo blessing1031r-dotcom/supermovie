@@ -8788,6 +8788,243 @@ def test_observability_path_policy_placeholder_set_docs_code_lint() -> None:
     )
 
 
+def test_observability_missing_rate_behavior_docs_code_lint() -> None:
+    """`docs/OBSERVABILITY.md §Missing Rate Behavior` ↔
+    `_resolve_decimal()` / `STATUS_MAP["cost_guard_arg_invalid"]` /
+    `generate_slide_plan.py` の except ValueError 経路 双方向 lint
+    (Codex 08:27 PR-CD verdict、PR-BD/BE/BF/BH/BI/BJ/BK/BL/BM/BN/BO/CC 同型を
+    Missing Rate Behavior contract に展開)。
+
+    docs §Missing Rate Behavior は rate env 未設定 / invalid 時の v1 status
+    JSON contract を 2 bullet で定義:
+      bullet 1 (rate 未設定): `estimated_cost_usd_upper_bound = null` +
+        `rate_missing = true` + `status = ok`
+      bullet 2 (rate invalid: NaN / Inf / 負値 / decimal parse 不能等):
+        `_resolve_decimal()` ValueError → `except ValueError` 経路で
+        `status = error` / `category = "cost_guard_arg_invalid"` /
+        `exit_code = 4`
+
+    旧 docs (PR-CD 前) は category = "rate-invalid" と書いていたが、code 側
+    `STATUS_MAP` には `rate-invalid` entry が存在せず実際の emission は
+    `cost_guard_arg_invalid` を使う drift が PR-CD で発覚 (Bash grep 実測:
+    `rate-invalid` は code に 0 hit、`cost_guard_arg_invalid` は STATUS_MAP +
+    generate_slide_plan の except 経路で 4 hit)。本 PR で docs を code に
+    合わせて修正、加えて lint で再 drift を fail-loud 化。
+
+    docs と code が drift すると、(a) docs 仕様書を信じた caller / consumer
+    が `category == "rate-invalid"` で payload filter して 0 hit、(b) docs
+    bullet の status / exit_code 値が code と食い違って release note 信頼
+    崩壊、(c) `_resolve_decimal()` の reject 範囲 (NaN / Inf / -Inf / 負値 /
+    parse 不能) が docs と code で食い違うと cost guard hole。
+
+    本 lint は 4-part validation:
+      1. docs §Missing Rate Behavior section に bullet 1 contract literal
+         (`estimated_cost_usd_upper_bound`, `rate_missing`, `status = ok`)
+         + bullet 2 contract literal (`status = error`,
+         `category = "cost_guard_arg_invalid"`, `exit_code = 4`,
+         `_resolve_decimal`, `except ValueError`) の docs presence
+      2. code 側 `STATUS_MAP["cost_guard_arg_invalid"]` が
+         `("error", "cost_guard_arg_invalid")` であることを assert (旧
+         docs の rate-invalid drift 再発防止 + PR-CC mapping consistency
+         相補)
+      3. `_resolve_decimal()` を実呼び出しして 4 invalid input case で
+         ValueError raise: NaN / Inf / -Inf / 負値 / decimal parse 不能
+         (env 経由で SUPERMOVIE_RATE_TEST_INPUT を mock して reject 動作)
+      4. `generate_slide_plan.py` AST に
+         `emit_json("cost_guard_arg_invalid", 4, ...)` Call literal が存在
+         (except ValueError 経路の wiring) を確認
+
+    PR-BD/BE/BF/BH/BI/BJ/BK/BL/BM/BN/BO/CC 同 level の docs/code 双方向
+    audit、本 lint は cost guard rate validation contract という別 axis を
+    fix + 1 件 regression test。
+    """
+    import ast as _ast_re
+    import math
+    import os
+    import re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    md = obs_md.read_text(encoding="utf-8")
+
+    # `### Missing Rate Behavior` section 抽出
+    section_re = re.compile(
+        r"^### Missing Rate Behavior[^\n]*\n(?P<body>.*?)"
+        r"(?=^## |^### )",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = section_re.search(md)
+    assert m is not None, (
+        "`### Missing Rate Behavior` の section が docs に見つからない "
+        "(heading rename / 構造変更?)"
+    )
+    body = m.group("body")
+
+    # bullet 1 (rate 未設定) の必須 literal
+    BULLET_1_LITERALS = [
+        "estimated_cost_usd_upper_bound",
+        "rate_missing",
+        "status = ok",
+    ]
+    for lit in BULLET_1_LITERALS:
+        assert lit in body, (
+            f"docs §Missing Rate Behavior bullet 1 (rate 未設定) に "
+            f"contract literal '{lit}' が見つからない (rate_missing "
+            f"discriminator / null cost emission contract drift?)"
+        )
+
+    # bullet 2 (rate invalid) の必須 literal
+    BULLET_2_LITERALS = [
+        "status = error",
+        '"cost_guard_arg_invalid"',
+        "exit_code = 4",
+        "_resolve_decimal",
+        "except ValueError",
+    ]
+    for lit in BULLET_2_LITERALS:
+        assert lit in body, (
+            f"docs §Missing Rate Behavior bullet 2 (rate invalid) に "
+            f"contract literal '{lit}' が見つからない (旧 'rate-invalid' "
+            f"docs spec への regression / except ValueError 経路 docs "
+            f"drift?)"
+        )
+
+    # code 側 STATUS_MAP["cost_guard_arg_invalid"] mapping verify
+    sys.path.insert(
+        0, str(repo_root / "template" / "scripts")
+    )
+    try:
+        import _observability as _obs
+
+        cgi_entry = _obs.STATUS_MAP.get("cost_guard_arg_invalid")
+        assert cgi_entry is not None, (
+            "STATUS_MAP に 'cost_guard_arg_invalid' entry が見つからない "
+            "(削除 / rename drift? PR-CD docs ↔ code drift 修正の前提が崩れ)"
+        )
+        assert cgi_entry == ("error", "cost_guard_arg_invalid"), (
+            f"STATUS_MAP['cost_guard_arg_invalid'] が "
+            f"('error', 'cost_guard_arg_invalid') 想定 / 実測={cgi_entry} "
+            f"(docs §Missing Rate Behavior bullet 2 contract と食い違い)"
+        )
+
+        # _resolve_decimal を実呼び出しで invalid input 5 case reject 確認
+        gsp_path = (
+            repo_root / "template" / "scripts" / "generate_slide_plan.py"
+        )
+        gsp_src = gsp_path.read_text(encoding="utf-8")
+        # _resolve_decimal を local namespace で exec して取り出す
+        # (generate_slide_plan は __main__ 副作用を起こすため import 避ける)
+        ns: dict[str, object] = {}
+        # 必要 dep のみ: import math / argparse / os / sys
+        prelude = "import math, os, sys\n"
+        # _resolve_decimal 関数定義部分を AST から抽出
+        gsp_tree = _ast_re.parse(gsp_src, filename="generate_slide_plan.py")
+        rd_node = None
+        for node in _ast_re.walk(gsp_tree):
+            if (
+                isinstance(node, _ast_re.FunctionDef)
+                and node.name == "_resolve_decimal"
+            ):
+                rd_node = node
+                break
+        assert rd_node is not None, (
+            "`_resolve_decimal()` FunctionDef が generate_slide_plan.py に "
+            "見つからない (rename / 削除 drift?)"
+        )
+        rd_src = _ast_re.get_source_segment(gsp_src, rd_node)
+        assert rd_src is not None, "_resolve_decimal source 抽出失敗"
+        exec(prelude + rd_src, ns)  # noqa: S102 - test-time helper extraction
+        _resolve_decimal = ns["_resolve_decimal"]
+
+        TEST_ENV = "SUPERMOVIE_RATE_TEST_INPUT_USD_PER_MTOK"
+        # 5 invalid case: NaN / Inf / -Inf / 負値 / decimal parse 不能
+        invalid_cases: list[tuple[str, str]] = [
+            ("NaN", "nan/inf 禁止"),
+            ("Infinity", "nan/inf 禁止"),
+            ("-Infinity", "nan/inf 禁止"),
+            ("-1.5", ">=0 必須"),
+            ("not-a-number", "decimal に変換できません"),
+        ]
+        for env_val, expected_msg_substr in invalid_cases:
+            os.environ[TEST_ENV] = env_val
+            try:
+                raised = False
+                try:
+                    _resolve_decimal(None, TEST_ENV)
+                except ValueError as e:
+                    raised = True
+                    assert expected_msg_substr in str(e), (
+                        f"_resolve_decimal({env_val!r}) ValueError msg に "
+                        f"'{expected_msg_substr}' を含まない: {e!s}"
+                    )
+                assert raised, (
+                    f"_resolve_decimal({env_val!r}) は ValueError を "
+                    f"raise すべきだが silent 通過 "
+                    f"(rate validation hole / docs Missing Rate Behavior "
+                    f"bullet 2 contract drift?)"
+                )
+            finally:
+                del os.environ[TEST_ENV]
+
+        # finite + non-negative case は pass-through する regression guard
+        os.environ[TEST_ENV] = "0"
+        try:
+            v = _resolve_decimal(None, TEST_ENV)
+            assert v == 0.0, f"finite 0 が pass しない: {v!r}"
+        finally:
+            del os.environ[TEST_ENV]
+        os.environ[TEST_ENV] = "3.5"
+        try:
+            v = _resolve_decimal(None, TEST_ENV)
+            assert v == 3.5, f"finite 3.5 が pass しない: {v!r}"
+        finally:
+            del os.environ[TEST_ENV]
+    finally:
+        sys.path.pop(0)
+
+    # generate_slide_plan.py AST に emit_json("cost_guard_arg_invalid", 4)
+    # Call literal が存在 (except ValueError 経路の wiring)
+    found_cgi_emit = False
+    for node in _ast_re.walk(gsp_tree):
+        if not isinstance(node, _ast_re.Call):
+            continue
+        # caller 側 emit_json wrapper / direct 両方 cover
+        func = node.func
+        if isinstance(func, _ast_re.Name) and func.id in {
+            "emit_json",
+            "_obs_emit_json",
+            "_emit_early",
+            "_emit",
+            "emit_obs",
+            "_emit_error",
+        }:
+            if (
+                node.args
+                and isinstance(node.args[0], _ast_re.Constant)
+                and node.args[0].value == "cost_guard_arg_invalid"
+            ):
+                # 2nd positional arg = exit_code、4 でなければ docs と
+                # 食い違い
+                if len(node.args) >= 2 and isinstance(
+                    node.args[1], _ast_re.Constant
+                ):
+                    assert node.args[1].value == 4, (
+                        f"emit_json('cost_guard_arg_invalid', "
+                        f"<exit_code>) の exit_code が 4 でない: "
+                        f"{node.args[1].value!r} (docs §Missing Rate "
+                        f"Behavior bullet 2 'exit_code = 4' contract と "
+                        f"drift)"
+                    )
+                found_cgi_emit = True
+    assert found_cgi_emit, (
+        "generate_slide_plan.py AST に "
+        "`emit_json('cost_guard_arg_invalid', ...)` Call literal が "
+        "見つからない (except ValueError 経路の wiring 削除 / "
+        "rename drift?)"
+    )
+
+
 def test_observability_status_mapping_policy_docs_code_lint() -> None:
     """`docs/OBSERVABILITY.md §v0 → v1 status mapping` 表 ↔ `STATUS_MAP`
     の双方向 (forward strict + 命名 mapping consistency) lint
@@ -10299,6 +10536,7 @@ def main() -> int:
         test_observability_path_policy_placeholder_set_docs_code_lint,
         test_observability_rate_env_var_convention_docs_code_lint,
         test_observability_status_mapping_policy_docs_code_lint,
+        test_observability_missing_rate_behavior_docs_code_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
