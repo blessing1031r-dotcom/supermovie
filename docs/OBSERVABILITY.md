@@ -146,6 +146,8 @@ artifact `path` field は repo root or project root からの **相対 path** �
 
 ### Cost JSON Shape
 
+設計上の future canonical schema (nested `cost` object):
+
 ```json
 {
   "currency": "USD",
@@ -158,6 +160,14 @@ artifact `path` field は repo root or project root からの **相対 path** �
   "rate_missing": false
 }
 ```
+
+**現 emission (PR-N、PR #17 時点)** は dry-run legacy JSON / v1 tail / cost_guard_aborted の各 payload で **top-level discriminator** として emit:
+- `estimated_cost_usd_upper_bound`: float | null
+- `estimated_input_tokens` / `estimated_output_tokens_upper_bound`: int
+- `rate_input_per_mtok` / `rate_output_per_mtok`: float | null (legacy JSON のみ)
+- `rate_missing`: bool (PR-N で discriminator 化、`estimated_cost_usd_upper_bound is None ⇔ rate_missing=true`)
+
+build_status() の `cost=None` 経由のため `cost` field は `null` で出力。nested `cost={...}` への migration は別 PR (downstream parser 互換性影響、現未着手)。downstream parser は **top-level discriminator field を一次 source とする**。
 
 ### Rate Env Var Convention
 
@@ -178,7 +188,7 @@ artifact `path` field は repo root or project root からの **相対 path** �
 
 ### Missing Rate Behavior
 
-- rate env が未設定: `cost.estimate = null`、`cost.rate_missing = true`、`status = ok` (cost 不明は error 扱いしない)。
+- rate env が未設定: 現 emission では top-level `estimated_cost_usd_upper_bound = null` + `rate_missing = true`、`status = ok` (cost 不明は error 扱いしない)。future nested schema では `cost.estimate = null` / `cost.rate_missing = true`。
 - rate が設定されているが invalid (NaN / 負値等): `status = error`、`category = "rate-invalid"`、exit_code 非 0。
 
 ### Cost Abort Threshold (PR-F、Anthropic API 限定)
