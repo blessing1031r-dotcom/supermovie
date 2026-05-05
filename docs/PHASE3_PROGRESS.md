@@ -16,7 +16,7 @@ main
  │     : Phase 3-H per-segment <Sequence> + 9 件 fix + vstack letterbox
  ├─ roku/phase3i-transcript-alignment
  │     : Phase 3-I transcript timing alignment + cut-aware mapping
- └─ roku/obs-trace-runid (HEAD)
+ └─ roku/cost-abort-threshold (HEAD)
        : Phase 3-J timeline.py 共通化 + 6 件 fix
        : Phase 3-K core 1 integration smoke test
        : Phase 3-K core 2 build_slide / build_telop transcript validation
@@ -138,10 +138,11 @@ main
 - supermovie-se 統合 (素材判断)
 - SadTalker / HeyGen / Kling 統合 (法的 / モラルリスク + API 課金)
 
-## 全 commit count (roku/obs-trace-runid branch、最新 131 件)
+## 全 commit count (roku/cost-abort-threshold branch、最新 132 件)
 
 ```
-f63f244 feat(observability): distributed tracing run_id active emission (PR-E、Codex 22:40 next priority)
+3597286 feat(observability): pre-API cost abort threshold (PR-F、Codex 23:04 next priority)
+aa31147 feat(observability): distributed tracing run_id active emission (PR-E、Codex 22:40 next priority) (#8)
 85fe24d feat(observability): rate env v0 → v1 alias 実装 (PR-D、post-step-3 priority) (#7)
 b52fd97 feat(observability): build_slide_data + build_telop_data v1 — user_content redact (PR-C、step 3 part 3/3) (#6)
 b5bf3dc feat(observability): preflight_video v1 — 既存 stdout source JSON 維持 + --json-log tail (PR-B、step 3 part 2/3) (#5)
@@ -274,7 +275,7 @@ e2a1a39 fix(timeline): Codex Phase 3-J review 4 件 fix (P1×1 + P2×2 + P3×1)
 66e2aeb feat(timeline): timeline.py 共通化 + Phase 3-I review 6 件 fix (Phase 3-J)
 ```
 
-(更新: 2026-05-05_22:57、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
+(更新: 2026-05-05_23:10、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
 本 script で regen → docs commit する形のため、docs 上の commit chain は
 docs commit を作る前の HEAD を反映する設計 (off-by-one は intrinsic、
 `--verify` mode で count drift を CI 検査可)。)
