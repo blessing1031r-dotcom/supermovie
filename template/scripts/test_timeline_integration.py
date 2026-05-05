@@ -6197,20 +6197,35 @@ def _assert_v1_payload_common(payload, *, expected_script, expected_status,
     assert rules == sorted(set(rules)), (
         f"redaction.applied_rules must be sorted unique (PR-Q), got {rules!r}"
     )
-    # cost: dict or None (PR-AF contract)
-    cost = payload.get("cost", None)
+    # cost: dict or None (PR-AF contract)。Codex 05:34 PR-AW review P2 fix:
+    # docs §Common Fields は cost を common field として列挙、PR-AW の目的は
+    # caller の kwarg 受け渡し漏れ検出なので、`payload.get("cost", None)` で
+    # missing と None を同一視せず、key 存在を先に lock-in。
+    assert "cost" in payload, (
+        f"cost key must be present in v1 payload, missing in "
+        f"{sorted(payload.keys())!r}"
+    )
+    cost = payload["cost"]
     assert cost is None or isinstance(cost, dict), (
         f"cost must be dict or None, got {type(cost).__name__}"
     )
-    # duration_ms: int >= 0 if present
-    if "duration_ms" in payload:
-        assert (
-            isinstance(payload["duration_ms"], int)
-            and payload["duration_ms"] >= 0
-        ), (
-            f"duration_ms must be int >= 0 if present, got "
-            f"{payload['duration_ms']!r}"
-        )
+    # duration_ms: 必須 int >= 0。Codex 05:34 PR-AW review P1 fix: 旧実装は
+    # `if "duration_ms" in payload` で欠落を silent pass、caller の kwarg
+    # 落とし (3 script は全 caller が duration_ms=int(...) を実渡し) を
+    # 検出できない drift。caller-side conformance audit として key 存在を
+    # 必須化。
+    assert "duration_ms" in payload, (
+        f"duration_ms key must be present in v1 payload (3 callers all "
+        f"pass duration_ms=int(...) per build_slide_data:454 / "
+        f"build_telop_data:510 / preflight_video:334), missing in "
+        f"{sorted(payload.keys())!r}"
+    )
+    assert (
+        isinstance(payload["duration_ms"], int)
+        and payload["duration_ms"] >= 0
+    ), (
+        f"duration_ms must be int >= 0, got {payload['duration_ms']!r}"
+    )
 
 
 def test_build_slide_data_v1_schema_emit_conformance() -> None:
