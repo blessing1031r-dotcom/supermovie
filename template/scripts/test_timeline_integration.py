@@ -3772,6 +3772,26 @@ def test_observability_redact_secret_custom_last_n_and_mask_char() -> None:
     assert redact_secret("abcdefgh", last_n=4, mask_char="x") == "xxxxefgh"
 
 
+def test_observability_redact_secret_last_n_zero_or_negative_full_mask() -> None:
+    """PR-H fix iter (Codex 00:02 P1): last_n=0 / 負値で raw leak しない。
+
+    Python slice の value[-0:] は value[0:] = 全文を返すため、custom param で 0 や
+    負値が渡されると raw value が尾に連結されて leak。fail-closed で全 mask に倒す。
+    """
+    from _observability import redact_secret
+
+    # last_n=0: 全 mask
+    assert redact_secret("abcdefgh", last_n=0) == "********"
+    # last_n=-1: 全 mask (defensive)
+    assert redact_secret("abcdefgh", last_n=-1) == "********"
+    # raw value は1文字も末尾に出ないこと
+    redacted_zero = redact_secret("sk-1234567890", last_n=0)
+    assert "sk" not in redacted_zero
+    assert "1234" not in redacted_zero
+    assert "7890" not in redacted_zero
+    assert redacted_zero == "*" * len("sk-1234567890")
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -3847,11 +3867,12 @@ def main() -> int:
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
-        # PR-H (helper-level secret redaction、Codex 23:58 approve): 4 件
+        # PR-H (helper-level secret redaction、Codex 23:58 approve): 5 件 (4 feat + 1 fix iter boundary)
         test_observability_redact_secret_long_value_keeps_last_4,
         test_observability_redact_secret_short_value_full_mask,
         test_observability_redact_secret_non_string_passthrough,
         test_observability_redact_secret_custom_last_n_and_mask_char,
+        test_observability_redact_secret_last_n_zero_or_negative_full_mask,
     ]
     failed = []
     for t in tests:

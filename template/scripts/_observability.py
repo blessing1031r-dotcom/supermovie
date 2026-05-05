@@ -163,6 +163,11 @@ def redact_secret(value, *, last_n=4, mask_char="*"):
         return value
     if not value:
         return value
+    # PR-H fix iter (Codex 00:02 P1 #1): last_n <= 0 は全 mask に倒す。
+    # Python slice の `value[-0:]` = `value[0:]` で full string leak になるため、
+    # custom param で 0 や負値が渡されても fail-closed (全 mask) で安全側に。
+    if last_n <= 0:
+        return mask_char * len(value)
     if len(value) <= last_n + 1:
         return mask_char * len(value)
     masked_len = len(value) - last_n
