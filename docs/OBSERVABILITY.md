@@ -105,7 +105,7 @@ v1 helper 経由は generate_slide_plan / voicevox_narration / compare_telop_spl
 
 ### Script Coverage Matrix
 
-current state (v0) は `generate_slide_plan.py` / `voicevox_narration.py` が `status` / `exit_code` を出す最小形 ([generate_slide_plan.py:177](../template/scripts/generate_slide_plan.py), [voicevox_narration.py:533](../template/scripts/voicevox_narration.py))。本 doc 確定後の future v1 で全 script に schema v1 を適用する別 PR を予定。
+post-migration (v1) では `generate_slide_plan.py` / `voicevox_narration.py` / `compare_telop_split.py` / `visual_smoke.py` / `preflight_video.py` / `build_slide_data.py` / `build_telop_data.py` の **7 script** が helper (`_observability.py`) 経由で schema v1 を emit する (PR #3 + PR-A/B/C merged 後)。`timeline.py` は library 性質で migration 対象外。Current Surface table 参照。
 
 ## Log Redaction Contract
 
@@ -184,14 +184,16 @@ artifact `path` field は repo root or project root からの **相対 path** �
 
 ## Migration Policy
 
-| state | criteria |
-|---|---|
-| v0 (current) | `status` / `exit_code` を出す最小 status JSON、redaction なし、cost rate env は v0 名 |
-| v1 (target) | schema_version=1、common fields 全埋め (null OK)、redaction 適用、rate env は v1 名 + v0 alias (Anthropic 限定) |
+(本節は v0 → v1 migration の **完了済 normative spec** として保持。新規 script 追加時 / regression test 修正時の reference。Migration 自体は PR #3 + PR-A/B/C + PR-D で完了済。)
 
-### v0 → v1 status mapping (Codex 20:08 review P1 #1 で明文化)
+| state | criteria | 適用状況 |
+|---|---|---|
+| v0 (legacy) | `status` / `exit_code` を出す最小 status JSON、redaction なし、cost rate env は v0 名 | 廃止 (PR #3 で 2 script、PR-A/B/C で 5 script を helper 経由 v1 へ refactor 完了) |
+| v1 (current) | schema_version=1、common fields 全埋め (null OK)、redaction 適用、rate env は v1 名 + v0 alias (Anthropic 限定、PR-D 実装済) | 7 script 適用済 (Current Surface table 参照) |
 
-既存 v0 status 値を v1 canonical 値に migrate する mapping。実装 (別 PR) はこの table を normative とする。
+### v0 → v1 status mapping (Codex 20:08 review P1 #1 で明文化、PR #3 + PR-A/B/C で適用済)
+
+既存 v0 status 値を v1 canonical 値に migrate する mapping。新規 script 追加時はこの table を normative とする。
 
 | v0 status (現行 script) | v1 canonical | v1 category | source |
 |---|---|---|---|
@@ -209,12 +211,15 @@ artifact `path` field は repo root or project root からの **相対 path** �
 - v0 dry-run JSON は `--json-log` 強制を要さず legacy として正規化済とみなす。
 - migration helper (`_observability.py`、別 PR) で wrap する場合、dry-run output に schema_version=1 を後付けする選択肢あり (互換性維持)。
 
-### Migration steps (別 PR scope)
+### Migration steps (完了履歴)
 
-1. v0 → v1 schema 互換 helper を `template/scripts/_observability.py` に追加 (新規 file)。helper には上記 status mapping と redaction rule を実装。
-2. 既存 2 script (`generate_slide_plan.py` / `voicevox_narration.py`) を helper 経由に refactor。output JSON の abs_path 漏れ ([generate_slide_plan.py:380](../template/scripts/generate_slide_plan.py), [voicevox_narration.py:778](../template/scripts/voicevox_narration.py)) を repo-root 相対 path に変換。chunk text human log redaction を適用。
-3. 残 6 script (`preflight_video.py` / `timeline.py` / `visual_smoke.py` / `build_slide_data.py` / `build_telop_data.py` / `compare_telop_split.py`) を v1 化。
-4. `test_timeline_integration.py` に redaction regression test 追加 (sensitive class 4 種が json tail に raw で出ないこと、v0 → v1 migration で behavior 互換性が保たれること)。
+| step | 内容 | 完了 PR |
+|---|---|---|
+| 1 | `template/scripts/_observability.py` helper 新規追加 (status mapping + redaction rule + safe_artifact_path 実装) | PR #3 (987c3d0) |
+| 2 | `generate_slide_plan.py` / `voicevox_narration.py` を helper 経由 refactor、abs_path 漏れ + chunk text redaction 適用 | PR #3 (987c3d0) |
+| 3 | 残 5 script (`compare_telop_split.py` / `visual_smoke.py` (PR-A) / `preflight_video.py` (PR-B) / `build_slide_data.py` / `build_telop_data.py` (PR-C)) を v1 化。`timeline.py` は library 性質で対象外 (Codex 21:01 step 3 S3-2) | PR-A (4) / PR-B (5) / PR-C (6) |
+| 4 | `test_timeline_integration.py` に redaction + status v1 schema regression test 9 件追加 (sensitive class 4 種の json tail raw 漏れ防止、build_status duration_ms / category_override、provider body stderr default redact 等) | PR #3 + PR-A/B/C |
+| 5 | rate env v0 → v1 alias 実装 (Anthropic 限定後方互換) | PR-D (本 PR) |
 
 ## Test Requirements
 
