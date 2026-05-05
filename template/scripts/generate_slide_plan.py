@@ -19,6 +19,16 @@ import os
 import sys
 from pathlib import Path
 
+# Phase 3 obs migration core: helper を経由して v1 schema + redaction を適用。
+# 既存 v0 emit pattern は build_status の **extra で互換維持。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _observability import (
+    build_status,
+    emit_json as _obs_emit_json,
+    redact_provider_body,
+    safe_artifact_path,
+)
+
 PROJ = Path(__file__).resolve().parent.parent
 PLAN_VERSION = "supermovie.slide_plan.v1"
 
@@ -168,17 +178,39 @@ def main():
     ap.add_argument("--json-log", action="store_true",
                     help="末尾に summary を 1 行純 JSON として emit "
                          "(downstream observability、既存 stdout は維持)")
+    # Phase 3 obs migration core: redaction debug opt-in flags
+    # (default は redact、debug 時のみ raw 出力。docs/OBSERVABILITY.md §Redaction Rules)
+    ap.add_argument("--unsafe-dump-response", action="store_true",
+                    help="provider response body / LLM raw text を stderr に raw で出す "
+                         "(default: structured summary、debug 専用)")
+    ap.add_argument("--unsafe-keep-abs-path", action="store_true",
+                    help="json tail / artifact path を絶対 path のまま emit "
+                         "(default: project-root 相対 / <HOME> placeholder、debug 専用)")
     args = ap.parse_args()
 
-    # Codex P3 logging 拡張 (CODEX_P2_COST_GUARD_DESIGN §4): 全 return path に
-    # status / exit_code 付き JSON emit。dry-run JSON は本 helper を使わず
-    # 既存 schema (status="dry_run", api_called=false 等) を維持し、それ以外の path
-    # で本 helper を経由する (dry-run は単一 JSON line を返す契約のため)。
+    # Phase 3 obs migration core: 全 return path で v1 schema 経由で emit。
+    # dry-run JSON は本 helper を使わず既存 schema を維持 (OBSERVABILITY.md §v0 dry-run JSON legacy)。
+    # extra kwargs は build_status で v1 schema に top-level merge され v0 emit pattern と互換。
+    # output 等の path field は safe_artifact_path で project-root 相対化 (--unsafe-keep-abs-path で raw)。
     def emit_json(status: str, exit_code: int, **extra) -> int:
-        if args.json_log:
-            payload = {"status": status, "exit_code": exit_code, **extra}
-            print(json.dumps(payload, ensure_ascii=False))
-        return exit_code
+        # Apply abs_path redaction to known path-bearing fields
+        redaction_rules = []
+        if "output" in extra and extra["output"] is not None:
+            extra["output"] = safe_artifact_path(
+                extra["output"],
+                project_root=PROJ,
+                unsafe_keep_abs_path=args.unsafe_keep_abs_path,
+            )
+            if not args.unsafe_keep_abs_path:
+                redaction_rules.append("abs_path")
+        payload = build_status(
+            script="generate_slide_plan",
+            v0_status=status,
+            exit_code=exit_code,
+            redaction_rules=redaction_rules,
+            **extra,
+        )
+        return _obs_emit_json(args.json_log, payload)
 
     # Codex P2 review P1 反映 (CODEX_P2_COST_GUARD_REVIEW:3-5):
     # API key 未設定 skip は cost guard env 解決より前に判定する。
@@ -339,16 +371,33 @@ def main():
     except urllib.error.HTTPError as e:
         # Phase 3-V P2 cost guard (Codex P2 review §2.5): 429 rate_limit を分離
         # (exit 9、retry-after header 拾って message に含める)。429 以外は exit 4 維持。
+        # Phase 3 obs migration core: provider response body を default redact
+        # (length + sha256 のみ stderr)、--unsafe-dump-response 指定時のみ raw 出力。
         body = e.read().decode("utf-8", errors="replace")
+        body_redacted = redact_provider_body(body, unsafe_dump=args.unsafe_dump_response)
         if e.code == 429:
             retry_after = e.headers.get("retry-after") if e.headers else None
+            if args.unsafe_dump_response:
+                body_msg = f"body={body[:300]}"
+            else:
+                body_msg = (
+                    f"body=<redacted len={body_redacted['length']} "
+                    f"sha256={body_redacted['sha256']}>"
+                )
             print(
                 f"ERROR: Anthropic API rate_limited (HTTP 429): "
-                f"retry-after={retry_after}, body={body[:300]}",
+                f"retry-after={retry_after}, {body_msg}",
                 file=sys.stderr,
             )
             return emit_json("rate_limited", 9, retry_after=retry_after)
-        print(f"ERROR: Anthropic API HTTP {e.code}: {body[:500]}", file=sys.stderr)
+        if args.unsafe_dump_response:
+            body_msg = f"body={body[:500]}"
+        else:
+            body_msg = (
+                f"body=<redacted len={body_redacted['length']} "
+                f"sha256={body_redacted['sha256']}>"
+            )
+        print(f"ERROR: Anthropic API HTTP {e.code}: {body_msg}", file=sys.stderr)
         return emit_json("api_http_error", 4, http_status=e.code)
 
     text = "".join(b.get("text", "") for b in response.get("content", []) if b.get("type") == "text")
@@ -363,7 +412,16 @@ def main():
     try:
         plan = json.loads(text)
     except json.JSONDecodeError as e:
-        print(f"ERROR: LLM 応答が JSON parse 失敗: {e}\n--- raw ---\n{text[:1000]}", file=sys.stderr)
+        # Phase 3 obs migration core: LLM raw text を default redact、--unsafe-dump-response で raw。
+        text_redacted = redact_provider_body(text, unsafe_dump=args.unsafe_dump_response)
+        if args.unsafe_dump_response:
+            raw_msg = f"--- raw ---\n{text[:1000]}"
+        else:
+            raw_msg = (
+                f"--- redacted (use --unsafe-dump-response for raw) ---\n"
+                f"len={text_redacted['length']} sha256={text_redacted['sha256']}"
+            )
+        print(f"ERROR: LLM 応答が JSON parse 失敗: {e}\n{raw_msg}", file=sys.stderr)
         return emit_json("llm_json_invalid", 5, error=str(e))
 
     out_path = Path(args.output)

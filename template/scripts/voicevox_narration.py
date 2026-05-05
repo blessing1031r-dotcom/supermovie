@@ -52,6 +52,13 @@ from pathlib import Path
 
 PROJ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Phase 3 obs migration core: helper を経由して v1 schema + redaction を適用。
+from _observability import (  # noqa: E402
+    build_status,
+    emit_json as _obs_emit_json,
+    safe_artifact_path,
+    user_content_meta,
+)
 from timeline import (  # noqa: E402
     DEFAULT_FPS,
     TranscriptSegmentError,
@@ -523,18 +530,38 @@ def main():
     ap.add_argument("--json-log", action="store_true",
                     help="末尾に summary を 1 行純 JSON として emit "
                          "(downstream observability、既存 stdout は維持)")
+    # Phase 3 obs migration core: redaction debug opt-in flags
+    ap.add_argument("--unsafe-show-user-content", action="store_true",
+                    help="chunk text / transcript を human stdout に raw で出す "
+                         "(default: length / sha256、debug 専用)")
+    ap.add_argument("--unsafe-keep-abs-path", action="store_true",
+                    help="json tail / artifact path を絶対 path のまま emit "
+                         "(default: project-root 相対 / <HOME> placeholder、debug 専用)")
     args = ap.parse_args()
 
-    # Phase 3-V P3 review fix (Codex CODEX_2ND_BATCH_REVIEW P1):
-    # 全 return path に status / exit_code 付き JSON を emit する helper。
-    # success path だけでなく engine skip / require_engine fail / cleanup fail / VAD invalid /
-    # concat fail / sentinel fail / collect_chunks fail / list_speakers / usage error も
-    # 全て observability 経路を通すため、return 直前に必ず呼ぶ規約。
+    # Phase 3 obs migration core: helper 経由で v1 schema 経由 emit。
+    # 全 return path で status / exit_code を含む形を維持しつつ schema_version=1 等の
+    # v1 fields を build_status で追加。extra kwargs は top-level merge で v0 互換。
     def emit_json(status: str, exit_code: int, **extra) -> int:
-        if args.json_log:
-            payload = {"status": status, "exit_code": exit_code, **extra}
-            print(json.dumps(payload, ensure_ascii=False))
-        return exit_code
+        # Apply abs_path redaction to known path-bearing fields
+        redaction_rules = []
+        for key in ("output", "narration_data_path", "chunk_meta_path"):
+            if key in extra and extra[key] is not None:
+                extra[key] = safe_artifact_path(
+                    extra[key],
+                    project_root=PROJ,
+                    unsafe_keep_abs_path=args.unsafe_keep_abs_path,
+                )
+                if not args.unsafe_keep_abs_path and "abs_path" not in redaction_rules:
+                    redaction_rules.append("abs_path")
+        payload = build_status(
+            script="voicevox_narration",
+            v0_status=status,
+            exit_code=exit_code,
+            redaction_rules=redaction_rules,
+            **extra,
+        )
+        return _obs_emit_json(args.json_log, payload)
 
     ok, info = check_engine()
     if not ok:

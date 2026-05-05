@@ -1160,8 +1160,11 @@ def test_generate_slide_plan_json_log_status_path() -> None:
                 assert_eq(ret, 0, "success exit 0")
                 lines = [ln for ln in captured.getvalue().splitlines() if ln.strip()]
                 payload = json.loads(lines[-1])
-                assert_eq(payload.get("status"), "success", "success status field")
+                # Phase 3 obs migration core: v0 `success` → v1 `ok` (category=None)
+                assert_eq(payload.get("status"), "ok", "success status field (v1)")
+                assert payload.get("category") is None, f"success category should be None: {payload.get('category')}"
                 assert_eq(payload.get("exit_code"), 0, "success exit_code")
+                assert_eq(payload.get("schema_version"), 1, "v1 schema_version")
                 if "slides" not in payload:
                     raise AssertionError(f"missing slides in success JSON: {payload}")
                 # Phase 3-V P3 review fix (CODEX_P3_SLIDE_PLAN_REVIEW P3): 既存 human
@@ -1215,8 +1218,11 @@ def test_generate_slide_plan_json_log_status_path() -> None:
                 assert_eq(ret, 0, "api_key_skipped exit 0")
                 lines = [ln for ln in captured.getvalue().splitlines() if ln.strip()]
                 payload = json.loads(lines[-1])
-                assert_eq(payload.get("status"), "api_key_skipped", "skip status field")
+                # Phase 3 obs migration core: v0 `api_key_skipped` → v1 `skipped` + category=`api_key_missing`
+                assert_eq(payload.get("status"), "skipped", "api_key skip status field (v1)")
+                assert_eq(payload.get("category"), "api_key_missing", "api_key skip category")
                 assert_eq(payload.get("exit_code"), 0, "skip exit_code")
+                assert_eq(payload.get("schema_version"), 1, "v1 schema_version")
             finally:
                 _sys.argv = old_argv
         finally:
@@ -2236,8 +2242,12 @@ def test_voicevox_json_log_engine_skip_path() -> None:
                 raise AssertionError(
                     f"--json-log skip path last line not pure JSON: {last!r} ({e})"
                 ) from e
-            assert_eq(payload.get("status"), "engine_skipped", "skip status field")
+            # Phase 3 obs migration core: v0 status `engine_skipped` → v1 `skipped`,
+            # category=`engine_unavailable` (docs/OBSERVABILITY.md §Migration Policy)
+            assert_eq(payload.get("status"), "skipped", "skip status field (v1)")
+            assert_eq(payload.get("category"), "engine_unavailable", "skip category field")
             assert_eq(payload.get("exit_code"), 0, "skip exit_code field")
+            assert_eq(payload.get("schema_version"), 1, "v1 schema_version")
             if "info" not in payload:
                 raise AssertionError(
                     f"engine skip JSON missing 'info' field: {payload}"
@@ -2276,11 +2286,15 @@ def test_voicevox_json_log_engine_strict_path() -> None:
             assert_eq(ret, 4, "engine strict fail exit 4")
             lines = [ln for ln in captured.getvalue().splitlines() if ln.strip()]
             payload = json.loads(lines[-1])
+            # Phase 3 obs migration core: v0 status `engine_unavailable_strict` → v1 `error`,
+            # category=`engine_unavailable` (docs/OBSERVABILITY.md §Migration Policy)
+            assert_eq(payload.get("status"), "error", "strict status field (v1)")
             assert_eq(
-                payload.get("status"), "engine_unavailable_strict",
-                "strict status field",
+                payload.get("category"), "engine_unavailable",
+                "strict category field",
             )
             assert_eq(payload.get("exit_code"), 4, "strict exit_code field")
+            assert_eq(payload.get("schema_version"), 1, "v1 schema_version")
     finally:
         for k, v in state.items():
             setattr(vn, k, v)
@@ -2439,6 +2453,160 @@ def test_visual_smoke_format_dims_completeness() -> None:
         )
 
 
+def test_observability_helper_status_map() -> None:
+    """v0 → v1 status mapping が doc table と整合しているか検証。
+
+    docs/OBSERVABILITY.md §Migration Policy で defined v0 → v1 mapping を
+    helper の STATUS_MAP がカバーすること。失敗時 = mapping completeness 不足。
+    """
+    from _observability import STATUS_MAP, map_status
+
+    # 既存 v0 emit 経路が STATUS_MAP に登録済みであることを確認
+    must_have = {
+        "success", "api_key_skipped", "engine_skipped", "engine_unavailable_strict",
+        "list_speakers", "dry_run",
+        "cost_guard_arg_invalid", "inputs_missing", "rate_limited",
+        "api_http_error", "llm_json_invalid",
+    }
+    missing = must_have - set(STATUS_MAP.keys())
+    assert not missing, f"STATUS_MAP missing v0 statuses: {missing}"
+
+    # mapping verdict
+    assert map_status("success") == ("ok", None)
+    assert map_status("api_key_skipped") == ("skipped", "api_key_missing")
+    assert map_status("engine_skipped") == ("skipped", "engine_unavailable")
+    assert map_status("list_speakers") == ("ok", "list_speakers")
+    assert map_status("dry_run") == ("dry_run", None)
+    assert map_status("rate_limited") == ("error", "rate_limited")
+    # Unknown status → ("error", v0 status as category)
+    assert map_status("nonexistent_v0") == ("error", "nonexistent_v0")
+
+
+def test_observability_safe_artifact_path_redacts() -> None:
+    """abs_path が project_root 相対 / <HOME> placeholder に正規化されること。
+
+    `unsafe_keep_abs_path=True` で raw 維持を確認。
+    """
+    from _observability import safe_artifact_path
+
+    proj = "/Users/rokumasuda/tmp/proj"
+    # in project: relative
+    assert safe_artifact_path(f"{proj}/public/main.mp4", project_root=proj) == "public/main.mp4"
+    # outside project: HOME placeholder
+    sp = safe_artifact_path("/Users/rokumasuda/elsewhere/foo.json", project_root=proj)
+    assert sp.startswith("<HOME>"), f"expected <HOME> placeholder, got {sp!r}"
+    # unsafe_keep_abs_path: raw
+    assert safe_artifact_path(f"{proj}/x.json", project_root=proj,
+                              unsafe_keep_abs_path=True) == f"{proj}/x.json"
+    # None passthrough
+    assert safe_artifact_path(None, project_root=proj) is None
+
+
+def test_observability_user_content_meta_no_raw() -> None:
+    """user_content_meta が length / sha256 のみ返し、raw text を含まないこと。
+
+    Codex 20:14 review P1 #2 で raw partial preview 禁止と doc に固定。
+    """
+    from _observability import user_content_meta
+
+    secret_text = "API_KEY=sk-secret123 transcript content"
+    meta = user_content_meta(secret_text)
+    assert "raw" not in meta, "user_content_meta should not return raw"
+    assert "first_chars" not in meta, "user_content_meta should not include preview"
+    assert "preview" not in meta
+    assert meta["length"] == len(secret_text)
+    assert "sha256" in meta and len(meta["sha256"]) == 16
+    # raw text が meta dict に紛れていない
+    serialized = json.dumps(meta, ensure_ascii=False)
+    assert "API_KEY" not in serialized
+    assert "sk-secret123" not in serialized
+    assert "transcript content" not in serialized
+
+
+def test_observability_redact_provider_body_default_strict() -> None:
+    """provider_response_body default が raw 禁止、unsafe_dump=True で raw を返すこと。
+
+    docs/OBSERVABILITY.md §Redaction Rules provider_response_body strict 化。
+    """
+    from _observability import redact_provider_body
+
+    raw_body = '{"error": "rate_limited", "message": "internal token leaked: sk-LEAK"}'
+    # default: structured summary、raw body 不含
+    redacted = redact_provider_body(raw_body)
+    assert redacted["kind"] == "summary"
+    assert "body" not in redacted
+    assert "sk-LEAK" not in json.dumps(redacted, ensure_ascii=False)
+    assert redacted["length"] == len(raw_body)
+    # unsafe_dump: raw が出る (debug-only flag が機能していること)
+    raw_dump = redact_provider_body(raw_body, unsafe_dump=True)
+    assert raw_dump["kind"] == "raw"
+    assert raw_dump["body"] == raw_body
+
+
+def test_observability_build_status_v1_schema() -> None:
+    """build_status が v1 schema (schema_version / category / redaction 等) を出力すること。
+
+    docs/OBSERVABILITY.md §Common Fields の必須 fields 全部含んでいるか。
+    """
+    from _observability import SCHEMA_VERSION, REDACTION_VERSION, build_status
+
+    p = build_status(
+        script="generate_slide_plan",
+        v0_status="success",
+        exit_code=0,
+        counts={"slides": 10},
+        artifacts=[{"path": "out/foo.json", "kind": "json"}],
+        cost={"currency": "USD", "estimate": 0.0023},
+        redaction_rules=["abs_path"],
+        run_id="test-run-001",
+        # v0 extra (model / max_tokens / output) — top-level merge
+        model="claude-haiku-4-5",
+        max_tokens=2048,
+        output="out/foo.json",
+    )
+    # v1 fields
+    assert p["schema_version"] == SCHEMA_VERSION
+    assert p["script"] == "generate_slide_plan"
+    assert p["status"] == "ok"
+    assert p["category"] is None
+    assert p["ok"] is True
+    assert p["exit_code"] == 0
+    assert p["counts"] == {"slides": 10}
+    assert p["artifacts"] == [{"path": "out/foo.json", "kind": "json"}]
+    assert p["cost"] == {"currency": "USD", "estimate": 0.0023}
+    assert p["redaction"] == {"applied_rules": ["abs_path"], "version": REDACTION_VERSION}
+    assert p["run_id"] == "test-run-001"
+    # v0 compat: extras at top level
+    assert p["model"] == "claude-haiku-4-5"
+    assert p["max_tokens"] == 2048
+    assert p["output"] == "out/foo.json"
+
+
+def test_observability_emit_json_disabled_no_print(capsys=None) -> None:
+    """emit_json は --json-log なし (enabled=False) で stdout に出さないこと。
+
+    Existing v0 emit pattern (--json-log opt-in) との互換性維持。
+    """
+    import io
+    from contextlib import redirect_stdout
+    from _observability import emit_json, build_status
+
+    payload = build_status(script="x", v0_status="success", exit_code=0)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = emit_json(False, payload)
+    assert buf.getvalue() == "", f"emit_json(False) printed: {buf.getvalue()!r}"
+    assert rc == 0
+    # enabled=True: prints valid JSON line
+    buf2 = io.StringIO()
+    with redirect_stdout(buf2):
+        rc2 = emit_json(True, payload)
+    out = buf2.getvalue().strip()
+    parsed = json.loads(out)
+    assert parsed["status"] == "ok"
+    assert rc2 == 0
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -2484,6 +2652,13 @@ def main() -> int:
         test_generate_slide_plan_api_invalid_json,
         test_build_slide_data_plan_validation_fallback,
         test_build_slide_data_plan_strict_failure,
+        # Phase 3 obs migration core: helper module regression test (6 件)
+        test_observability_helper_status_map,
+        test_observability_safe_artifact_path_redacts,
+        test_observability_user_content_meta_no_raw,
+        test_observability_redact_provider_body_default_strict,
+        test_observability_build_status_v1_schema,
+        test_observability_emit_json_disabled_no_print,
     ]
     failed = []
     for t in tests:
