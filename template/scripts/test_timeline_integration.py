@@ -8827,7 +8827,7 @@ def test_observability_missing_rate_behavior_docs_code_lint() -> None:
          `("error", "cost_guard_arg_invalid")` であることを assert (旧
          docs の rate-invalid drift 再発防止 + PR-CC mapping consistency
          相補)
-      3. `_resolve_decimal()` を実呼び出しして 4 invalid input case で
+      3. `_resolve_decimal()` を実呼び出しして 5 invalid input case で
          ValueError raise: NaN / Inf / -Inf / 負値 / decimal parse 不能
          (env 経由で SUPERMOVIE_RATE_TEST_INPUT を mock して reject 動作)
       4. `generate_slide_plan.py` AST に
