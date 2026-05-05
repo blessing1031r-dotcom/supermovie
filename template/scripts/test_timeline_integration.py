@@ -3080,6 +3080,98 @@ def test_observability_build_status_duration_ms_and_category_override() -> None:
     assert p_err["category"] == "dimension-regression"
 
 
+def test_observability_build_status_top_level_field_order() -> None:
+    """`build_status()` 出力の top-level field 順序を deterministic に lock-in
+    (Codex 02:24 PR-W verdict W、observability v1 contract drift 防止)。
+
+    Python 3.7+ では dict insertion order が保たれ、`json.dumps` も
+    その順で書き出すため、status JSON tail の field 順は contract の
+    一部 (consumer 側 diff / log grep / regression test 安定性)。
+    本 test は次の不変条件を lock-in:
+
+    1. reserved core 10 field の順序固定:
+       schema_version → script → status → ok → exit_code → category
+       → counts → artifacts → cost → redaction
+    2. optional field (duration_ms / run_id / parent_run_id / step_id)
+       は reserved の後、source 宣言順 (duration_ms → run_id →
+       parent_run_id → step_id) で並ぶ
+    3. extras (model / slides / output 等の v0 compat top-level merge)
+       は reserved + optional の後ろに来る
+    4. extras に reserved key と同名を渡しても reserved 値が勝つ
+       (build_status reserved guard 経路)
+    """
+    from _observability import build_status
+
+    reserved_core = [
+        "schema_version", "script", "status", "ok", "exit_code",
+        "category", "counts", "artifacts", "cost", "redaction",
+    ]
+
+    # (1) bare 呼び出しで reserved core 10 field のみ、順序固定
+    p1 = build_status(script="x", v0_status="success", exit_code=0)
+    keys1 = list(p1.keys())
+    assert keys1 == reserved_core, (
+        f"bare build_status field order drift: expected {reserved_core}, got {keys1}"
+    )
+
+    # (2) duration_ms + run_id 追加で reserved の後に source 宣言順で並ぶ
+    p2 = build_status(
+        script="x", v0_status="success", exit_code=0,
+        duration_ms=42, run_id="r1",
+    )
+    keys2 = list(p2.keys())
+    assert keys2 == reserved_core + ["duration_ms", "run_id"], (
+        f"optional field order drift (duration+run): got {keys2}"
+    )
+
+    # (3) full trace (run_id + parent + step) で source 宣言順
+    p3 = build_status(
+        script="x", v0_status="success", exit_code=0,
+        run_id="r1", parent_run_id="p1", step_id="s1",
+    )
+    keys3 = list(p3.keys())
+    assert keys3 == reserved_core + ["run_id", "parent_run_id", "step_id"], (
+        f"trace field order drift: got {keys3}"
+    )
+
+    # (4) extras (v0 compat) は reserved + optional の後ろに caller 順で並ぶ
+    p4 = build_status(
+        script="x", v0_status="success", exit_code=0,
+        cost={"currency": "USD"},
+        model="claude-3", slides=10, output="out/x.json",
+    )
+    keys4 = list(p4.keys())
+    assert keys4[: len(reserved_core)] == reserved_core, (
+        f"extras case reserved prefix drift: got {keys4}"
+    )
+    assert keys4[len(reserved_core):] == ["model", "slides", "output"], (
+        f"extras suffix order drift: got {keys4[len(reserved_core):]!r}"
+    )
+
+    # (5) extras に reserved key 同名を入れても reserved 値が勝ち、extras は
+    # 落ちる (foo は通る、status は reserved 側の "ok" のまま)
+    extras = {"status": "SHOULD_NOT_OVERRIDE", "foo": "bar"}
+    p5 = build_status(script="x", v0_status="success", exit_code=0, **extras)
+    keys5 = list(p5.keys())
+    assert keys5 == reserved_core + ["foo"], (
+        f"reserved-key extras must be filtered, got {keys5}"
+    )
+    assert p5["status"] == "ok", (
+        f"reserved status overridden by extras: {p5['status']!r}"
+    )
+
+    # (6) reserved + optional + extras の合成順序 lock-in
+    p6 = build_status(
+        script="x", v0_status="success", exit_code=0,
+        duration_ms=99, run_id="r2",
+        model="claude-3", slides=5,
+    )
+    keys6 = list(p6.keys())
+    assert keys6 == reserved_core + ["duration_ms", "run_id", "model", "slides"], (
+        f"combined order drift: got {keys6}"
+    )
+
+
 def test_observability_provider_body_stderr_default_redact() -> None:
     """generate_slide_plan の HTTP error response body と LLM raw text が
     default で stderr に raw 出力されないこと (Codex 20:48 PR3 review P2 #1)。
@@ -4782,6 +4874,7 @@ def main() -> int:
         test_observability_redact_provider_body_default_strict,
         test_observability_build_status_v1_schema,
         test_observability_build_status_duration_ms_and_category_override,
+        test_observability_build_status_top_level_field_order,
         test_observability_provider_body_stderr_default_redact,
         test_observability_emit_json_disabled_no_print,
         # PR-E (distributed tracing run_id active emission): 7 件
