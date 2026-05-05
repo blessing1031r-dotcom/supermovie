@@ -8406,6 +8406,129 @@ def test_observability_redaction_rules_helper_mapping_lint() -> None:
         )
 
 
+def test_observability_stdout_stderr_stream_contract_lint() -> None:
+    """`docs/OBSERVABILITY.md §Stdout And Stderr` 表 ↔ caller stream emission
+    pattern presence lint
+    (Codex 07:28 PR-BL verdict BW、PR-BD/BE/BF/BH/BI/BJ/BK 同型を Stdout And
+    Stderr 表に展開)。
+
+    docs §Stdout And Stderr は v1 emission の 3 stream 役割を定義:
+      - stdout (human): 進捗 message / preflight output / 最終 summary
+      - stdout (json tail): 末尾 1 行 schema v1 JSON (`--json-log` 時のみ)
+      - stderr: error message / warning / stack trace / retry attempt
+
+    各 stream に対応する caller-side emission primitive を 7 v1 caller の
+    AST presence で audit:
+      - stdout (human): `print(...)` で `file=` kwarg を持たない (default
+        stdout) — human progress / summary が caller 側に出ている
+      - stdout (json tail): `_obs_emit_json(...)` または `emit_json(...)`
+        wrapper helper 呼び出し — v1 schema JSON tail が emit される経路
+      - stderr: `print(..., file=sys.stderr)` または `sys.stderr.write(...)`
+        — error / warning が stderr 経由で出ている
+
+    docs と code が drift すると:
+      - human stream を削除して全 stream を json tail にしてしまうと
+        consumer の human progress 観測が失われる
+      - stderr 行を削除して error が stdout に流れると `--json-log` parser
+        の splitlines()[-1] JSON parse が壊れる
+      - json tail 行を削除して emit_json wrapper を呼ばない caller が出ると
+        v1 schema 観測の完全性が崩れる
+
+    本 lint は docs heading 直後 markdown table から 3 stream label の存在
+    を assert (label rename / 表 形式変更を fail-loud)、加えて
+    `V1_CALLER_SCRIPTS` 7 caller それぞれが 3 stream emission primitive を
+    全て持つことを regex / AST scan で確認 (caller が一部 stream を欠く
+    drift を fail-loud)。
+
+    PR-BD/BE/BF/BH/BI/BJ/BK 同 level の docs/code 双方向 audit、本 lint は
+    stream 振り分け axis を fix。
+    """
+    import re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    md = obs_md.read_text(encoding="utf-8")
+
+    # `### Stdout And Stderr` heading 直後 markdown table 抽出
+    section_re = re.compile(
+        r"^### Stdout And Stderr[^\n]*\n.*?\n(?P<table>(?:\|[^\n]+\n)+)",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = section_re.search(md)
+    assert m is not None, (
+        "`### Stdout And Stderr` の markdown table が docs に見つからない "
+        "(heading rename / 構造変更?)"
+    )
+    table = m.group("table")
+
+    # 3 stream label の docs presence assert
+    EXPECTED_STREAM_LABELS = (
+        "stdout (human)",
+        "stdout (json tail)",
+        "stderr",
+    )
+    for label in EXPECTED_STREAM_LABELS:
+        assert label in table, (
+            f"docs §Stdout And Stderr table から stream label "
+            f"'{label}' が消えた (rename / 表 構造変更?)、"
+            f"table excerpt: {table!r}"
+        )
+
+    # 7 v1 caller それぞれが 3 stream emission primitive を持つ
+    scripts_dir = Path(__file__).resolve().parent
+    # stdout (human): file= kwarg を持たない print(...)
+    # 簡易 regex: `print\(` で始まり `file=` を含まない call のうち、
+    # multi-line 対応で慎重にする。実用的には source 全体に file= 無しの
+    # `print(` が 1 件以上あれば OK。逆に file= 指定 print のみ存在する
+    # caller は human stream が空という drift を疑う。
+    stdout_human_re = re.compile(r"\bprint\(")
+    stdout_human_with_file_re = re.compile(r"\bprint\([^)]*file\s*=")
+    # stderr: print(file=...stderr) または ...stderr.write。
+    # caller によっては `import sys as _sys` で `file=_sys.stderr` 経由
+    # する (build_telop_data.py:354 で実例) ので、`<word>.stderr` /
+    # `<word>.stderr.write` を許容する正規表現に広げる。素の `stderr`
+    # (from sys import stderr) も match。
+    stderr_print_re = re.compile(
+        r"\bprint\([^)]*file\s*=\s*(?:\w+\.)?stderr\b"
+    )
+    stderr_write_re = re.compile(r"\b\w*\.?stderr\.write\b")
+    # json tail: _obs_emit_json または emit_json wrapper の呼び出し
+    json_tail_re = re.compile(r"\b(?:_obs_)?emit_json\(")
+
+    for caller_name in V1_CALLER_SCRIPTS:
+        path = scripts_dir / caller_name
+        assert path.is_file(), f"caller missing: {path}"
+        src = path.read_text(encoding="utf-8")
+
+        # stdout (human): file= 無し `print(` が少なくとも 1 件
+        all_print = stdout_human_re.findall(src)
+        with_file_print = stdout_human_with_file_re.findall(src)
+        # all_print は file= 付きも含むので、(全 print) - (file= 付き) > 0
+        # で human stream presence を判定。
+        assert len(all_print) > len(with_file_print), (
+            f"{caller_name}: docs §Stdout And Stderr 'stdout (human)' に "
+            f"対応する file= なし `print(...)` が 0 件 (human stream が "
+            f"caller から消えた / 全 print が stderr に追放された drift?)"
+        )
+
+        # json tail: _obs_emit_json or emit_json call
+        assert json_tail_re.search(src), (
+            f"{caller_name}: docs §Stdout And Stderr 'stdout (json tail)' "
+            f"に対応する `_obs_emit_json(...)` / `emit_json(...)` 呼び出しが "
+            f"見つからない (v1 schema tail emit 経路が caller から消えた?)"
+        )
+
+        # stderr: print(file=sys.stderr) or sys.stderr.write
+        has_stderr_print = bool(stderr_print_re.search(src))
+        has_stderr_write = bool(stderr_write_re.search(src))
+        assert has_stderr_print or has_stderr_write, (
+            f"{caller_name}: docs §Stdout And Stderr 'stderr' に対応する "
+            f"`print(..., file=sys.stderr)` または `sys.stderr.write(...)` "
+            f"が見つからない (error / warning が stderr 以外に流れる drift?)"
+        )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -9573,6 +9696,7 @@ def main() -> int:
         test_observability_sensitive_classes_docs_code_lint,
         test_observability_normalize_redaction_rules_membership_reject,
         test_observability_redaction_rules_helper_mapping_lint,
+        test_observability_stdout_stderr_stream_contract_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
