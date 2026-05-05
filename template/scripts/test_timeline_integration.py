@@ -8959,8 +8959,8 @@ def test_observability_status_mapping_policy_docs_code_lint() -> None:
     finally:
         sys.path.pop(0)
 
-    # forward direction strict + v1 mapping consistency: 6 explicit non-error
-    # v0 status (`success` 同 v0 で 2 row 統合済み = 5 unique v0)
+    # forward direction strict + v1 mapping consistency: 5 unique non-error
+    # v0 status (`success` slide-plan/narration 2 row は同 v0 名で統合済み)
     for v0, docs_v1 in docs_explicit.items():
         assert v0 in status_map, (
             f"docs §v0 → v1 status mapping 行に explicit な v0 '{v0}' が "
