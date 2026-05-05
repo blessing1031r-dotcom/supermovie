@@ -7553,6 +7553,94 @@ def test_observability_common_fields_docs_payload_key_lint() -> None:
     )
 
 
+def test_observability_cost_json_shape_docs_payload_key_lint() -> None:
+    """`docs/OBSERVABILITY.md §Cost JSON Shape` の JSON 例 top-level keys と
+    `build_cost_payload()` 出力 keys の双方向整合性 lint
+    (Codex 06:31 PR-BE verdict BV、observability cost schema docs↔code drift 防止)。
+
+    docs §Cost JSON Shape は nested cost object の正準 source として 8 field
+    を JSON code block で列挙 (currency / estimate / rate_source /
+    rate_input_usd_per_mtok / rate_output_usd_per_mtok / tokens_input /
+    tokens_output / rate_missing)。caller / consumer / 後続 refactor が片側
+    だけ追加・削除すると、docs と payload の field set が drift して
+    downstream cost aggregator (rate_source による provider 別 sum / token
+    count diff) に missing key / unknown key を生む。
+
+    PR-BD §Common Fields lint と同型を §Cost JSON Shape に展開、本 lint は
+    集合一致を保証:
+      - docs JSON block top-level keys (2-space indent で抽出)
+      - build_cost_payload(...) output keys (8 field 全 populate)
+    両 set が完全一致しなければ fail。
+
+    既存 PR-T STATUS_MAP static lint / PR-AV docs migration steps numbering /
+    PR-BD §Common Fields key bidirectional と同 level の docs/code 双方向
+    audit。
+    """
+    import re
+    from pathlib import Path
+
+    from _observability import build_cost_payload
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    assert obs_md.is_file(), (
+        f"docs/OBSERVABILITY.md must exist at {obs_md}"
+    )
+    md = obs_md.read_text(encoding="utf-8")
+
+    # `### Cost JSON Shape` section の JSON code block を抽出 (1 つ目の block
+    # = future canonical schema、現 emission の dual emission 注記より上)
+    section_re = re.compile(
+        r"^### Cost JSON Shape[^\n]*\n.*?```json\n(?P<body>.*?)```",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = section_re.search(md)
+    assert m is not None, (
+        "`### Cost JSON Shape` の JSON code block が docs に見つからない "
+        "(heading rename / fence 形式変更?)"
+    )
+    block = m.group("body")
+
+    # Top-level keys: 2-space indent 直下の `"key":` のみ抽出
+    docs_keys = set(
+        re.findall(r"^  \"(\w+)\"\s*:", block, re.MULTILINE)
+    )
+    assert docs_keys, (
+        "docs Cost JSON Shape JSON block から top-level key が 0 件 抽出 "
+        "(indent / 形式変更?)"
+    )
+
+    # build_cost_payload を全 field populate で構築
+    cost = build_cost_payload(
+        estimate=0.001,
+        rate_input=3.0,
+        rate_output=15.0,
+        tokens_input=1234,
+        tokens_output=567,
+    )
+    payload_keys = set(cost.keys())
+
+    # 双方向 set diff
+    missing_in_payload = sorted(docs_keys - payload_keys)
+    extra_in_payload = sorted(payload_keys - docs_keys)
+    assert not missing_in_payload, (
+        f"docs §Cost JSON Shape に列挙された field が build_cost_payload "
+        f"output に欠落: {missing_in_payload}\n"
+        f"docs side か helper side のどちらかが drift。"
+    )
+    assert not extra_in_payload, (
+        f"build_cost_payload output に出ているが docs §Cost JSON Shape に "
+        f"未掲載の field: {extra_in_payload}\n"
+        f"docs に追記するか、helper を docs に合わせて削減。"
+    )
+
+    # 集合一致 (2 重 check)
+    assert docs_keys == payload_keys, (
+        f"docs keys != cost payload keys (missing={missing_in_payload}, "
+        f"extra={extra_in_payload})"
+    )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -8720,6 +8808,7 @@ def main() -> int:
         test_observability_build_status_artifact_kind_enum_contract,
         test_observability_build_status_counts_value_contract,
         test_observability_common_fields_docs_payload_key_lint,
+        test_observability_cost_json_shape_docs_payload_key_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
