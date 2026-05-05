@@ -514,6 +514,17 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
         domain-specific (kpi-comparison / dimension-regression / preflight-source-meta).
       run_id / parent_run_id / step_id: distributed tracing reservation.
     """
+    # PR-AF (Codex 03:21 verdict AU) defense: cost は v1 contract の canonical
+    # nested object (docs/OBSERVABILITY.md §Cost JSON Shape)、None / dict 以外を
+    # 渡されたら schema drift + warn_legacy_cost_extras() の truthiness 判定 drift
+    # を引き起こす。caller の型違いを fail-loud で reject、payload 構築側責務に
+    # 固定。bool は dict subclass ではないが、念のため None と dict のみ受理する
+    # 厳密な isinstance 検査。
+    if cost is not None and not isinstance(cost, dict):
+        raise TypeError(
+            f"build_status: cost must be dict or None, got "
+            f"{type(cost).__name__} ({cost!r})"
+        )
     v1_status, v1_category = map_status(v0_status)
     if category_override is not None:
         v1_category = category_override

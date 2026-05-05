@@ -4034,6 +4034,111 @@ def test_observability_build_status_reserved_key_collision() -> None:
         )
 
 
+def test_observability_build_status_cost_dict_strict() -> None:
+    """`build_status(cost=...)` の dict-or-None 限定 contract lock-in
+    (Codex 03:21 PR-AF verdict AU、observability v1 schema drift 防止)。
+
+    `cost` は docs/OBSERVABILITY.md §Cost JSON Shape の canonical nested
+    object で、`build_cost_payload()` で構築する dict 形式が前提。旧実装は
+    型 validation がなく、`list` / `str` / `int` / `bool` / `tuple` / `set`
+    全て payload に素通りで以下の drift を起こしていた:
+
+      - schema drift: `cost: [1,2,3]` 等の意図不明 payload が emit
+      - `warn_legacy_cost_extras(payload)` の truthiness 判定 drift:
+        `payload.get("cost")` truthy で nested cost 存在判定、list / str
+        も truthy なので legacy extras warning が誤発火する経路
+      - downstream parser が `cost.estimate` / `cost.rate_*` を AttributeError
+        / TypeError で読み込み失敗
+
+    新 contract: cost は None または dict のみ、それ以外 explicit TypeError
+    で fail-loud。caller の build_cost_payload() 経由で dict 渡される正規
+    経路は backward compatible。
+
+    既存 strict 系 test (`exit_code int` PR-AC, `redaction_rules str-only`
+    PR-AD, `reserved key collision` PR-AE) と同 level の defensive lint。
+    """
+    from _observability import build_cost_payload, build_status
+
+    # (1) None は通る (rate 未設定 path、helper 慣習)
+    p_none = build_status(script="x", v0_status="success", exit_code=0,
+                          cost=None)
+    assert p_none["cost"] is None
+
+    # (2) 通常 dict (build_cost_payload 経由) は通る
+    cost_dict = build_cost_payload(0.001, 1.5, 3.0)
+    p_dict = build_status(script="x", v0_status="success", exit_code=0,
+                          cost=cost_dict)
+    assert p_dict["cost"] == cost_dict
+    assert p_dict["cost"]["estimate"] == 0.001
+
+    # (3) empty dict も accept (caller が partial cost dict を渡す経路)
+    p_empty = build_status(script="x", v0_status="success", exit_code=0,
+                           cost={})
+    assert p_empty["cost"] == {}
+
+    # (4) list reject (silent schema drift 防止)
+    for bad_list in ([1, 2, 3], [], ["currency", "USD"]):
+        try:
+            build_status(script="x", v0_status="success", exit_code=0,
+                         cost=bad_list)
+        except TypeError as e:
+            assert "cost" in str(e) and "dict" in str(e), (
+                f"TypeError msg should mention cost + dict, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"list cost={bad_list!r} must raise TypeError"
+            )
+
+    # (5) str reject (silent schema drift 防止)
+    for bad_str in ("cost", "USD", ""):
+        try:
+            build_status(script="x", v0_status="success", exit_code=0,
+                         cost=bad_str)
+        except TypeError:
+            pass
+        else:
+            raise AssertionError(
+                f"str cost={bad_str!r} must raise TypeError"
+            )
+
+    # (6) int / float reject
+    for bad_num in (0, 5, 0.001, -1):
+        try:
+            build_status(script="x", v0_status="success", exit_code=0,
+                         cost=bad_num)
+        except TypeError:
+            pass
+        else:
+            raise AssertionError(
+                f"numeric cost={bad_num!r} must raise TypeError"
+            )
+
+    # (7) bool reject (dict subclass ではないが念のため strict 対象)
+    for bad_bool in (True, False):
+        try:
+            build_status(script="x", v0_status="success", exit_code=0,
+                         cost=bad_bool)
+        except TypeError:
+            pass
+        else:
+            raise AssertionError(
+                f"bool cost={bad_bool!r} must raise TypeError"
+            )
+
+    # (8) tuple / set / その他 type reject
+    for bad_other in ((1, 2), {1, 2}, object()):
+        try:
+            build_status(script="x", v0_status="success", exit_code=0,
+                         cost=bad_other)
+        except TypeError:
+            pass
+        else:
+            raise AssertionError(
+                f"non-dict cost={bad_other!r} must raise TypeError"
+            )
+
+
 def test_observability_resolve_run_context_uses_env() -> None:
     """env (SUPERMOVIE_RUN_ID / PARENT_RUN_ID / STEP_ID) 設定値をそのまま採用する。"""
     import os as _os
@@ -5627,6 +5732,7 @@ def main() -> int:
         test_observability_emit_json_exit_code_int_contract,
         test_observability_build_status_redaction_rules_strict,
         test_observability_build_status_reserved_key_collision,
+        test_observability_build_status_cost_dict_strict,
         test_observability_build_cost_payload_nan_inf_defense,
         # PR-E (distributed tracing run_id active emission): 7 件
         test_observability_resolve_run_context_uses_env,
