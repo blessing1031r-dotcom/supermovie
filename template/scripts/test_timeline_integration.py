@@ -6130,6 +6130,380 @@ def test_observability_build_status_category_override_defensive_lint() -> None:
             )
 
 
+def _assert_v1_payload_common(payload, *, expected_script, expected_status,
+                              expected_category, expected_ok=True,
+                              expected_exit_code=0):
+    """v1 schema common-field assertion helper (PR-AW、Codex 05:25 verdict BG)。
+
+    docs/OBSERVABILITY.md §Common Fields の core / optional field 全種を
+    1 caller の 1 回の build_status() 出力で機械的に lint する shared
+    helper。3 script 共通の contract のみ担当 (script-specific extras /
+    counts の domain key は呼び出し側で個別 assert)。
+    """
+    # core required
+    assert payload.get("schema_version") == 1, (
+        f"schema_version must be 1, got {payload.get('schema_version')!r}"
+    )
+    assert payload.get("script") == expected_script, (
+        f"script must be {expected_script!r}, got {payload.get('script')!r}"
+    )
+    assert payload.get("status") == expected_status, (
+        f"status must be {expected_status!r}, got {payload.get('status')!r}"
+    )
+    assert payload.get("ok") is expected_ok, (
+        f"ok must be {expected_ok!r}, got {payload.get('ok')!r}"
+    )
+    assert payload.get("exit_code") == expected_exit_code, (
+        f"exit_code must be {expected_exit_code!r}, got "
+        f"{payload.get('exit_code')!r}"
+    )
+    assert payload.get("category") == expected_category, (
+        f"category must be {expected_category!r}, got "
+        f"{payload.get('category')!r}"
+    )
+    # counts: dict (may be empty)
+    assert isinstance(payload.get("counts"), dict), (
+        f"counts must be dict, got {type(payload.get('counts')).__name__}"
+    )
+    # artifacts: list of dicts each with str path + str kind (PR-AK contract)
+    artifacts = payload.get("artifacts")
+    assert isinstance(artifacts, list), (
+        f"artifacts must be list, got {type(artifacts).__name__}"
+    )
+    for i, art in enumerate(artifacts):
+        assert isinstance(art, dict), (
+            f"artifacts[{i}] must be dict, got {type(art).__name__}"
+        )
+        assert isinstance(art.get("path"), str) and art["path"], (
+            f"artifacts[{i}].path must be non-empty str, got {art.get('path')!r}"
+        )
+        assert isinstance(art.get("kind"), str) and art["kind"], (
+            f"artifacts[{i}].kind must be non-empty str, got {art.get('kind')!r}"
+        )
+    # redaction: dict with applied_rules list of str (PR-Q canonicalize)
+    redaction = payload.get("redaction")
+    assert isinstance(redaction, dict), (
+        f"redaction must be dict, got {type(redaction).__name__}"
+    )
+    rules = redaction.get("applied_rules")
+    assert isinstance(rules, list), (
+        f"redaction.applied_rules must be list, got "
+        f"{type(rules).__name__}"
+    )
+    assert all(isinstance(r, str) for r in rules), (
+        f"redaction.applied_rules entries must all be str, got {rules!r}"
+    )
+    # canonical = sorted unique
+    assert rules == sorted(set(rules)), (
+        f"redaction.applied_rules must be sorted unique (PR-Q), got {rules!r}"
+    )
+    # cost: dict or None (PR-AF contract)
+    cost = payload.get("cost", None)
+    assert cost is None or isinstance(cost, dict), (
+        f"cost must be dict or None, got {type(cost).__name__}"
+    )
+    # duration_ms: int >= 0 if present
+    if "duration_ms" in payload:
+        assert (
+            isinstance(payload["duration_ms"], int)
+            and payload["duration_ms"] >= 0
+        ), (
+            f"duration_ms must be int >= 0 if present, got "
+            f"{payload['duration_ms']!r}"
+        )
+
+
+def test_build_slide_data_v1_schema_emit_conformance() -> None:
+    """build_slide_data の `--json-log` tail が v1 schema contract に準拠
+    (Codex 05:25 PR-AW verdict BG、observability v1 emit caller conformance
+    audit)。
+
+    helper 側は build_status() の type / format invariant を fail-loud 化済
+    (PR-AC〜AU の 22 strict contract)、docs/OBSERVABILITY.md §Common Fields
+    で payload shape は規約化されている。本 test は build_slide_data という
+    caller が `build_status(script="build_slide_data", v0_status=
+    "build_slide_ok", counts=..., artifacts=..., category_override=
+    "slide-build", ...)` を実際に組み立てて helper を呼んだ結果が、`emit_json
+    --json-log` を介して v1 contract で stdout 末尾に流れていることを実 e2e
+    で lock-in する。
+
+    helper の static 検査だけでは caller の kwargs 受け渡し漏れ / 順序ずれ /
+    counts key 改名 が拾えないため、PR-T (STATUS_MAP static lint) や PR-W
+    (top-level field order) と相補な caller-side regression test 層。
+
+    既存 PR-A/B/C で 3 script の v1 化は済んでおり、PR-Q applied_rules
+    canonicalize / PR-W field order / PR-AK counts/artifacts strict 等の
+    contract が積まれているので、新規 script を v1 化するときの参照型にも
+    なる。
+    """
+    import build_slide_data as bsd
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = _setup_temp_project(Path(tmp))
+        (proj / "transcript_fixed.json").write_text(
+            json.dumps(
+                {
+                    "duration_ms": 5000,
+                    "text": "test",
+                    "segments": [
+                        {"text": "hello", "start": 0, "end": 2000},
+                        {"text": "world", "start": 2000, "end": 4000},
+                    ],
+                    "words": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (proj / "project-config.json").write_text(
+            json.dumps({"format": "short", "tone": "プロフェッショナル"}),
+            encoding="utf-8",
+        )
+
+        original_proj = bsd.PROJ
+        original_fps = bsd.FPS
+        bsd.PROJ = proj
+        bsd.FPS = 30
+        try:
+            import sys as _sys
+            import io as _io
+            from contextlib import redirect_stdout
+
+            old_argv = _sys.argv
+            _sys.argv = ["build_slide_data.py", "--json-log"]
+            buf = _io.StringIO()
+            try:
+                with redirect_stdout(buf):
+                    bsd.main()
+            finally:
+                _sys.argv = old_argv
+            stdout_text = buf.getvalue()
+        finally:
+            bsd.PROJ = original_proj
+            bsd.FPS = original_fps
+
+    # 末尾行が JSON tail (PR-Y emit_json format invariant: 1 line + final \n)
+    lines = stdout_text.splitlines()
+    assert lines, f"stdout must have output, got {stdout_text!r}"
+    payload = json.loads(lines[-1])
+
+    _assert_v1_payload_common(
+        payload,
+        expected_script="build_slide_data",
+        expected_status="ok",
+        expected_category="slide-build",
+        expected_ok=True,
+        expected_exit_code=0,
+    )
+
+    # counts: build_slide_data domain key
+    counts = payload["counts"]
+    assert "input_segments" in counts and counts["input_segments"] == 2, (
+        f"counts.input_segments must be 2 (segments=2 fixture), got {counts!r}"
+    )
+    assert "output_slides" in counts and isinstance(
+        counts["output_slides"], int
+    ), f"counts.output_slides must be int, got {counts!r}"
+    assert "used_plan" in counts, f"counts.used_plan missing, got {counts!r}"
+
+    # artifacts: 1 dict, kind="ts"
+    assert len(payload["artifacts"]) == 1, (
+        f"build_slide_data emits exactly 1 artifact (slideData.ts), "
+        f"got {payload['artifacts']!r}"
+    )
+    assert payload["artifacts"][0]["kind"] == "ts", (
+        f"artifacts[0].kind must be 'ts' (slideData.ts), got "
+        f"{payload['artifacts'][0]!r}"
+    )
+
+    # redaction: user_content + abs_path (default redact、PR-Q canonical sort)
+    assert "user_content" in payload["redaction"]["applied_rules"]
+    assert "abs_path" in payload["redaction"]["applied_rules"]
+
+
+def test_build_telop_data_v1_schema_emit_conformance() -> None:
+    """build_telop_data の `--json-log` tail が v1 schema contract に準拠
+    (Codex 05:25 PR-AW verdict BG)。
+
+    PR-AW で build_slide_data と pair で audit、`script="build_telop_data"`
+    / `v0_status="build_telop_ok"` / `category_override="telop-build"` /
+    counts={telop_count, weaknesses} / artifacts kind="ts" が caller-side
+    で v1 schema 準拠。call_budoux (Node 依存) は deterministic stub に
+    差し替え (既存 test_build_telop_data_main_e2e と同 stub 流儀)。
+    """
+    import build_telop_data as btd
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = _setup_temp_project(Path(tmp))
+        (proj / "transcript_fixed.json").write_text(
+            json.dumps(
+                {
+                    "duration_ms": 5000,
+                    "text": "test",
+                    "segments": [
+                        {"text": "こんにちは世界", "start": 0, "end": 2000},
+                        {"text": "さようなら空", "start": 2000, "end": 4000},
+                    ],
+                    "words": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (proj / "vad_result.json").write_text(
+            json.dumps({"speech_segments": [{"start": 0, "end": 4000}]}),
+            encoding="utf-8",
+        )
+
+        def stub_call_budoux(seg_texts):
+            return [
+                [t[i : i + 4] for i in range(0, len(t), 4)] or [t]
+                for t in seg_texts
+            ]
+
+        original_proj = btd.PROJ
+        original_call = btd.call_budoux
+        btd.PROJ = proj
+        btd.call_budoux = stub_call_budoux
+        try:
+            import sys as _sys
+            import io as _io
+            from contextlib import redirect_stdout
+
+            old_argv = _sys.argv
+            _sys.argv = ["build_telop_data.py", "--json-log"]
+            buf = _io.StringIO()
+            try:
+                with redirect_stdout(buf):
+                    btd.main()
+            finally:
+                _sys.argv = old_argv
+            stdout_text = buf.getvalue()
+        finally:
+            btd.PROJ = original_proj
+            btd.call_budoux = original_call
+
+    lines = stdout_text.splitlines()
+    assert lines, f"stdout must have output, got {stdout_text!r}"
+    payload = json.loads(lines[-1])
+
+    _assert_v1_payload_common(
+        payload,
+        expected_script="build_telop_data",
+        expected_status="ok",
+        expected_category="telop-build",
+        expected_ok=True,
+        expected_exit_code=0,
+    )
+
+    counts = payload["counts"]
+    assert "telop_count" in counts and isinstance(counts["telop_count"], int), (
+        f"counts.telop_count must be int, got {counts!r}"
+    )
+    assert counts["telop_count"] >= 1, (
+        f"counts.telop_count must be >= 1 (2 segments fixture), got {counts!r}"
+    )
+    assert "weaknesses" in counts and isinstance(counts["weaknesses"], int), (
+        f"counts.weaknesses must be int, got {counts!r}"
+    )
+
+    assert len(payload["artifacts"]) == 1, (
+        f"build_telop_data emits exactly 1 artifact (telopData.ts), "
+        f"got {payload['artifacts']!r}"
+    )
+    assert payload["artifacts"][0]["kind"] == "ts", (
+        f"artifacts[0].kind must be 'ts', got {payload['artifacts'][0]!r}"
+    )
+
+    assert "user_content" in payload["redaction"]["applied_rules"]
+    assert "abs_path" in payload["redaction"]["applied_rules"]
+
+
+def test_preflight_video_v1_schema_emit_conformance() -> None:
+    """preflight_video の `--json-log` tail が v1 schema contract に準拠
+    (Codex 05:25 PR-AW verdict BG)。
+
+    success path で `script="preflight_video"` / `v0_status="preflight_ok"`
+    → STATUS_MAP で `("ok", "preflight-source-meta")`、counts={} (空 dict)、
+    artifacts は `--write-config` 指定時のみ 1 件 (kind="json")、redaction
+    rules は default redact で `["abs_path"]`。
+
+    ffmpeg/ffprobe 不在環境では skip (test pass、condition unmet) — 既存
+    `test_preflight_video_write_config_parse_error_emits_tail` と同流儀。
+    """
+    import os as _os
+    import shutil as _shutil_mod
+    import subprocess as _subprocess
+    import sys as _sys
+
+    if _shutil_mod.which("ffprobe") is None or _shutil_mod.which("ffmpeg") is None:
+        return  # skip: tool unavailable
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="preflight_v1_conf_"))
+    src_mp4 = tmp_dir / "in.mp4"
+    cfg_path = tmp_dir / "project-config.json"
+    try:
+        try:
+            _subprocess.run(
+                ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+                 "color=c=black:s=320x240:d=0.1", "-pix_fmt", "yuv420p",
+                 str(src_mp4)],
+                check=True, capture_output=True, timeout=30,
+            )
+        except (_subprocess.CalledProcessError, _subprocess.TimeoutExpired):
+            return  # skip: ffmpeg failure
+
+        # Synthetic mp4 (silent black 0.1s 320x240) は format 推論不可 +
+        # risks ['unknown-aspect', 'multiple-or-missing-audio'] を持つので、
+        # --force-format で format を明示 + --allow-risk で risk gate を通し、
+        # success path の v1 tail を取得する目的に絞る。
+        result = _subprocess.run(
+            [_sys.executable,
+             str(Path(__file__).parent / "preflight_video.py"),
+             str(src_mp4),
+             "--write-config", str(cfg_path),
+             "--force-format", "youtube",
+             "--allow-risk",
+             "unknown-aspect,multiple-or-missing-audio,non-square-sar",
+             "--json-log"],
+            capture_output=True, text=True, timeout=30,
+        )
+
+        # success: stdout 末尾が v1 JSON tail
+        assert result.returncode == 0, (
+            f"preflight_video success path expected rc=0, got "
+            f"rc={result.returncode}, stderr={result.stderr!r}"
+        )
+        lines = result.stdout.splitlines()
+        assert lines, f"stdout must have output, got {result.stdout!r}"
+        payload = json.loads(lines[-1])
+
+        _assert_v1_payload_common(
+            payload,
+            expected_script="preflight_video",
+            expected_status="ok",
+            expected_category="preflight-source-meta",
+            expected_ok=True,
+            expected_exit_code=0,
+        )
+
+        # preflight counts は 空 dict
+        assert payload["counts"] == {}, (
+            f"preflight_video counts must be empty dict, got {payload['counts']!r}"
+        )
+        # artifacts: --write-config 指定で 1 件 (kind="json")
+        assert len(payload["artifacts"]) == 1, (
+            f"preflight_video --write-config emits 1 artifact, got "
+            f"{payload['artifacts']!r}"
+        )
+        assert payload["artifacts"][0]["kind"] == "json", (
+            f"artifacts[0].kind must be 'json' (project-config.json), got "
+            f"{payload['artifacts'][0]!r}"
+        )
+        # redaction: default で abs_path のみ
+        assert "abs_path" in payload["redaction"]["applied_rules"]
+    finally:
+        _shutil_mod.rmtree(tmp_dir, ignore_errors=True)
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -7285,6 +7659,9 @@ def main() -> int:
         test_observability_build_status_category_override_defensive_lint,
         test_observability_warn_legacy_cost_extras_payload_must_be_dict,
         test_observability_docs_migration_steps_numbering,
+        test_build_slide_data_v1_schema_emit_conformance,
+        test_build_telop_data_v1_schema_emit_conformance,
+        test_preflight_video_v1_schema_emit_conformance,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
