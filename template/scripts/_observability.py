@@ -169,6 +169,23 @@ def redact_secret(value, *, last_n=4, mask_char="*"):
         return value
     if not value:
         return value
+    # PR-AO (Codex 04:18 verdict AN) defense: mask_char は redaction の核で、
+    # 空文字 (`""`) を渡すと `mask_char * N` が "" になり last_n char だけが
+    # raw に残る semantic leak。例: redact_secret("abcdefgh", last_n=4, mask_char="")
+    # → "efgh" (secret tail 4 char が unmasked で露出)。non-empty str に限定
+    # して caller の bug を helper が隠す経路を fail-loud で断つ。validation は
+    # value 検査後に実行 (None / int / 空文字 passthrough 経路は backward
+    # compat 維持)。
+    if not isinstance(mask_char, str):
+        raise TypeError(
+            f"redact_secret: mask_char must be str, got "
+            f"{type(mask_char).__name__} ({mask_char!r})"
+        )
+    if not mask_char:
+        raise ValueError(
+            "redact_secret: mask_char must be non-empty (empty mask_char "
+            "would expose secret tail unmasked)"
+        )
     # PR-H fix iter (Codex 00:02 P1 #1): last_n <= 0 は全 mask に倒す。
     # Python slice の `value[-0:]` = `value[0:]` で full string leak になるため、
     # custom param で 0 や負値が渡されても fail-closed (全 mask) で安全側に。

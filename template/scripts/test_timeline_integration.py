@@ -5835,6 +5835,104 @@ def test_observability_redact_secret_last_n_zero_or_negative_full_mask() -> None
     assert redacted_zero == "*" * len("sk-1234567890")
 
 
+def test_observability_redact_secret_boundary_and_mask_char_strict() -> None:
+    """`redact_secret()` の 0-length / extreme last_n boundary + mask_char
+    contract lock-in (Codex 04:18 PR-AO verdict AN、observability v1 secret
+    leak 防止 + caller bug fail-loud)。
+
+    既存 PR-H test (long / short / non-string / custom / last_n <= 0) は
+    主要経路を網羅していたが、以下の boundary / mask_char 経路は未 lock:
+
+      - len(value) == last_n (exactly 5 char value with last_n=5) → 全 mask
+      - len(value) == last_n + 1 (boundary, 5 char value with last_n=4) → 全 mask
+      - len(value) == last_n + 2 (just over, 6 char with last_n=4) → 部分 mask
+      - last_n >> len(value) (last_n=100 vs 5 char) → 全 mask
+      - mask_char="" (空文字、`mask_char * N == ""` で last_n char raw 露出) →
+        ValueError fail-loud (PR-AO fix で追加)
+      - mask_char non-str (int / None) → TypeError
+      - 1 char value (len=1) で last_n=0 / 4 / 100 全部 全 mask
+      - multi-char mask_char (`"##"`) → 既存挙動維持 (no leak)
+
+    `mask_char=""` は `"abcdefgh"` + last_n=4 で `"efgh"` を返す semantic
+    leak を起こしていた gap を fix。caller の bug を fail-loud で表面化。
+    """
+    from _observability import redact_secret
+
+    # ===== boundary len cases =====
+    # (1) len == last_n (5 char, last_n=5) → 全 mask
+    assert redact_secret("abcde", last_n=5) == "*****"
+    # (2) len == last_n + 1 (5 char, last_n=4) → 全 mask (PR-H boundary)
+    assert redact_secret("abcde", last_n=4) == "*****"
+    # (3) len == last_n + 2 (6 char, last_n=4) → 部分 mask
+    assert redact_secret("abcdef", last_n=4) == "**cdef"
+    # (4) len == last_n + 3 (7 char, last_n=4) → 部分 mask
+    assert redact_secret("abcdefg", last_n=4) == "***defg"
+
+    # ===== extreme last_n =====
+    # (5) last_n >> len(value) → 全 mask (boundary inside `<=` branch)
+    assert redact_secret("abcde", last_n=100) == "*****"
+    # (6) last_n == len(value) + 1 → 全 mask
+    assert redact_secret("abcde", last_n=6) == "*****"
+
+    # ===== 1 char value (extreme short) =====
+    # (7) len 1 + last_n=0 → 全 mask
+    assert redact_secret("x", last_n=0) == "*"
+    # (8) len 1 + last_n=4 (default) → 全 mask
+    assert redact_secret("x", last_n=4) == "*"
+    # (9) len 1 + last_n=100 → 全 mask
+    assert redact_secret("x", last_n=100) == "*"
+
+    # ===== mask_char strict =====
+    # (10) PR-AO fix: mask_char="" は ValueError fail-loud
+    try:
+        redact_secret("abcdefgh", last_n=4, mask_char="")
+    except ValueError as e:
+        assert "mask_char" in str(e) and "non-empty" in str(e), (
+            f"ValueError msg should mention mask_char + non-empty, got {e!r}"
+        )
+    else:
+        raise AssertionError("mask_char='' must raise ValueError")
+
+    # (11) 旧挙動 regression detection: 空 mask_char で leak していた値が
+    # 今は ValueError、`"efgh"` の raw leak が起きないことを確認
+    try:
+        result = redact_secret("abcdefgh", last_n=4, mask_char="")
+    except ValueError:
+        pass
+    else:
+        assert "efgh" not in result, (
+            f"empty mask_char must not return raw tail, got {result!r}"
+        )
+
+    # (12) mask_char non-str (None / int) → TypeError
+    for bad_mc in (None, 5, 1.5, ["*"], True):
+        try:
+            redact_secret("abcdefgh", last_n=4, mask_char=bad_mc)
+        except TypeError as e:
+            assert "mask_char" in str(e) and "str" in str(e), (
+                f"TypeError msg should mention mask_char + str, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"non-str mask_char={bad_mc!r} must raise TypeError"
+            )
+
+    # (13) multi-char mask_char は accept (既存挙動維持、leak なし)
+    result_multi = redact_secret("abcdefgh", last_n=4, mask_char="##")
+    assert result_multi == "########efgh", (
+        f"multi-char mask_char preserved: got {result_multi!r}"
+    )
+    # raw secret prefix が出ていない確認
+    assert "abcd" not in result_multi
+
+    # ===== 既存 passthrough 経路の backward compat 確認 =====
+    # (14) None / 空文字 / non-str は mask_char 検査前に passthrough
+    # (mask_char="" が指定されても None / "" / 12345 は早期 return で safe)
+    assert redact_secret(None, mask_char="") is None
+    assert redact_secret("", mask_char="") == ""
+    assert redact_secret(12345, mask_char="") == 12345
+
+
 def test_observability_compute_rate_missing_helper() -> None:
     """PR-O (Codex 01:12): compute_rate_missing(estimate) helper の discriminator 算出規約。
 
@@ -6490,6 +6588,7 @@ def main() -> int:
         test_observability_redact_secret_non_string_passthrough,
         test_observability_redact_secret_custom_last_n_and_mask_char,
         test_observability_redact_secret_last_n_zero_or_negative_full_mask,
+        test_observability_redact_secret_boundary_and_mask_char_strict,
         # PR-M (--unsafe-keep-abs-path flag audit、Codex 00:54 approve): 1 件 (lint-style)
         test_unsafe_keep_abs_path_flag_present_in_all_seven_scripts,
         # PR-N (cost.estimate / rate_missing schema verification、Codex 01:02 approve): 2 件
