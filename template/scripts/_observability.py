@@ -41,8 +41,10 @@ STATUS_MAP = {
     "stale_cleanup_fail": ("error", "stale_cleanup_fail"),
     "vad_invalid": ("error", "vad_invalid"),
     "no_chunks_succeeded": ("error", "no_chunks_succeeded"),
+    "partial_chunks_disallowed": ("error", "partial_chunks_disallowed"),
     "concat_fail": ("error", "concat_fail"),
     "write_narration_data_wave_error": ("error", "write_narration_data_wave_error"),
+    "sentinel_write_fail": ("error", "sentinel_write_fail"),
 }
 
 

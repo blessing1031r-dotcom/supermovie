@@ -2470,10 +2470,11 @@ def test_observability_helper_status_map() -> None:
         # slide-plan error variants
         "cost_guard_arg_invalid", "inputs_missing", "rate_limited",
         "api_http_error", "llm_json_invalid",
-        # voicevox error variants (voicevox_narration.py:591/598/601/606/615/635/657/707)
+        # voicevox error variants (voicevox_narration.py 全 emit_json("error_status",...) 経路)
         "transcript_missing", "transcript_invalid", "no_chunks", "invalid_fps",
-        "stale_cleanup_fail", "vad_invalid", "no_chunks_succeeded", "concat_fail",
-        "write_narration_data_wave_error",
+        "stale_cleanup_fail", "vad_invalid", "no_chunks_succeeded",
+        "partial_chunks_disallowed", "concat_fail",
+        "write_narration_data_wave_error", "sentinel_write_fail",
     }
     missing = must_have - set(STATUS_MAP.keys())
     assert not missing, f"STATUS_MAP missing v0 statuses: {missing}"
