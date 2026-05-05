@@ -3172,6 +3172,114 @@ def test_observability_build_status_top_level_field_order() -> None:
     )
 
 
+def test_observability_warn_legacy_cost_extras_env_gated() -> None:
+    """`warn_legacy_cost_extras()` が env-gated deprecation warning を
+    stderr のみに出し、stdout JSON contract を汚さないこと
+    (Codex 02:31 PR-X verdict AH、nested `cost` migration roadmap)。
+
+    PR-S で nested `cost` object を canonical 化したが PR-N 由来の
+    top-level extras (estimated_input_tokens / estimated_output_tokens_upper_bound
+    / estimated_cost_usd_upper_bound / cost_abort_at / rate_missing) を
+    backward compat で dual emit 中。本 helper は
+    `SUPERMOVIE_OBSERVABILITY_WARN_LEGACY_COST_EXTRAS=1` 時にのみ
+    deprecation warning を stderr に書き、downstream consumer に
+    nested 形式への migration を促す。
+    """
+    import io
+    import os as _os
+
+    from _observability import (
+        WARN_LEGACY_COST_EXTRAS_ENV,
+        LEGACY_COST_EXTRAS_KEYS,
+        warn_legacy_cost_extras,
+    )
+
+    # 5 legacy keys が helper の認識対象に揃っている前提を lock-in
+    assert set(LEGACY_COST_EXTRAS_KEYS) == {
+        "estimated_input_tokens",
+        "estimated_output_tokens_upper_bound",
+        "estimated_cost_usd_upper_bound",
+        "cost_abort_at",
+        "rate_missing",
+    }, f"LEGACY_COST_EXTRAS_KEYS drift: {LEGACY_COST_EXTRAS_KEYS}"
+
+    payload_with_dual = {
+        "cost": {"currency": "USD", "estimate": 0.001},
+        "estimated_input_tokens": 100,
+        "estimated_cost_usd_upper_bound": 0.001,
+        "rate_missing": False,
+    }
+    payload_without_legacy = {"cost": {"currency": "USD", "estimate": 0.001}}
+    payload_no_cost = {
+        "cost": None,
+        "estimated_input_tokens": 100,
+        "rate_missing": False,
+    }
+
+    saved_env = _os.environ.get(WARN_LEGACY_COST_EXTRAS_ENV)
+    try:
+        # (1) env 未設定 → no-op、戻り値 False、stream 無音
+        _os.environ.pop(WARN_LEGACY_COST_EXTRAS_ENV, None)
+        buf = io.StringIO()
+        emitted = warn_legacy_cost_extras(payload_with_dual, stream=buf)
+        assert emitted is False, f"env unset must no-op, got emitted={emitted}"
+        assert buf.getvalue() == "", (
+            f"env unset must produce no output, got {buf.getvalue()!r}"
+        )
+
+        # (2) env="0" → no-op
+        _os.environ[WARN_LEGACY_COST_EXTRAS_ENV] = "0"
+        buf = io.StringIO()
+        emitted = warn_legacy_cost_extras(payload_with_dual, stream=buf)
+        assert emitted is False, f"env=0 must no-op, got emitted={emitted}"
+        assert buf.getvalue() == "", (
+            f"env=0 must produce no output, got {buf.getvalue()!r}"
+        )
+
+        # (3) env="1" + dual emission → warning emit、戻り値 True、warning に
+        # legacy key と env var 名が含まれる
+        _os.environ[WARN_LEGACY_COST_EXTRAS_ENV] = "1"
+        buf = io.StringIO()
+        emitted = warn_legacy_cost_extras(payload_with_dual, stream=buf)
+        assert emitted is True, f"env=1 + dual must emit, got emitted={emitted}"
+        out = buf.getvalue()
+        assert "WARNING" in out, f"warning prefix missing: {out!r}"
+        assert "deprecated" in out, f"deprecated label missing: {out!r}"
+        for k in ("estimated_input_tokens", "estimated_cost_usd_upper_bound",
+                  "rate_missing"):
+            assert k in out, f"legacy key {k!r} not listed in warning: {out!r}"
+        assert WARN_LEGACY_COST_EXTRAS_ENV in out, (
+            f"env var name missing from warning: {out!r}"
+        )
+
+        # (4) env="1" + nested cost only (legacy 不在) → no-op
+        buf = io.StringIO()
+        emitted = warn_legacy_cost_extras(payload_without_legacy, stream=buf)
+        assert emitted is False, (
+            f"env=1 + no legacy keys must no-op, got emitted={emitted}"
+        )
+        assert buf.getvalue() == "", (
+            f"no-legacy case must produce no output, got {buf.getvalue()!r}"
+        )
+
+        # (5) env="1" + cost None (legacy keys あり) → no-op
+        # (nested 化していない legacy-only 経路は migration 対象外、
+        # dual emission だけが warning 対象 contract)
+        buf = io.StringIO()
+        emitted = warn_legacy_cost_extras(payload_no_cost, stream=buf)
+        assert emitted is False, (
+            f"cost=None must no-op even with legacy keys, got emitted={emitted}"
+        )
+        assert buf.getvalue() == "", (
+            f"cost=None case must produce no output, got {buf.getvalue()!r}"
+        )
+    finally:
+        if saved_env is None:
+            _os.environ.pop(WARN_LEGACY_COST_EXTRAS_ENV, None)
+        else:
+            _os.environ[WARN_LEGACY_COST_EXTRAS_ENV] = saved_env
+
+
 def test_observability_provider_body_stderr_default_redact() -> None:
     """generate_slide_plan の HTTP error response body と LLM raw text が
     default で stderr に raw 出力されないこと (Codex 20:48 PR3 review P2 #1)。
@@ -4875,6 +4983,7 @@ def main() -> int:
         test_observability_build_status_v1_schema,
         test_observability_build_status_duration_ms_and_category_override,
         test_observability_build_status_top_level_field_order,
+        test_observability_warn_legacy_cost_extras_env_gated,
         test_observability_provider_body_stderr_default_redact,
         test_observability_emit_json_disabled_no_print,
         # PR-E (distributed tracing run_id active emission): 7 件

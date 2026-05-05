@@ -354,6 +354,62 @@ def build_cost_payload(estimate, rate_input, rate_output, *,
     }
 
 
+# PR-X (Codex 02:31 verdict AH): legacy top-level cost extras deprecation gate。
+# PR-N で top-level cost discriminator (estimated_cost_usd_upper_bound / rate_missing /
+# cost_abort_at 等) を入れたが PR-S で nested `cost` object を canonical に移行。
+# 現行は backward compat で dual emission を続けているが、env-gated deprecation
+# warning を追加して downstream consumer に migration を促せるようにする。
+# default off (env 未設定 / "0" で warning 抑制)。"1" の時のみ stderr に warning。
+WARN_LEGACY_COST_EXTRAS_ENV = "SUPERMOVIE_OBSERVABILITY_WARN_LEGACY_COST_EXTRAS"
+LEGACY_COST_EXTRAS_KEYS = (
+    "estimated_input_tokens",
+    "estimated_output_tokens_upper_bound",
+    "estimated_cost_usd_upper_bound",
+    "cost_abort_at",
+    "rate_missing",
+)
+
+
+def warn_legacy_cost_extras(payload, *, stream=None):
+    """Emit deprecation warning to stderr when nested `cost` and legacy
+    top-level cost extras coexist in payload, gated by env.
+
+    Default off: env unset or "0" → no-op (returns False)。
+    "1" 時のみ payload に nested `cost` (truthy) と legacy keys (any of
+    `LEGACY_COST_EXTRAS_KEYS`) が併存していたら 1 行の deprecation warning
+    を `stream` (default: sys.stderr) に書き出す。
+
+    stdout JSON contract は触らない (warning は stderr のみ)。
+
+    Args:
+      payload: build_status() の出力 dict (nested `cost` + extras top-level merge 済)。
+      stream: deprecation warning の書き込み先。default は import 時 sys.stderr。
+
+    Returns:
+      bool: True iff warning が emit された (test 用 sentinel)。
+    """
+    import sys as _sys
+
+    if os.environ.get(WARN_LEGACY_COST_EXTRAS_ENV) != "1":
+        return False
+    if not payload.get("cost"):
+        return False
+    legacy_present = sorted(
+        k for k in LEGACY_COST_EXTRAS_KEYS if k in payload
+    )
+    if not legacy_present:
+        return False
+    target_stream = stream if stream is not None else _sys.stderr
+    print(
+        f"WARNING: deprecated top-level cost extras alongside nested `cost` "
+        f"object: {legacy_present}. These top-level keys will be removed in a "
+        f"future release; consume `cost.*` instead "
+        f"(set {WARN_LEGACY_COST_EXTRAS_ENV}=0 to silence).",
+        file=target_stream,
+    )
+    return True
+
+
 def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
                  cost=None, redaction_rules=None,
                  duration_ms=None, category_override=None,

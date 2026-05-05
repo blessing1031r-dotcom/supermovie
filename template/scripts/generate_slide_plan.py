@@ -30,6 +30,7 @@ from _observability import (
     resolve_run_context,
     redact_provider_body,
     safe_artifact_path,
+    warn_legacy_cost_extras,
 )
 
 PROJ = Path(__file__).resolve().parent.parent
@@ -244,6 +245,11 @@ def main():
             step_id=run_ctx["step_id"],
             **extra,
         )
+        # PR-X: env-gated deprecation warning for legacy top-level cost extras
+        # (nested `cost` object と top-level estimated_*/cost_abort_at/rate_missing
+        # の dual emission は PR-S 以降 backward compat 目的で残存、env で
+        # 有効化された時のみ stderr に warning。stdout JSON contract は不変)。
+        warn_legacy_cost_extras(payload)
         return _obs_emit_json(args.json_log, payload)
 
     # Codex P2 review P1 反映 (CODEX_P2_COST_GUARD_REVIEW:3-5):
