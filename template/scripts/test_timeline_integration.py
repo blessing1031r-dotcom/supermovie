@@ -6208,14 +6208,24 @@ def test_observability_docs_migration_steps_numbering() -> None:
         f"(skip / 1 始まりでない / row 順序入れ替え / backfill 漏れ?)"
     )
 
-    # (3) 各行の PR cell が空でない (drift 補助 sanity check、最低限の構造維持)
-    full_row_re = re.compile(
-        r"^\|\s*(\d+)\s*\|[^|]*\|\s*([^|]*?)\s*\|\s*$",
-        re.MULTILINE,
-    )
-    for step_num, pr_cell in full_row_re.findall(body):
-        assert pr_cell.strip(), (
-            f"Migration steps step {step_num} の PR cell が空 "
+    # (3) 各行の PR cell が空でない (drift 補助 sanity check、最低限の構造維持)。
+    # Codex 05:24 PR-AV 3rd review P2 fix: 旧 regex `[^|]*\|\s*([^|]*?)\s*\|\s*$`
+    # は content cell 内に `|` を含む行 (例: step 27 `None | non-finite` /
+    # step 48 自己言及の `| <int> | ... |`) で match に失敗し、その行の PR cell
+    # 空チェックが skip されていた (full_row_count 46/48、step 27 と 48 が
+    # missing)。content の pipe 数に依存しないよう、row line を `|` で split
+    # して `[-2]` (trailing `|` の直前 cell = PR cell) を見る方式に切替。
+    row_line_re = re.compile(r"^(\|\s*\d+\s*\|.*\|)\s*$", re.MULTILINE)
+    for line in row_line_re.findall(body):
+        parts = line.split("|")
+        # parts: ["", " <num> ", ..., " <PR> ", ""]
+        assert len(parts) >= 4, (
+            f"Migration steps row split 結果が不正 (cell 数不足): {line!r}"
+        )
+        step_num_cell = parts[1].strip()
+        pr_cell = parts[-2].strip()
+        assert pr_cell, (
+            f"Migration steps step {step_num_cell} の PR cell が空 "
             f"(PR ラベル append 忘れ?)"
         )
 
