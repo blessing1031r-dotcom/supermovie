@@ -21,7 +21,7 @@
 | roku/phase3i-transcript-alignment..HEAD | merge commit を含むため raw count は意味薄、source 内訳は別 doc 参照 |
 | origin remote | `https://github.com/RenTonoduka/supermovie.git` (READ only) |
 | origin viewerPermission | READ (Roku gh account `blessing1031r-dotcom` は write 権限なし) |
-| fork remote | `https://github.com/blessing1031r-dotcom/supermovie.git` (Step 6 で `gh repo fork` + `git remote add fork` 完了、PR #1 (fixture-normalize) merged at 77c133a、PR #2 (obs-doc) merged at 4565ebb、本 PR は obs-migration-core で fork-internal PR 起票予定) |
+| fork remote | `https://github.com/blessing1031r-dotcom/supermovie.git` (Step 6 で `gh repo fork` + `git remote add fork` 完了、PR #1 (fixture-normalize) merged at 77c133a、PR #2 (obs-doc) merged at 4565ebb、PR #3 (obs-migration-core) / PR #4 (PR-A) / PR #5 (PR-B) / PR #6 (PR-C) 全 merged、本 PR #7 は **obs-rate-alias (PR-D)** rate env v0→v1 alias、fork-internal squash merge 予定) |
 | gh auth status | ✓ Logged in (account: blessing1031r-dotcom、scopes: gist read:org repo workflow、Claude Code 側 12:00 / 12:32 / 12:38 / 12:41 で 4 回 valid 確認。Codex `--ephemeral` sandbox 内では token 不可視 = invalid 表示されるが Claude Code 実行環境に影響なし) |
 | worktree | clean (cleanup commit `e0f5107` で `docs/reviews/**` 38 files + `docs/roadmap/FUTURE_FEATURES_REQUIREMENTS_v0.md` を release scope から外し済み、future doc は別 worktree `../supermovie-future-features-v0` の `roku/future-features-v0` branch `72a6ef4` に保全済) |
 | 7 gate composite | ALL PASS at b837430 (env / worktree clean / regen drift 1 / **52/52 python smoke** / lint exit 0 / React 22/22 / **gate 7 anchor drift = 1 intrinsic OK**、Bash 実測 22:21、PR-D fix iter 3 docs-only diff のため source 影響なし) |
@@ -40,7 +40,7 @@ Roku 「OK、推奨から進めて」(11:46 user prompt) で以下 5 項目の C
 | 4 | 実 e2e | fork CI 前に **local visual-smoke / render** (Roku 環境 main.mp4 fixture 必要) |
 | 5 | future v0 doc | **別 PR** で切り出し (`roku/future-features-v0` branch、別途) |
 
-## Release PR Scope (本 PR `roku/phase3j-timeline` の最終 diff target)
+## Release PR Scope (本 PR `roku/obs-rate-alias` (PR-D) の最終 diff target ※ release scope は historical reference として保持、本 PR-D は rate alias 実装に scope 限定)
 
 **Include** (release tree に含める):
 - `template/scripts/` 配下全 (timeline.py / voicevox_narration.py / build_slide_data.py / build_telop_data.py / generate_slide_plan.py / visual_smoke.py / preflight_video.py / budoux_split.mjs / compare_telop_split.py / test_timeline_integration.py)

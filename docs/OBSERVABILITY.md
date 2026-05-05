@@ -36,12 +36,12 @@
 
 v1 helper 経由は generate_slide_plan / voicevox_narration / compare_telop_split / visual_smoke / preflight_video / build_slide_data / build_telop_data の **7 script** が適用済 (PR #3 + PR-A + PR-B + PR-C merged 後)。`timeline.py` は library 性質で migration 対象外、呼び出し元 script で status emit される設計 (Codex 21:01 step 3 S3-2)。Step 3 完了。
 
-### v0 JSON tail / output gap (Codex 20:08 review O-1, P2 #3 reflect)
+### v0 JSON tail / output gap (legacy 履歴、PR #3 で全解消済)
 
-現 v0 emission には schema v1 と不整合な点が 2 つある (migration policy section の mapping で扱う):
-- `generate_slide_plan.py:380` の output JSON は `path` field に絶対 path を含む。schema v1 では `redaction.applied_rules=[abs_path]` 必須。
-- `voicevox_narration.py:778` の summary JSON も同様に absolute path を含む。
-- `generate_slide_plan.py:279` の dry-run path は `--json-log` flag なしで JSON を stdout に出す legacy 動作。schema v1 では `--json-log` 強制を要さず legacy として canonical 化する。
+旧 v0 emission に schema v1 と不整合だった点 3 つの解消履歴:
+- `generate_slide_plan.py` の output JSON `path` 絶対 path 漏れ → PR #3 で `safe_artifact_path` (`<HOME>` / `<TMP>` / `<ABS>` placeholder) 適用、`redaction.applied_rules=[abs_path]` 反映済。
+- `voicevox_narration.py` の summary JSON `path` 絶対 path 漏れ → PR #3 で同 helper 適用済。
+- `generate_slide_plan.py` の dry-run JSON は `--json-log` 強制なしで stdout に出す legacy 動作を維持 (cost estimate 即時 emit 用途)。`--json-log` 指定時は別途 helper 経由で v1 status JSON を末尾 1 行 emit する 2-emission pattern として canonical 化 (PR #3 確定)。
 
 ## Status JSON Contract
 
@@ -223,7 +223,7 @@ artifact `path` field は repo root or project root からの **相対 path** �
 
 ## Test Requirements
 
-- `test_timeline_integration.py` に redaction regression test を実装済 (PR #3、`test_observability_safe_artifact_path_redacts` / `test_observability_user_content_meta_no_raw` / `test_observability_redact_provider_body_default_strict` / `test_observability_provider_body_stderr_default_redact` が sensitive class 4 種を網羅)。
+- `test_timeline_integration.py` に redaction regression test を実装済 (PR #3、`test_observability_safe_artifact_path_redacts` (abs_path) / `test_observability_user_content_meta_no_raw` (user_content) / `test_observability_redact_provider_body_default_strict` + `test_observability_provider_body_stderr_default_redact` (provider_response_body))。`secret` class の last-4 mask rule 専用 test は未実装 (現 codebase に secret を直接 emit する経路がないため、契約のみ doc に保持)。
 - 各 script の `--json-log` smoke test (parse + schema_version 確認) は `test_timeline_integration.py` 内 v1 schema test (`test_observability_build_status_v1_schema` 等) でカバー済。
 - cost telemetry の missing rate behavior は `test_generate_slide_plan_skip_preserves_with_bad_env` / `test_generate_slide_plan_rate_rejects_nan_inf` / `test_generate_slide_plan_rate_v0_v1_alias_precedence` (PR-D) で網羅済。
 
