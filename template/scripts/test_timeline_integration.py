@@ -5811,6 +5811,87 @@ def test_observability_redact_error_message_multiple_paths_in_one_msg() -> None:
         f"both paths should be redacted: {redacted!r}"
 
 
+def test_observability_redact_error_message_url_path_order_independence() -> None:
+    """`redact_error_message()` の URL+path 混在 input で order-independent
+    redaction lock-in (Codex 04:35 PR-AR verdict AY、observability redaction
+    contract drift 防止)。
+
+    error message には URL と HOME 配下 abs path が混在することが多い (例:
+    `failed to fetch <URL>: see <PATH>`)。caller の文章組み立て順で URL/path
+    の出現順が異なっても、redaction 結果は順序非依存である必要がある:
+
+      - HOME 配下 path → `<HOME>/...` placeholder で常に redact
+      - URL は破壊しない (preserve as-is、URL 内 path-like segment も切らない)
+
+    PR-K / PR-R で URL 破壊回避と複数 path の同時 redact を個別 lock-in 済だ
+    が、両者の混在 + 入力順序違いの組み合わせは未 lock。リファクタで regex
+    順序や iter 方向が変わって preserve / redact が drift する regression を
+    early fail させる。
+
+    入力順 4 pattern (URL→path / path→URL / URL containing path-segment +
+    standalone path / path → URL+segment) で同 input を組み替えて、
+    output が semantically equivalent (path redacted + URL preserved) で
+    あることを確認。
+    """
+    import os as _os
+
+    from _observability import redact_error_message
+
+    home = _os.path.expanduser("~")
+    url = "https://api.example.com/v1/foo"
+    path = f"{home}/secret/file.json"
+
+    cases = [
+        ("URL→path",
+         f"failed to fetch {url}: see {path}"),
+        ("path→URL",
+         f"see {path}: failed to fetch {url}"),
+        ("URL with segment + path after",
+         f"POST {url}/users/123 failed at {path}"),
+        ("path → URL with segment",
+         f"at {path} POST {url}/users/123 failed"),
+    ]
+
+    for label, msg in cases:
+        out = redact_error_message(msg)
+        # path は <HOME> placeholder 化、raw secret path は出力に含まれない
+        assert "/secret/file.json" not in out or out.count("<HOME>") >= 1, (
+            f"{label}: HOME path must be redacted, got {out!r}"
+        )
+        assert f"{home}/secret" not in out, (
+            f"{label}: raw HOME path leaked: {out!r}"
+        )
+        # URL は preserve (api.example.com host が残る)
+        assert "api.example.com" in out, (
+            f"{label}: URL host must be preserved, got {out!r}"
+        )
+        # URL scheme + host が破壊されていない (https:// が残る)
+        assert "https://api.example.com" in out, (
+            f"{label}: URL scheme+host must remain intact, got {out!r}"
+        )
+
+    # ===== 順序独立性: A と B は path/URL の順序だけ違う、出力の構成要素も
+    # 同じ集合になることを確認 (token 単位で path placeholder + URL preserve
+    # 数が一致) =====
+    out_url_first = redact_error_message(cases[0][1])
+    out_path_first = redact_error_message(cases[1][1])
+    assert out_url_first.count("<HOME>") == out_path_first.count("<HOME>"), (
+        f"<HOME> placeholder count must be order-independent: "
+        f"URL-first={out_url_first.count('<HOME>')}, "
+        f"path-first={out_path_first.count('<HOME>')}"
+    )
+    assert out_url_first.count("api.example.com") == \
+        out_path_first.count("api.example.com"), (
+            f"URL host count must be order-independent"
+        )
+
+    # C と D 同様
+    out_c = redact_error_message(cases[2][1])
+    out_d = redact_error_message(cases[3][1])
+    assert out_c.count("<HOME>") == out_d.count("<HOME>")
+    assert out_c.count("api.example.com") == out_d.count("api.example.com")
+
+
 def test_compare_telop_split_error_message_redacted() -> None:
     """compare_telop_split で error=str(e) → tail に raw abs path が漏れないこと。
 
@@ -6741,6 +6822,7 @@ def main() -> int:
         test_observability_redact_error_message_ipv6_and_data_uri_safe,
         test_observability_redact_error_message_url_with_port_query_fragment,
         test_observability_redact_error_message_multiple_paths_in_one_msg,
+        test_observability_redact_error_message_url_path_order_independence,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
