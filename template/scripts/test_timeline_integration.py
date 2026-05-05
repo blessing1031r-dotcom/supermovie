@@ -8502,73 +8502,54 @@ def test_observability_stdout_stderr_stream_contract_lint() -> None:
         src = path.read_text(encoding="utf-8")
         tree = _ast.parse(src, filename=caller_name)
 
-        # Codex 07:42 review P2 fix: 旧実装は `_ast.walk(tree)` で Call
-        # node を全 traversal、`def emit_json(...)` wrapper 内で呼ばれる
-        # `_obs_emit_json(...)` も json tail presence にカウントしていた。
-        # 全 `return emit_json(...)` caller が消えて wrapper body だけ
-        # 残った drift で lint が pass する false negative。NodeVisitor で
-        # `FunctionDef(name='emit_json' | '_obs_emit_json')` の body 直下に
-        # 入った Call は wrapper 内部 invocation として除外、wrapper の
-        # 外側 (caller) からの Call site のみ json tail presence にカウント。
-        WRAPPER_NAMES = {"emit_json", "_obs_emit_json"}
+        # Codex 07:42 / 07:46 / 07:54 review P2 iterations: 当初の wrapper-
+        # exclusion 設計は (a) `def main` / `def cli` まで wrapper 検出して
+        # caller-side Call を全 mask、(b) `main()` 自身の module-level Call
+        # が wrapper invocation 扱いで trivially pass する false-positive
+        # を生むなど、ヒューリスティック過剰で安定 lint にならなかった。
+        # 設計を simplify: json tail presence は「`_obs_emit_json(...)` Call
+        # node が caller AST 中に 1 件以上存在」だけ assert する。dead-code
+        # 系 drift (wrapper 定義残るが caller 全消失) は behavioral 系
+        # PR-AW/AX/AY caller conformance test (実 --json-log 経由 v1 tail
+        # 観測) でカバー、lint は static presence のみ。caller scripts は
+        # `import emit_json as _obs_emit_json` で名前 alias 済 (PR-AW で確認
+        # 済) なので、Call.func.id == '_obs_emit_json' を counting すれば
+        # alias 経由 invocation も漏れなく拾える。
         print_calls_no_file: list[int] = []
         print_calls_to_stderr: list[int] = []
         stderr_write_calls: list[int] = []
-        emit_json_calls: list[int] = []
-
-        class _StreamVisitor(_ast.NodeVisitor):
-            def __init__(self) -> None:
-                self._wrapper_depth = 0  # 内側に居る wrapper FunctionDef 数
-
-            def visit_FunctionDef(
-                self, node: _ast.FunctionDef,
-            ) -> None:  # noqa: N802
-                if node.name in WRAPPER_NAMES:
-                    self._wrapper_depth += 1
-                    self.generic_visit(node)
-                    self._wrapper_depth -= 1
-                else:
-                    self.generic_visit(node)
-
-            visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]
-
-            def visit_Call(self, node: _ast.Call) -> None:  # noqa: N802
-                fn = node.func
-                # print(...) は wrapper の中外問わず stream 役割を持つので
-                # 全 traversal でカウント (wrapper 内 print も human / stderr
-                # の一部として実効する)
-                if isinstance(fn, _ast.Name) and fn.id == "print":
-                    file_kw = next(
-                        (kw for kw in node.keywords if kw.arg == "file"),
-                        None,
-                    )
-                    if file_kw is None:
-                        print_calls_no_file.append(node.lineno)
-                    elif _is_stderr_value(file_kw.value):
-                        print_calls_to_stderr.append(node.lineno)
-                # emit_json / _obs_emit_json は wrapper 内部 invocation を
-                # 除外して caller-side call site だけカウント
-                elif (
-                    isinstance(fn, _ast.Name)
-                    and fn.id in WRAPPER_NAMES
-                    and self._wrapper_depth == 0
+        obs_emit_json_calls: list[int] = []
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.Call):
+                continue
+            fn = node.func
+            if isinstance(fn, _ast.Name) and fn.id == "print":
+                file_kw = next(
+                    (kw for kw in node.keywords if kw.arg == "file"), None,
+                )
+                if file_kw is None:
+                    print_calls_no_file.append(node.lineno)
+                elif _is_stderr_value(file_kw.value):
+                    print_calls_to_stderr.append(node.lineno)
+            elif (
+                isinstance(fn, _ast.Name)
+                and fn.id == "_obs_emit_json"
+            ):
+                # caller scripts は `import emit_json as _obs_emit_json` で
+                # alias 済、`_obs_emit_json(args.json_log, payload)` Call が
+                # 1 件以上存在すれば json tail emit 経路 presence。
+                obs_emit_json_calls.append(node.lineno)
+            elif isinstance(fn, _ast.Attribute) and fn.attr == "write":
+                if (
+                    isinstance(fn.value, _ast.Attribute)
+                    and fn.value.attr == "stderr"
                 ):
-                    emit_json_calls.append(node.lineno)
-                # <name>.stderr.write(...) は stream 役割なので全カウント
-                elif isinstance(fn, _ast.Attribute) and fn.attr == "write":
-                    if (
-                        isinstance(fn.value, _ast.Attribute)
-                        and fn.value.attr == "stderr"
-                    ):
-                        stderr_write_calls.append(node.lineno)
-                    elif (
-                        isinstance(fn.value, _ast.Name)
-                        and fn.value.id == "stderr"
-                    ):
-                        stderr_write_calls.append(node.lineno)
-                self.generic_visit(node)
-
-        _StreamVisitor().visit(tree)
+                    stderr_write_calls.append(node.lineno)
+                elif (
+                    isinstance(fn.value, _ast.Name)
+                    and fn.value.id == "stderr"
+                ):
+                    stderr_write_calls.append(node.lineno)
 
         # stdout (human): file= 無し `print(...)` が 1 件以上
         assert print_calls_no_file, (
@@ -8577,13 +8558,13 @@ def test_observability_stdout_stderr_stream_contract_lint() -> None:
             f"stream が caller から消えた / 全 print が stderr に追放?)"
         )
 
-        # json tail: _obs_emit_json / emit_json call site (definition では
-        # なく Call node) が 1 件以上
-        assert emit_json_calls, (
+        # json tail: `_obs_emit_json(...)` Call node が 1 件以上
+        # (alias 経由 import で全 caller が `_obs_emit_json` 名で invoke)
+        assert obs_emit_json_calls, (
             f"{caller_name}: docs §Stdout And Stderr 'stdout (json tail)' "
-            f"に対応する `_obs_emit_json(...)` / `emit_json(...)` AST Call "
-            f"node が見つからない (v1 schema tail emit 経路が caller から "
-            f"消えた / wrapper 定義だけ残って call site が消える drift?)"
+            f"に対応する `_obs_emit_json(...)` AST Call node が見つからない "
+            f"(v1 schema tail emit 経路が caller から消えた / import alias "
+            f"rename / 実装削除?)"
         )
 
         # stderr: print(..., file=<...>.stderr) または <...>.stderr.write
