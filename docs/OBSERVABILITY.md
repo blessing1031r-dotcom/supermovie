@@ -1,6 +1,6 @@
 # SuperMovie Observability Contract
 
-本 doc は SuperMovie pipeline の observability に関する最小規約を固定する。Codex 19:50 consult verdict (Tech 改善 Medium #3、`/Users/rokumasuda/0_Daily-Workspace/handoff_2026-05-05_1741_supermovie-phase3-pr-cycle.md:60`) に準拠した doc 起点 PR scope。env var rename (Anthropic rate v0→v1 alias) は PR-D で実装済 (Rate Env Var Convention 参照)。provider price 記載 / external SaaS 前提は本 doc では扱わない。
+本 doc は SuperMovie pipeline の observability に関する最小規約を固定する。Codex 19:50 consult verdict (Tech 改善 Medium #3) を起点に PR #1-#14 (PR-A..K) を経て確立、最新 fork/main = `db4cb74` 時点で全 surface (json tail / human stdout / stderr / error message / artifact path) で redaction default strict + unified knob (`--unsafe-keep-abs-path`) + 4 sensitive class (secret / user_content / abs_path / provider_response_body) helper 化が完了。env var rename (Anthropic rate v0→v1 alias) は PR-D 実装済、distributed tracing run_id active emission は PR-E 実装済、cost abort threshold は PR-F 実装済、error path tail emit consistency は PR-G 実装済、helper-level secret redaction は PR-H 実装済、human stdout / stderr path leak audit は PR-I/J 実装済、redact_error_message regex 強化 (Windows path / IPv6 / data URI 対応) は PR-K 実装済。provider price 記載 / external SaaS 前提は本 doc では扱わない。
 
 ## Scope And Non-Goals
 
@@ -21,7 +21,7 @@
 
 ## Current Surface
 
-実装済の observability surface (Bash 実測 2026-05-05 22:14、PR #3 + PR-A/B/C merged + PR-D rate alias 実装後):
+実装済の observability surface (PR #1-#14 merged 後、最新 fork/main = `db4cb74` 時点):
 
 | script | --json-log | cost guard | dry-run | redaction status |
 |---|---|---|---|---|
@@ -268,7 +268,12 @@ cap: 全 3 field に `MAX_TRACE_CONTEXT_VALUE_LEN = 128` 適用、超過時は `
 
 ## Test Requirements
 
-- `test_timeline_integration.py` に redaction regression test を実装済 (PR #3、`test_observability_safe_artifact_path_redacts` (abs_path) / `test_observability_user_content_meta_no_raw` (user_content) / `test_observability_redact_provider_body_default_strict` + `test_observability_provider_body_stderr_default_redact` (provider_response_body))。`secret` class の last-4 mask rule 専用 test は未実装 (現 codebase に secret を直接 emit する経路がないため、契約のみ doc に保持)。
+- `test_timeline_integration.py` に redaction regression test を実装済:
+  - abs_path: `test_observability_safe_artifact_path_redacts` (PR #3)、`test_compare_telop_split_error_message_redacted` (PR-G)、`test_build_slide_data_human_stdout_path_redacted_by_default` (PR-I)、`test_voicevox_narration_summary_path_redacted_by_default` (PR-I fix iter)、`test_generate_slide_plan_stderr_proj_path_redacted` (PR-J)
+  - user_content: `test_observability_user_content_meta_no_raw` (PR #3)
+  - provider_response_body: `test_observability_redact_provider_body_default_strict` + `test_observability_provider_body_stderr_default_redact` (PR #3)
+  - secret: `test_observability_redact_secret_long_value_keeps_last_4` / `_short_value_full_mask` / `_non_string_passthrough` / `_custom_last_n_and_mask_char` / `_last_n_zero_or_negative_full_mask` (PR-H + fix iter、helper-level の last-4 mask + boundary fail-closed を直接 verify)
+  - error_message redact: `test_observability_redact_error_message_strips_abs_path` (PR-G fix iter 2)、`_windows_path` / `_ipv6_and_data_uri_safe` / `_multiple_paths_in_one_msg` (PR-K)
 - 各 script の `--json-log` smoke test (parse + schema_version 確認) は `test_timeline_integration.py` 内 v1 schema test (`test_observability_build_status_v1_schema` 等) でカバー済。
 - cost telemetry の missing rate behavior は `test_generate_slide_plan_skip_preserves_with_bad_env` / `test_generate_slide_plan_rate_rejects_nan_inf` / `test_generate_slide_plan_rate_v0_v1_alias_precedence` (PR-D) で網羅済。
 
