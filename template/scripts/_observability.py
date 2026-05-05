@@ -447,6 +447,46 @@ def warn_legacy_cost_extras(payload, *, stream=None):
     return True
 
 
+def _normalize_redaction_rules(rules):
+    """Validate redaction_rules input and return sorted unique str list。
+
+    PR-AD (Codex 03:09 verdict AQ-改) defense:
+      - None / empty list/tuple → []
+      - list / tuple of str → sorted set
+      - bare str → TypeError (caller probably forgot list wrap、`'abs_path'`
+        を渡すと iter で char 分解されて `['_','a','b','h','p','s','t']`
+        になる silent drift を防ぐ)
+      - 非 str 要素 (None / int / dict / etc.) を含む → TypeError fail-loud
+      - その他 (dict / set / int / etc.) → TypeError
+
+    旧実装 `sorted(set(redaction_rules)) if redaction_rules else []` は
+    None/empty で [] になるが、`[None]` / `[1]` を silent pass、
+    `["a", None]` で「'<' not supported between instances of 'str' and
+    'NoneType'」の意味不明 TypeError、bare str で char 分解という
+    schema drift を起こしていた。
+    """
+    if rules is None:
+        return []
+    # bare str 早期 reject (iter で char 分解される silent drift を防ぐ)
+    if isinstance(rules, str):
+        raise TypeError(
+            f"redaction_rules must be list/tuple of str, got bare str "
+            f"({rules!r}); did you mean [{rules!r}]?"
+        )
+    if not isinstance(rules, (list, tuple)):
+        raise TypeError(
+            f"redaction_rules must be list/tuple of str or None, got "
+            f"{type(rules).__name__} ({rules!r})"
+        )
+    for item in rules:
+        if not isinstance(item, str):
+            raise TypeError(
+                f"redaction_rules entries must be str, got "
+                f"{type(item).__name__} ({item!r}) in {rules!r}"
+            )
+    return sorted(set(rules))
+
+
 def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
                  cost=None, redaction_rules=None,
                  duration_ms=None, category_override=None,
@@ -493,7 +533,9 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
             # `redaction_rules.append(...)` を繰り返す pattern が多く、重複や順序が
             # non-deterministic だった。helper で sorted(set(...)) に正規化、downstream
             # diff / regression test の安定性を確保。empty も空 list で固定。
-            "applied_rules": sorted(set(redaction_rules)) if redaction_rules else [],
+            # PR-AD (Codex 03:09 AQ-改 approve): `_normalize_redaction_rules()` 経由で
+            # 非 str 要素 / bare str / dict-set の silent pass / char 分解を fail-loud reject。
+            "applied_rules": _normalize_redaction_rules(redaction_rules),
             "version": REDACTION_VERSION,
         },
     }

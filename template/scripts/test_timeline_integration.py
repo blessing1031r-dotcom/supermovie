@@ -3847,6 +3847,106 @@ def test_observability_emit_json_exit_code_int_contract() -> None:
     )
 
 
+def test_observability_build_status_redaction_rules_strict() -> None:
+    """`build_status(redaction_rules=...)` の str 限定 contract lock-in
+    (Codex 03:09 PR-AD verdict AQ-改、observability v1 schema drift 防止)。
+
+    旧実装 `sorted(set(redaction_rules)) if redaction_rules else []` は
+    None / empty 時 [] を返すが、`[None]` / `[1]` を silent pass、
+    `["a", None]` で「'<' not supported」の意味不明 TypeError、
+    bare str (`"abs_path"`) を渡すと iter で char 分解されて
+    `["_", "a", "b", "h", "p", "s", "t"]` という schema drift を起こす。
+
+    新 `_normalize_redaction_rules()` は:
+      - None → []
+      - list/tuple of str → sorted unique
+      - bare str → TypeError fail-loud (caller の wrap 漏れ早期検出)
+      - 非 str entry を含む → TypeError with helpful message
+      - その他 type → TypeError
+
+    test contract: 既存 caller (`["abs_path"]` / `[]` / None / 重複 dedup /
+    tuple) を維持しつつ、上記 schema drift を early fail させる。
+    """
+    from _observability import build_status
+
+    # (1) None → []
+    p_none = build_status(script="x", v0_status="success", exit_code=0,
+                          redaction_rules=None)
+    assert p_none["redaction"]["applied_rules"] == []
+
+    # (2) empty list / tuple → []
+    p_empty = build_status(script="x", v0_status="success", exit_code=0,
+                           redaction_rules=[])
+    assert p_empty["redaction"]["applied_rules"] == []
+    p_empty_tuple = build_status(script="x", v0_status="success", exit_code=0,
+                                 redaction_rules=())
+    assert p_empty_tuple["redaction"]["applied_rules"] == []
+
+    # (3) list of str → sorted unique
+    p_dup = build_status(script="x", v0_status="success", exit_code=0,
+                         redaction_rules=["b", "a", "a", "b"])
+    assert p_dup["redaction"]["applied_rules"] == ["a", "b"]
+
+    # (4) tuple of str も accept
+    p_tuple = build_status(script="x", v0_status="success", exit_code=0,
+                           redaction_rules=("abs_path", "secret"))
+    assert p_tuple["redaction"]["applied_rules"] == ["abs_path", "secret"]
+
+    # (5) bare str (not list) → TypeError (char 分解 silent drift 防止)
+    try:
+        build_status(script="x", v0_status="success", exit_code=0,
+                     redaction_rules="abs_path")
+    except TypeError as e:
+        assert "bare str" in str(e) or "list" in str(e), (
+            f"TypeError msg should mention bare str or list, got {e!r}"
+        )
+    else:
+        raise AssertionError("bare str redaction_rules must raise TypeError")
+
+    # (6) [None] → TypeError (silent pass 防止)
+    try:
+        build_status(script="x", v0_status="success", exit_code=0,
+                     redaction_rules=[None])
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("[None] redaction_rules must raise TypeError")
+
+    # (7) [int] → TypeError (silent pass 防止)
+    try:
+        build_status(script="x", v0_status="success", exit_code=0,
+                     redaction_rules=[1])
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("[int] redaction_rules must raise TypeError")
+
+    # (8) ["a", None] mixed → TypeError (旧「'<' not supported」意味不明 msg を
+    # 「entries must be str」明示メッセージに置換)
+    try:
+        build_status(script="x", v0_status="success", exit_code=0,
+                     redaction_rules=["abs_path", None])
+    except TypeError as e:
+        assert "str" in str(e), (
+            f"mixed-type TypeError msg should mention str expectation, got {e!r}"
+        )
+    else:
+        raise AssertionError("mixed-type redaction_rules must raise TypeError")
+
+    # (9) dict / set / int (not list/tuple) → TypeError
+    for bad in ({"abs_path": True}, {"abs_path"}, 42):
+        try:
+            build_status(script="x", v0_status="success", exit_code=0,
+                         redaction_rules=bad)
+        except TypeError:
+            pass
+        else:
+            raise AssertionError(
+                f"non list/tuple redaction_rules ({type(bad).__name__}) "
+                f"must raise TypeError"
+            )
+
+
 def test_observability_resolve_run_context_uses_env() -> None:
     """env (SUPERMOVIE_RUN_ID / PARENT_RUN_ID / STEP_ID) 設定値をそのまま採用する。"""
     import os as _os
@@ -5438,6 +5538,7 @@ def main() -> int:
         test_observability_emit_json_format_lint,
         test_observability_emit_json_stderr_clean,
         test_observability_emit_json_exit_code_int_contract,
+        test_observability_build_status_redaction_rules_strict,
         test_observability_build_cost_payload_nan_inf_defense,
         # PR-E (distributed tracing run_id active emission): 7 件
         test_observability_resolve_run_context_uses_env,
