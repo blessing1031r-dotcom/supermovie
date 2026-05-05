@@ -1,13 +1,13 @@
 # SuperMovie Phase 3 Release Note (2026-05-04 → 2026-05-05)
 
-`roku/fixture-normalize-recipe` source commit HEAD: `5ce2bc5` (anchor 自身の document commit は drift 1 intrinsic、CONTEXT_ANCHOR.md §Source commit vs Document commit 規約 参照、Phase 3-V FINAL の元 source `cad6914` から +4 commits = b1 fixture normalize bundle + Codex 19:39 PR review fix iter)。Codex CODEX_REVIEW_PHASE3V_FINAL 20260505T064250 で「P0/P1/P2 なし、Phase 3-V production 品質で止めてよい」 verdict 後、post-freeze
+`roku/fixture-normalize-recipe` source commit HEAD: `aa244bd` (anchor 自身の document commit は drift 1 intrinsic、CONTEXT_ANCHOR.md §Source commit vs Document commit 規約 参照、Phase 3-V FINAL の元 source `cad6914` から +6 commits = b1 fixture normalize bundle + Codex 19:39 PR review fix iter + 19:53 re-review fix iter 2 + 20:04 3rd review fix iter 3)。Codex CODEX_REVIEW_PHASE3V_FINAL 20260505T064250 で「P0/P1/P2 なし、Phase 3-V production 品質で止めてよい」 verdict 後、post-freeze
 backlog 第 1〜3 弾 + P3 logging extension + Codex 4 cycle re-review (P5/2nd-batch/P2/P3-slide-plan
 全 P0/P1 NONE) を反映、Codex CODEX_FULL_SESSION_REVIEW 20260505T113913 で「過剰実装、
-P5 sentinel 以降は黄信号」と判定。さらに b1 fixture normalize bundle (Codex 18:36 verdict + 18:55 review + 19:39 PR review fix iter) を追加。
+P5 sentinel 以降は黄信号」と判定。さらに b1 fixture normalize bundle (Codex 18:36 verdict + 18:55 review + 19:39 PR review fix iter + 19:53 re-review fix iter 2 + 20:04 3rd review fix iter 3) を追加。
 
 Phase 3-A 〜 Phase 3-V の自走実装結果 + 後続 post-freeze backlog 第 1〜3 弾 + b1 fixture normalize bundle。本 note は
-Roku 不在モード中に Claude+Codex 協働で 116 commit (`roku/phase3i-transcript-alignment..HEAD`、
-main..HEAD は 134 commit、Bash 実測) を積んだ成果物の release assertion を固定する目的。
+Roku 不在モード中に Claude+Codex 協働で 120 commit (`roku/phase3i-transcript-alignment..HEAD`、
+main..HEAD は 138 commit、Bash 実測) を積んだ成果物の release assertion を固定する目的。
 
 ## Release-readiness statement (2026-05-05 時点、技術 readiness のみ)
 
