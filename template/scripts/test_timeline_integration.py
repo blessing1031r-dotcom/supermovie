@@ -4706,8 +4706,11 @@ def test_observability_build_status_v0_status_defensive_lint() -> None:
     assert p_unknown["status"] == "error"
     assert p_unknown["category"] == "mystery_status"
 
-    # (1c) 1 char (snake_case identifier 形式)
-    p_min = build_status(script="x", v0_status="a", exit_code=0)
+    # (1c) 1 char (snake_case identifier 形式)。PR-BA で v1_status='error' +
+    # exit_code=0 が ValueError 化された (docs §Status Naming contract、
+    # 未知 v0_status は ('error', v0_status) defensive fallback で error 経路)
+    # ため、exit_code は非 0 を渡す。
+    p_min = build_status(script="x", v0_status="a", exit_code=2)
     assert p_min["category"] == "a"
 
     # ===== reject 型違反 =====
@@ -4753,11 +4756,22 @@ def test_observability_build_status_v0_status_defensive_lint() -> None:
             )
 
     # ===== regression guard: 既存 v0 emission status 群は全 accept =====
-    # PR-T must_have set 由来、representative 7 件
-    for existing in ("success", "rate_limited", "api_key_skipped",
-                     "dry_run", "cost_guard_aborted", "ffprobe_failed",
-                     "smoke_ok"):
-        p = build_status(script="x", v0_status=existing, exit_code=0)
+    # PR-T must_have set 由来、representative 7 件。PR-BA で v1_status と
+    # exit_code 整合性が strict 化されたため、各 v0_status に対する v1_status
+    # に応じた exit_code を渡す (success/api_key_skipped/dry_run/smoke_ok は
+    # ok/skipped/dry_run → 0、rate_limited/cost_guard_aborted/ffprobe_failed
+    # は error → 非 0)。
+    existing_with_exit = [
+        ("success", 0),
+        ("api_key_skipped", 0),
+        ("dry_run", 0),
+        ("smoke_ok", 0),
+        ("rate_limited", 9),
+        ("cost_guard_aborted", 10),
+        ("ffprobe_failed", 3),
+    ]
+    for existing, ec in existing_with_exit:
+        p = build_status(script="x", v0_status=existing, exit_code=ec)
         # status / category は STATUS_MAP に従って解決 (詳細は PR-T で固定)
         assert p["status"] in ("ok", "skipped", "error", "dry_run")
 
@@ -7044,6 +7058,102 @@ def test_observability_status_map_caller_usage_lint() -> None:
     )
 
 
+def test_observability_build_status_exit_code_consistency() -> None:
+    """`build_status()` の v1_status と exit_code の整合性 contract lock-in
+    (Codex 06:01 PR-BA verdict BL、observability v1 status/exit_code drift 防止)。
+
+    docs/OBSERVABILITY.md §Status Naming は `error = exit_code != 0` を
+    contract として明示しているが、旧実装は `ok` を v1_status から自動算出
+    するだけで exit_code との整合性は caller 任せだった。caller 側 typo /
+    refactor で `emit_json("success", 1)` 等の不整合を渡しても silent
+    payload 通過、downstream consumer が `ok=True && exit_code=1` 矛盾
+    record を生む drift。
+
+    新 contract:
+      - v1_status='error' → exit_code != 0 必須 (ValueError on 0)
+      - v1_status in {'ok', 'skipped', 'dry_run'} → exit_code == 0 必須
+        (ValueError on 非 0)
+
+    PR-AC exit_code int contract / PR-AP v0_status defensive lint と同 level
+    の strict contract 層。STATUS_MAP を全走査して各 entry の v1_status に
+    対する正/誤 exit_code を機械検証、合計 4 accept + 4 reject case で
+    contract lock-in。
+    """
+    from _observability import STATUS_MAP, build_status
+
+    # ===== accept: STATUS_MAP 全 entry を v1_status に応じた正 exit_code で =====
+    accepted = 0
+    for v0_status, (v1_status, _) in STATUS_MAP.items():
+        if v1_status == "error":
+            ec = 3  # 代表 error exit code
+        else:
+            ec = 0
+        # 全 entry が ValueError なしで通る
+        p = build_status(script="x", v0_status=v0_status, exit_code=ec)
+        assert p["status"] == v1_status
+        assert p["exit_code"] == ec
+        # ok 計算が status と一致
+        assert p["ok"] is (v1_status in ("ok", "skipped", "dry_run"))
+        accepted += 1
+    assert accepted == len(STATUS_MAP), (
+        f"all STATUS_MAP entries must accept consistent exit_code, "
+        f"got {accepted}/{len(STATUS_MAP)}"
+    )
+
+    # ===== reject: error + exit_code=0 (4 case) =====
+    error_v0_samples = [
+        v0 for v0, (v1, _) in STATUS_MAP.items() if v1 == "error"
+    ][:4]
+    assert len(error_v0_samples) >= 4, (
+        f"need >=4 error v0_status in STATUS_MAP for reject case sample, "
+        f"got {error_v0_samples!r}"
+    )
+    for v0 in error_v0_samples:
+        try:
+            build_status(script="x", v0_status=v0, exit_code=0)
+        except ValueError as e:
+            assert (
+                "v1_status='error'" in str(e)
+                and "exit_code" in str(e)
+            ), (
+                f"ValueError msg should mention v1_status='error' + "
+                f"exit_code, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"v0_status={v0!r} (error) + exit_code=0 must raise ValueError"
+            )
+
+    # ===== reject: ok/skipped/dry_run + exit_code != 0 (各 1 + 1 unknown) =====
+    # representative: success (ok), api_key_skipped (skipped), dry_run (dry_run)
+    ok_path_samples = [
+        ("success", "ok"),
+        ("api_key_skipped", "skipped"),
+        ("dry_run", "dry_run"),
+        ("smoke_ok", "ok"),
+    ]
+    for v0, expected_v1 in ok_path_samples:
+        assert STATUS_MAP[v0][0] == expected_v1, (
+            f"STATUS_MAP[{v0!r}] expected {expected_v1!r}, "
+            f"got {STATUS_MAP[v0]!r}"
+        )
+        for bad_ec in (1, 2, 3, 99):
+            try:
+                build_status(script="x", v0_status=v0, exit_code=bad_ec)
+            except ValueError as e:
+                assert (
+                    expected_v1 in str(e) and "exit_code" in str(e)
+                ), (
+                    f"ValueError msg should mention {expected_v1} + "
+                    f"exit_code, got {e!r}"
+                )
+            else:
+                raise AssertionError(
+                    f"v0_status={v0!r} ({expected_v1}) + "
+                    f"exit_code={bad_ec} must raise ValueError"
+                )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -8207,6 +8317,7 @@ def main() -> int:
         test_generate_slide_plan_v1_schema_emit_conformance,
         test_voicevox_narration_v1_schema_emit_conformance,
         test_observability_status_map_caller_usage_lint,
+        test_observability_build_status_exit_code_consistency,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,

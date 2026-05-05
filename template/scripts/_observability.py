@@ -712,6 +712,29 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
                 f"characters (\\x00-\\x1F / \\x7F), got {category_override!r}"
             )
         v1_category = category_override
+    # PR-BA (Codex 06:01 verdict BL) defense: docs/OBSERVABILITY.md §Status
+    # Naming で `error = exit_code != 0` を contract として明示しているが、
+    # 旧実装は `ok` を v1_status から自動算出するだけで exit_code 整合性
+    # (ok/skipped/dry_run → 0、error → 非 0) は caller 任せだった。caller 側
+    # の typo / refactor で `emit_json("success", 1)` 等の不整合を渡しても
+    # silent payload 通過、downstream consumer の `ok=True && exit_code=1`
+    # 矛盾 record を生む drift。helper 入口で fail-loud 化、PR-AC exit_code
+    # int contract / PR-AP v0_status defensive lint と同 level の strict
+    # contract 層。
+    if v1_status == "error" and exit_code == 0:
+        raise ValueError(
+            f"build_status: v1_status='error' requires exit_code != 0 "
+            f"(docs §Status Naming contract: error = exit_code != 0)、"
+            f"got v0_status={v0_status!r} → v1_status='error' but "
+            f"exit_code=0"
+        )
+    if v1_status in ("ok", "skipped", "dry_run") and exit_code != 0:
+        raise ValueError(
+            f"build_status: v1_status={v1_status!r} requires exit_code == 0 "
+            f"(docs §Status Naming contract: ok/skipped/dry_run = "
+            f"exit_code 0)、got v0_status={v0_status!r} → "
+            f"v1_status={v1_status!r} but exit_code={exit_code!r}"
+        )
     payload = {
         "schema_version": SCHEMA_VERSION,
         "script": script,
