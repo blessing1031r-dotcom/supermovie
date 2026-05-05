@@ -8502,42 +8502,73 @@ def test_observability_stdout_stderr_stream_contract_lint() -> None:
         src = path.read_text(encoding="utf-8")
         tree = _ast.parse(src, filename=caller_name)
 
+        # Codex 07:42 review P2 fix: 旧実装は `_ast.walk(tree)` で Call
+        # node を全 traversal、`def emit_json(...)` wrapper 内で呼ばれる
+        # `_obs_emit_json(...)` も json tail presence にカウントしていた。
+        # 全 `return emit_json(...)` caller が消えて wrapper body だけ
+        # 残った drift で lint が pass する false negative。NodeVisitor で
+        # `FunctionDef(name='emit_json' | '_obs_emit_json')` の body 直下に
+        # 入った Call は wrapper 内部 invocation として除外、wrapper の
+        # 外側 (caller) からの Call site のみ json tail presence にカウント。
+        WRAPPER_NAMES = {"emit_json", "_obs_emit_json"}
         print_calls_no_file: list[int] = []
         print_calls_to_stderr: list[int] = []
         stderr_write_calls: list[int] = []
         emit_json_calls: list[int] = []
-        for node in _ast.walk(tree):
-            if not isinstance(node, _ast.Call):
-                continue
-            fn = node.func
-            # print(...) call detection
-            if isinstance(fn, _ast.Name) and fn.id == "print":
-                file_kw = next(
-                    (kw for kw in node.keywords if kw.arg == "file"), None,
-                )
-                if file_kw is None:
-                    print_calls_no_file.append(node.lineno)
-                elif _is_stderr_value(file_kw.value):
-                    print_calls_to_stderr.append(node.lineno)
-            # emit_json(...) / _obs_emit_json(...) call detection.
-            # Codex 07:36 review P2 fix: 旧 raw regex は `def emit_json(`
-            # の wrapper 定義行も match して、call site が消えた drift
-            # (definition だけ残る) を見逃した。AST で Call node のみ拾い
-            # 関数定義は対象外、確実な call presence を判定。
-            elif isinstance(fn, _ast.Name) and fn.id in (
-                "emit_json", "_obs_emit_json",
-            ):
-                emit_json_calls.append(node.lineno)
-            # <name>.stderr.write(...) call detection
-            elif isinstance(fn, _ast.Attribute) and fn.attr == "write":
-                # fn.value が <name>.stderr 形式
-                if (
-                    isinstance(fn.value, _ast.Attribute)
-                    and fn.value.attr == "stderr"
+
+        class _StreamVisitor(_ast.NodeVisitor):
+            def __init__(self) -> None:
+                self._wrapper_depth = 0  # 内側に居る wrapper FunctionDef 数
+
+            def visit_FunctionDef(
+                self, node: _ast.FunctionDef,
+            ) -> None:  # noqa: N802
+                if node.name in WRAPPER_NAMES:
+                    self._wrapper_depth += 1
+                    self.generic_visit(node)
+                    self._wrapper_depth -= 1
+                else:
+                    self.generic_visit(node)
+
+            visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]
+
+            def visit_Call(self, node: _ast.Call) -> None:  # noqa: N802
+                fn = node.func
+                # print(...) は wrapper の中外問わず stream 役割を持つので
+                # 全 traversal でカウント (wrapper 内 print も human / stderr
+                # の一部として実効する)
+                if isinstance(fn, _ast.Name) and fn.id == "print":
+                    file_kw = next(
+                        (kw for kw in node.keywords if kw.arg == "file"),
+                        None,
+                    )
+                    if file_kw is None:
+                        print_calls_no_file.append(node.lineno)
+                    elif _is_stderr_value(file_kw.value):
+                        print_calls_to_stderr.append(node.lineno)
+                # emit_json / _obs_emit_json は wrapper 内部 invocation を
+                # 除外して caller-side call site だけカウント
+                elif (
+                    isinstance(fn, _ast.Name)
+                    and fn.id in WRAPPER_NAMES
+                    and self._wrapper_depth == 0
                 ):
-                    stderr_write_calls.append(node.lineno)
-                elif isinstance(fn.value, _ast.Name) and fn.value.id == "stderr":
-                    stderr_write_calls.append(node.lineno)
+                    emit_json_calls.append(node.lineno)
+                # <name>.stderr.write(...) は stream 役割なので全カウント
+                elif isinstance(fn, _ast.Attribute) and fn.attr == "write":
+                    if (
+                        isinstance(fn.value, _ast.Attribute)
+                        and fn.value.attr == "stderr"
+                    ):
+                        stderr_write_calls.append(node.lineno)
+                    elif (
+                        isinstance(fn.value, _ast.Name)
+                        and fn.value.id == "stderr"
+                    ):
+                        stderr_write_calls.append(node.lineno)
+                self.generic_visit(node)
+
+        _StreamVisitor().visit(tree)
 
         # stdout (human): file= 無し `print(...)` が 1 件以上
         assert print_calls_no_file, (
