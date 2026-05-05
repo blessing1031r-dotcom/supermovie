@@ -2953,6 +2953,19 @@ def test_observability_safe_artifact_path_tilde_expansion() -> None:
         f"abs HOME path regression, got {p7!r}"
     )
 
+    # (8) Codex 02:18 PR-V re-review P2: 存在しない user 名 (`~unknown/x`)
+    # は `os.path.expanduser` で展開されず literal のまま残るため、
+    # `<ABS>/<basename>` placeholder に落として user 名 + path 構造の
+    # 漏れを防ぐ (expanduser-fail 経路の最終ガード)。
+    p8 = safe_artifact_path("~definitely_not_a_real_user_zz/secret/x.json")
+    assert p8 == "<ABS>/x.json", (
+        f"~unknownuser must be redacted to <ABS>/<basename>, got {p8!r}"
+    )
+    assert "definitely_not_a_real_user_zz" not in p8, (
+        f"unknown user name leaked: {p8!r}"
+    )
+    assert "secret" not in p8, f"middle path segment leaked: {p8!r}"
+
 
 def test_observability_user_content_meta_no_raw() -> None:
     """user_content_meta が length / sha256 のみ返し、raw text を含まないこと。
