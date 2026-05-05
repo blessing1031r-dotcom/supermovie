@@ -4666,6 +4666,102 @@ def test_observability_build_status_script_identifier_contract() -> None:
         assert p["script"] == existing
 
 
+def test_observability_build_status_v0_status_defensive_lint() -> None:
+    """`build_status(v0_status=...)` の str + non-empty + no-control-char
+    contract lock-in (Codex 04:24 PR-AP verdict BA、observability v1 STATUS_MAP
+    fallback path drift 防止)。
+
+    `v0_status` は `map_status()` の lookup key で、未知 status は
+    `("error", v0_status)` defensive fallback で category=v0_status となる
+    仕様 (PR-T 設計)。fallback 仕様は維持しつつ、以下の drift を fail-loud:
+
+      - `""` / `"   "` (whitespace-only) → category="" / "   " で PR-AN
+        format invariant 違反 + bucket 不能
+      - `"a\\nb"` / `"a\\x00b"` → category に control char が漏れて
+        emit_json 1-line format invariant (PR-Y) 破壊 + log line parser break
+      - None / int / bool → 非 str fallback で category 型違反 (downstream
+        str-method AttributeError)
+      - list → dict lookup の unhashable で uncaught TypeError (旧実装)
+        → 明示 TypeError msg に統一
+
+    新 contract:
+      - v0_status: 非 None str (TypeError on type mismatch)
+      - 非空 (whitespace-only も含む) (ValueError)
+      - 制御文字 \\x00-\\x1F + \\x7F 不含 (ValueError)
+
+    PR-AM script identifier contract と同型 + STATUS_MAP fallback 経路の
+    defensive lint。既存 strict 系 (PR-AC/AD/AF/AK/AL/AM/AO) と同 level。
+    """
+    from _observability import build_status
+
+    # ===== accept =====
+    # (1a) STATUS_MAP に存在する v0_status (success / rate_limited 等)
+    p_success = build_status(script="x", v0_status="success", exit_code=0)
+    assert p_success["status"] == "ok"
+    assert p_success["category"] is None
+
+    # (1b) PR-T 設計の defensive fallback: 未知 v0_status → ("error", v0_status)
+    p_unknown = build_status(script="x", v0_status="mystery_status",
+                             exit_code=2)
+    assert p_unknown["status"] == "error"
+    assert p_unknown["category"] == "mystery_status"
+
+    # (1c) 1 char (snake_case identifier 形式)
+    p_min = build_status(script="x", v0_status="a", exit_code=0)
+    assert p_min["category"] == "a"
+
+    # ===== reject 型違反 =====
+    for bad_type in (None, 5, 1.5, True, False, [], ["status"], {"k": "v"}):
+        try:
+            build_status(script="x", v0_status=bad_type, exit_code=0)
+        except TypeError as e:
+            assert "v0_status" in str(e) and "str" in str(e), (
+                f"TypeError msg should mention v0_status + str, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"non-str v0_status={bad_type!r} must raise TypeError"
+            )
+
+    # ===== reject 空文字 / whitespace-only =====
+    for empty_or_ws in ("", " ", "   ", "\t", "\n", "  \t  "):
+        try:
+            build_status(script="x", v0_status=empty_or_ws, exit_code=0)
+        except ValueError as e:
+            assert "v0_status" in str(e) and "non-empty" in str(e), (
+                f"ValueError msg should mention v0_status + non-empty, "
+                f"got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"empty/whitespace v0_status={empty_or_ws!r} must raise "
+                f"ValueError"
+            )
+
+    # ===== reject 制御文字 =====
+    for ctrl_v0 in ("a\nb", "a\rb", "a\x00b", "abc\x01",
+                    "abc\x1f", "a\x7fb", "\nabc"):
+        try:
+            build_status(script="x", v0_status=ctrl_v0, exit_code=0)
+        except ValueError as e:
+            assert "control" in str(e) and "v0_status" in str(e), (
+                f"ValueError msg should mention control + v0_status, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"control-char v0_status={ctrl_v0!r} must raise ValueError"
+            )
+
+    # ===== regression guard: 既存 v0 emission status 群は全 accept =====
+    # PR-T must_have set 由来、representative 7 件
+    for existing in ("success", "rate_limited", "api_key_skipped",
+                     "dry_run", "cost_guard_aborted", "ffprobe_failed",
+                     "smoke_ok"):
+        p = build_status(script="x", v0_status=existing, exit_code=0)
+        # status / category は STATUS_MAP に従って解決 (詳細は PR-T で固定)
+        assert p["status"] in ("ok", "skipped", "error", "dry_run")
+
+
 def test_observability_resolve_run_context_uses_env() -> None:
     """env (SUPERMOVIE_RUN_ID / PARENT_RUN_ID / STEP_ID) 設定値をそのまま採用する。"""
     import os as _os
@@ -6554,6 +6650,7 @@ def main() -> int:
         test_observability_build_status_cost_dict_strict,
         test_observability_build_status_counts_artifacts_strict,
         test_observability_build_status_script_identifier_contract,
+        test_observability_build_status_v0_status_defensive_lint,
         test_observability_build_cost_payload_nan_inf_defense,
         test_observability_build_cost_payload_rate_source_contract,
         # PR-E (distributed tracing run_id active emission): 7 件

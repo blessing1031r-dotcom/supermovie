@@ -588,6 +588,28 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
             f"build_status: script must not contain control characters "
             f"(\\x00-\\x1F / \\x7F), got {script!r}"
         )
+    # PR-AP (Codex 04:24 verdict BA) defense: v0_status は STATUS_MAP lookup
+    # key で、未知 status は `("error", v0_status)` defensive fallback で
+    # category=v0_status となる仕様 (PR-T で固定)。旧実装は型 / 空文字 /
+    # 制御文字 validation なしで `""` / `"   "` / `"a\nb"` / `"a\x00b"` /
+    # int / bool / None を silent payload 通過、`list` は dict lookup の
+    # unhashable で uncaught TypeError を投げる drift。unknown str fallback
+    # は維持しつつ非 str / 空 / 制御文字のみ fail-loud 化。
+    if not isinstance(v0_status, str):
+        raise TypeError(
+            f"build_status: v0_status must be str, got "
+            f"{type(v0_status).__name__} ({v0_status!r})"
+        )
+    if not v0_status.strip():
+        raise ValueError(
+            f"build_status: v0_status must be non-empty (whitespace-only "
+            f"rejected), got {v0_status!r}"
+        )
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in v0_status):
+        raise ValueError(
+            f"build_status: v0_status must not contain control characters "
+            f"(\\x00-\\x1F / \\x7F), got {v0_status!r}"
+        )
     if cost is not None and not isinstance(cost, dict):
         raise TypeError(
             f"build_status: cost must be dict or None, got "
