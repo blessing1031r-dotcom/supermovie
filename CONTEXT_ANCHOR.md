@@ -81,8 +81,9 @@ git status --short                                   # 空必須
 |---|---|---|
 | `gh repo fork RenTonoduka/supermovie --clone=false --remote=false` | **Claude 自走可** (Roku 「OK、推奨から進めて」授権済) | 自分の account への fork、外部副作用なし |
 | `git remote add fork https://github.com/blessing1031r-dotcom/supermovie.git` | Claude 自走可 | local 設定 |
-| `git push -u fork roku/phase3j-timeline` | Claude 自走可 (auth scope `repo` あり、fork 先は own account) | 自 account への push |
-| `gh pr create --repo RenTonoduka/supermovie --head blessing1031r-dotcom:roku/phase3j-timeline --base main --title <X> --body-file <Y>` | **Roku 判断** (optional_later、completion 条件外) | upstream への merge 提案 = 段取り判断、外部 owner 経由 |
+| `git push -u fork <branch>` (own account への fork push、現 branch 例: `roku/fixture-normalize-recipe`) | Claude 自走可 (auth scope `repo` あり、fork 先は own account) | 自 account への push |
+| `gh pr create --repo blessing1031r-dotcom/supermovie --base main --head <branch>` (fork-internal PR、fork-only invariant 整合的) | Claude 自走可 | fork 内 merge 提案、外部 owner 不在、b1 fixture normalize PR #1 で実行例あり |
+| `gh pr create --repo RenTonoduka/supermovie --head blessing1031r-dotcom:<branch> --base main --title <X> --body-file <Y>` | **Roku 判断** (optional_later、completion 条件外) | upstream への merge 提案 = 段取り判断、外部 owner 経由 |
 | PR review / merge | **Roku 判断 + RenTonoduka 操作必要** (optional_later、completion 条件外) | upstream maintainer 権限、destructive action |
 | `git push --force` (any branch) | **Roku 明示授権必要** | history rewrite、destructive |
 | remote branch delete (`git push fork :branch`) | **Roku 明示授権必要** | destructive |

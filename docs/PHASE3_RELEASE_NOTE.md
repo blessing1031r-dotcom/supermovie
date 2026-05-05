@@ -198,6 +198,38 @@ Phase 3 release `Required Gates` (本 doc §test gate コマンド) のうち me
 - 入力 main.mp4: `pix_fmt=yuv420p` / `color_space=bt709` / `color_transfer=bt709` / `color_primaries=bt709`
 - 差分は Remotion 4.0.403 default の挙動。`Config.setPixelFormat` / `Config.setColorSpace` (`@remotion/cli/dist/config/index.d.ts:216,284`) で寄せる選択肢ありだが、現状 player 互換性影響不明のため本 PR では設定変更しない。後続 PR で必要なら追加検証。
 
+### normalize_fixture.sh 実行例 + 期待 status
+
+```bash
+# proj1 fixture (HEVC HDR DoVi 4K) を idempotent 正規化
+cd <PROJECT>
+bash template/scripts/normalize_fixture.sh public/main.mp4
+
+# 既に正規化済みなら no-op
+bash template/scripts/normalize_fixture.sh public/main.mp4
+# → "[normalize] skip: ... already H.264 SDR + no Display Matrix + risks=[]"
+
+# 別 fixture / 別 format target
+bash template/scripts/normalize_fixture.sh /path/to/source.MP4 --format short
+bash template/scripts/normalize_fixture.sh /path/to/source.MP4 /path/to/output.mp4 --format youtube
+```
+
+期待 exit / status:
+- `0`: 正規化完了 (新規 transcode + remux または idempotent skip)、`OUTPUT`(default `<input dir>/main.mp4`) に H.264 SDR / Display Matrix 不在 / risks=[] が write 済 + backup `main_orig_<codec>_<color>.mp4` 作成
+- `2`: usage error (input 不在 / `--format` 値欠落 / unknown arg)
+- `3`: ffprobe gate 失敗 (Display Matrix 残存)、または preflight が空 JSON 返却
+- 非 0 (above 以外): preflight 内部エラー (ffprobe 不在等) を bubble up
+
+post-condition (script 内蔵 ffprobe gate):
+- `Display Matrix` side data 不在 (P0 fail 条件)
+- preflight 再走行で `risks=[]` (warning ではあるが non-fatal、container 互換性のみ問題なら通る)
+
+artifact 内部証跡 (PR body 外):
+- `/tmp/codex_b1_verdict.txt` (Codex 18:36 verdict 19,183 line / 157,913 tokens)
+- `/tmp/codex_b1_review_verdict.txt` (Codex 18:55 review verdict 20,743 line / 115,099 tokens)
+- `/tmp/codex_pr1_review_verdict.txt` (Codex 19:39 PR review verdict 3,574 line / 117,712 tokens)
+これらはローカル一時 artifact のため reviewer から読めない。trail 化する場合は repo 外に commit 不要、本 doc の記述を一次 evidence とする。
+
 ## 既知の限界 / 後続 phase 候補
 
 ### 自走可 (npm install 不要、低リスク)

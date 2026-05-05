@@ -31,6 +31,10 @@ TARGET_FORMAT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --format)
+      if [ $# -lt 2 ]; then
+        echo "--format requires a value (short|youtube|square)" >&2
+        exit 2
+      fi
       shift
       TARGET_FORMAT="$1"
       ;;
@@ -65,7 +69,22 @@ if [ ! -f "$PREFLIGHT" ]; then
 fi
 
 # === 1. preflight で source 解析、修復必要かを判定 ===
+# preflight_video.py は risks 不許容 / format 推定不能 で exit 2 を返すが
+# JSON は exit 前に stdout に出力済み (preflight_video.py:328 print → :347 sys.exit(2))。
+# 本 script は risk 付き入力の正規化が目的なので exit 0/2 を許容、それ以外は abort。
+set +e
 SOURCE_JSON=$(python3 "$PREFLIGHT" "$INPUT" 2>/dev/null)
+PREFLIGHT_EXIT=$?
+set -e
+if [ "$PREFLIGHT_EXIT" -ne 0 ] && [ "$PREFLIGHT_EXIT" -ne 2 ]; then
+  echo "[normalize][FAIL] preflight exit=$PREFLIGHT_EXIT (expected 0 or 2)" >&2
+  exit "$PREFLIGHT_EXIT"
+fi
+if [ -z "$SOURCE_JSON" ]; then
+  echo "[normalize][FAIL] preflight produced empty JSON" >&2
+  exit 3
+fi
+
 RISKS=$(echo "$SOURCE_JSON" | python3 -c 'import json,sys;print(",".join(json.load(sys.stdin).get("risks",[])))')
 SOURCE_CODEC=$(echo "$SOURCE_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("codec",{}).get("name",""))')
 SOURCE_PIXFMT=$(echo "$SOURCE_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("codec",{}).get("pix_fmt",""))')
@@ -135,8 +154,10 @@ case "$TARGET_FORMAT" in
 esac
 
 # === 4. transcode (HLG → SDR + tonemap + transpose if rotated) ===
-TMP="$INPUT_DIR/.normalize_tmp_$$.mp4"
-trap 'rm -f "$TMP"' EXIT
+# mktemp -u で unique pathname を取得 (file は ffmpeg が作成)、$$ は同 PID 連続実行で衝突するため避ける。
+TMP=$(mktemp -u "$INPUT_DIR/.normalize_tmp.XXXXXX").mp4
+TMP2=$(mktemp -u "$INPUT_DIR/.normalize_remux.XXXXXX").mp4
+trap 'rm -f "$TMP" "$TMP2"' EXIT
 
 VF=""
 if [ "$SOURCE_ROT" = "-90" ] || [ "$SOURCE_ROT" = "270" ]; then
@@ -170,9 +191,6 @@ ffmpeg -hide_banner -y -noautorotate -i "$SRC" \
   "$TMP"
 
 # === 5. remux で Display Matrix を完全除去 ===
-TMP2="$INPUT_DIR/.normalize_remux_$$.mp4"
-trap 'rm -f "$TMP" "$TMP2"' EXIT
-
 ffmpeg -hide_banner -y -display_rotation 0 -i "$TMP" \
   -c copy -map 0 -map_metadata:s:v:0 -1 \
   "$TMP2"
@@ -189,8 +207,16 @@ if [ "$POST_DM" = "yes" ]; then
 fi
 
 # === 7. preflight 再走行で risks=[] を確認 ===
-POST_RISKS=$(python3 "$PREFLIGHT" "$OUTPUT" 2>/dev/null \
-  | python3 -c 'import json,sys;print(",".join(json.load(sys.stdin).get("risks",[])))')
+# 同様に exit 0/2 を許容 (post fixture は通常 exit 0 だが防御的に)
+set +e
+POST_JSON=$(python3 "$PREFLIGHT" "$OUTPUT" 2>/dev/null)
+POST_EXIT=$?
+set -e
+if [ "$POST_EXIT" -ne 0 ] && [ "$POST_EXIT" -ne 2 ]; then
+  echo "[normalize][FAIL] post-preflight exit=$POST_EXIT" >&2
+  exit "$POST_EXIT"
+fi
+POST_RISKS=$(echo "$POST_JSON" | python3 -c 'import json,sys;print(",".join(json.load(sys.stdin).get("risks",[])))')
 if [ -n "$POST_RISKS" ]; then
   echo "[normalize][WARN] post-normalize risks: [$POST_RISKS]" >&2
 fi
