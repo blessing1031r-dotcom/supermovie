@@ -45,6 +45,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 PROJ = Path(__file__).resolve().parent.parent
@@ -53,6 +54,16 @@ SMOKE_OUT = PROJ / "out" / "visual_smoke"
 COMPOSITION_ID = "MainVideo"
 MAIN_VIDEO = PROJ / "public" / "main.mp4"
 REMOTION_BIN = PROJ / "node_modules" / ".bin" / "remotion"
+
+# Phase 3 obs migration step 3 (Codex 21:01 verdict S3-4): summary.json artifact
+# は維持、--json-log で v1 status を stdout 末尾に追加 emit。
+# category_override="dimension-regression" (Codex S3-4)、cost=null。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _observability import (  # noqa: E402
+    build_status,
+    emit_json as _obs_emit_json,
+    safe_artifact_path,
+)
 
 FORMAT_DIMS = {
     "youtube": (1920, 1080),
@@ -233,7 +244,13 @@ def cli() -> int:
     )
     ap.add_argument("--out-dir", default=str(SMOKE_OUT), help="出力ディレクトリ")
     ap.add_argument("--no-grid", action="store_true", help="ffmpeg grid 合成 skip")
+    ap.add_argument("--json-log", action="store_true",
+                    help="末尾に summary を 1 行純 JSON として emit "
+                         "(downstream observability、既存 stdout / summary.json は維持)")
+    ap.add_argument("--unsafe-keep-abs-path", action="store_true",
+                    help="json tail の artifact path を絶対 path のまま emit (debug 専用)")
     args = ap.parse_args()
+    start_time = time.monotonic()
 
     formats = [f.strip() for f in args.formats.split(",") if f.strip()]
     if not formats:
@@ -382,11 +399,64 @@ def cli() -> int:
     print(f"\nsummary: {summary_path}")
     print(f"  total={len(results)}, mismatched={mismatched}, env_error={env_error}, grid={grid_status}")
 
-    if env_error or grid_status == "failed":
-        return 3
-    if mismatched:
-        return 2
-    return 0
+    # Phase 3 obs migration step 3: --json-log で v1 status を stdout 末尾に追加。
+    # summary.json は artifact channel で別 (引き続き file 出力)。
+    duration_ms = int((time.monotonic() - start_time) * 1000)
+    artifacts = [
+        {
+            "path": safe_artifact_path(
+                summary_path, project_root=PROJ,
+                unsafe_keep_abs_path=args.unsafe_keep_abs_path,
+            ),
+            "kind": "json",
+        },
+    ]
+    if grid_status == "ok":
+        artifacts.append({
+            "path": safe_artifact_path(
+                out_dir / "grid.png", project_root=PROJ,
+                unsafe_keep_abs_path=args.unsafe_keep_abs_path,
+            ),
+            "kind": "png",
+        })
+
+    redaction_rules = []
+    if not args.unsafe_keep_abs_path:
+        redaction_rules.append("abs_path")
+
+    if env_error:
+        v0 = "env_error"
+        exit_code = 3
+    elif grid_status == "failed":
+        v0 = "grid_failed"
+        exit_code = 3
+    elif mismatched:
+        v0 = "dimension_mismatch"
+        exit_code = 2
+    else:
+        v0 = "smoke_ok"
+        exit_code = 0
+
+    payload = build_status(
+        script="visual_smoke",
+        v0_status=v0,
+        exit_code=exit_code,
+        counts={
+            "total": len(results),
+            "mismatched": mismatched,
+            "formats_count": len(formats),
+            "frames_count": len(frames),
+        },
+        artifacts=artifacts,
+        cost=None,
+        duration_ms=duration_ms,
+        category_override="dimension-regression",
+        redaction_rules=redaction_rules,
+        env_error=env_error,
+        grid_status=grid_status,
+    )
+    _obs_emit_json(args.json_log, payload)
+    return exit_code
 
 
 if __name__ == "__main__":

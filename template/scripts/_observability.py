@@ -45,6 +45,14 @@ STATUS_MAP = {
     "concat_fail": ("error", "concat_fail"),
     "write_narration_data_wave_error": ("error", "write_narration_data_wave_error"),
     "sentinel_write_fail": ("error", "sentinel_write_fail"),
+    # compare_telop_split (Codex 21:01 verdict S3-6 KPI comparison、category_override="kpi-comparison")
+    "all_pass": ("ok", "kpi-comparison"),
+    "some_fail": ("error", "kpi-comparison"),
+    # visual_smoke (Codex 21:01 verdict S3-4、category_override="dimension-regression")
+    "smoke_ok": ("ok", "dimension-regression"),
+    "dimension_mismatch": ("error", "dimension-regression"),
+    "env_error": ("error", "env-failure"),
+    "grid_failed": ("error", "grid-failure"),
 }
 
 
@@ -130,6 +138,7 @@ def redact_provider_body(body, *, unsafe_dump=False, max_preview=80):
 
 def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
                  cost=None, redaction_rules=None,
+                 duration_ms=None, category_override=None,
                  run_id=None, parent_run_id=None, step_id=None,
                  **extra):
     """Build v1 schema-conforming status payload.
@@ -137,8 +146,26 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
     Schema fields per docs/OBSERVABILITY.md §Common Fields.
     Extra kwargs are merged at top level to preserve v0 emit pattern
     (model, max_tokens, slides, output, etc. flow through unchanged).
+
+    Args:
+      script: emitting script name (for `script` field).
+      v0_status: v0 status string. Looked up in STATUS_MAP. Unknown → ("error", v0_status).
+      exit_code: process exit code.
+      counts: dict of domain-specific counters (slides=N, frames=N, etc.).
+      artifacts: list of {"path": str, "kind": str} dicts.
+      cost: dict per cost contract, or None when not applicable.
+      redaction_rules: applied redaction rule names (e.g. ["abs_path", "user_content"]).
+      duration_ms: process / phase duration in milliseconds (Codex Step 3 S3-7 で
+        common field として明示要求、default None で省略時は payload に含めない)。
+      category_override: set v1 category explicitly, bypassing STATUS_MAP lookup
+        (Codex Step 3 S3-7 で v0_status 名を category として使い回せない script 用)。
+        Used by compare_telop_split / visual_smoke / preflight where category is
+        domain-specific (kpi-comparison / dimension-regression / preflight-source-meta).
+      run_id / parent_run_id / step_id: distributed tracing reservation.
     """
     v1_status, v1_category = map_status(v0_status)
+    if category_override is not None:
+        v1_category = category_override
     payload = {
         "schema_version": SCHEMA_VERSION,
         "script": script,
@@ -154,6 +181,8 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
             "version": REDACTION_VERSION,
         },
     }
+    if duration_ms is not None:
+        payload["duration_ms"] = duration_ms
     if run_id is not None:
         payload["run_id"] = run_id
     if parent_run_id is not None:

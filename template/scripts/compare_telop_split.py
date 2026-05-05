@@ -22,12 +22,23 @@ Usage:
 """
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 PROJ = Path(__file__).resolve().parent.parent
+
+# Phase 3 obs migration step 3 (Codex 21:01 verdict S3-6): KPI 比較なので
+# v1 status emit 経由で counts に KPI / gate 結果を入れる、cost=null。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _observability import (  # noqa: E402
+    build_status,
+    emit_json as _obs_emit_json,
+    safe_artifact_path,
+)
 
 
 def parse_telop_data_ts(ts_path: Path) -> list[dict]:
@@ -129,11 +140,20 @@ def kpi_metrics(telops: list[dict], words: list[dict], preserve: list[str]) -> d
 
 
 def main():
-    if len(sys.argv) < 3:
-        print("usage: compare_telop_split.py <baseline.ts> <new.ts>", file=sys.stderr)
-        sys.exit(2)
-    baseline_path = Path(sys.argv[1])
-    new_path = Path(sys.argv[2])
+    # Phase 3 obs migration step 3: argparse 経由で --json-log 等の obs flags を追加。
+    ap = argparse.ArgumentParser(description="baseline と new の telop 分割を 5 KPI で比較する")
+    ap.add_argument("baseline", help="baseline telopData.ts path")
+    ap.add_argument("new", help="new telopData.ts path")
+    ap.add_argument("--json-log", action="store_true",
+                    help="末尾に summary を 1 行純 JSON として emit "
+                         "(downstream observability、既存 stdout は維持)")
+    ap.add_argument("--unsafe-keep-abs-path", action="store_true",
+                    help="json tail の artifact path を絶対 path のまま emit (debug 専用)")
+    args = ap.parse_args()
+
+    start_time = time.monotonic()
+    baseline_path = Path(args.baseline)
+    new_path = Path(args.new)
 
     transcript = json.loads((PROJ / "transcript_fixed.json").read_text(encoding="utf-8"))
     typo = (PROJ / "typo_dict.json")
@@ -145,6 +165,50 @@ def main():
     new_telops = parse_telop_data_ts(new_path)
     base_kpi = kpi_metrics(base_telops, words, preserve)
     new_kpi = kpi_metrics(new_telops, words, preserve)
+
+    def emit_obs(status, exit_code, gates_result=None):
+        """v1 status JSON を --json-log 時のみ emit。category_override で
+        kpi-comparison 固定、cost=null (KPI 比較なので provider rate 対象外)。"""
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        artifacts = [
+            {
+                "path": safe_artifact_path(
+                    baseline_path,
+                    project_root=PROJ,
+                    unsafe_keep_abs_path=args.unsafe_keep_abs_path,
+                ),
+                "kind": "ts",
+            },
+            {
+                "path": safe_artifact_path(
+                    new_path,
+                    project_root=PROJ,
+                    unsafe_keep_abs_path=args.unsafe_keep_abs_path,
+                ),
+                "kind": "ts",
+            },
+        ]
+        counts = {
+            "baseline_kpi": base_kpi,
+            "new_kpi": new_kpi,
+        }
+        if gates_result is not None:
+            counts["gates"] = gates_result
+        redaction_rules = []
+        if not args.unsafe_keep_abs_path:
+            redaction_rules.append("abs_path")
+        payload = build_status(
+            script="compare_telop_split",
+            v0_status=status,
+            exit_code=exit_code,
+            counts=counts,
+            artifacts=artifacts,
+            cost=None,
+            duration_ms=duration_ms,
+            category_override="kpi-comparison",
+            redaction_rules=redaction_rules,
+        )
+        return _obs_emit_json(args.json_log, payload)
 
     print("=== KPI comparison (baseline -> new) ===")
     keys = ["telop_count", "single_char_telops", "two_char_tail_telops",
@@ -169,11 +233,15 @@ def main():
     for desc, ok in gates:
         print(f"  {'PASS' if ok else 'FAIL'}: {desc}")
 
+    gates_result = {desc: bool(ok) for desc, ok in gates}
     if all(ok for _, ok in gates):
         print("\nALL PASS")
+        # Phase 3 obs migration step 3: v0 status "all_pass" → v1 ok + category_override
+        emit_obs("all_pass", 0, gates_result=gates_result)
         sys.exit(0)
     else:
         print("\nSOME FAIL")
+        emit_obs("some_fail", 1, gates_result=gates_result)
         sys.exit(1)
 
 

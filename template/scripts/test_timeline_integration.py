@@ -2475,6 +2475,10 @@ def test_observability_helper_status_map() -> None:
         "stale_cleanup_fail", "vad_invalid", "no_chunks_succeeded",
         "partial_chunks_disallowed", "concat_fail",
         "write_narration_data_wave_error", "sentinel_write_fail",
+        # compare_telop_split (Codex 21:01 verdict S3-6 KPI comparison)
+        "all_pass", "some_fail",
+        # visual_smoke (Codex 21:01 verdict S3-4 dimension regression)
+        "smoke_ok", "dimension_mismatch", "env_error", "grid_failed",
     }
     missing = must_have - set(STATUS_MAP.keys())
     assert not missing, f"STATUS_MAP missing v0 statuses: {missing}"
@@ -2588,6 +2592,39 @@ def test_observability_build_status_v1_schema() -> None:
     assert p["model"] == "claude-haiku-4-5"
     assert p["max_tokens"] == 2048
     assert p["output"] == "out/foo.json"
+
+
+def test_observability_build_status_duration_ms_and_category_override() -> None:
+    """Codex 21:01 step 3 S3-7: helper hardening — `duration_ms` を common field
+    として明示 + `category_override` で STATUS_MAP の v1_category を上書き可能。
+    """
+    from _observability import build_status
+
+    # duration_ms None で payload に含まれない (default 動作)
+    p_default = build_status(script="x", v0_status="success", exit_code=0)
+    assert "duration_ms" not in p_default, f"duration_ms should be omitted when None: {p_default}"
+    # duration_ms 明示で含まれる
+    p_dur = build_status(script="x", v0_status="success", exit_code=0, duration_ms=1234)
+    assert p_dur["duration_ms"] == 1234
+
+    # category_override で STATUS_MAP の category を上書き
+    # success → ("ok", None) by default
+    p_no_override = build_status(script="x", v0_status="success", exit_code=0)
+    assert p_no_override["category"] is None
+    # category_override="kpi-comparison" で上書き
+    p_override = build_status(
+        script="x", v0_status="success", exit_code=0,
+        category_override="kpi-comparison",
+    )
+    assert p_override["category"] == "kpi-comparison"
+    assert p_override["status"] == "ok"  # v1_status は STATUS_MAP のまま (success → ok)
+    # category_override="dimension-regression" を error 系の v0 status に適用
+    p_err = build_status(
+        script="visual_smoke", v0_status="dimension_mismatch", exit_code=2,
+        category_override="dimension-regression",
+    )
+    assert p_err["status"] == "error"
+    assert p_err["category"] == "dimension-regression"
 
 
 def test_observability_provider_body_stderr_default_redact() -> None:
@@ -2760,6 +2797,7 @@ def main() -> int:
         test_observability_user_content_meta_no_raw,
         test_observability_redact_provider_body_default_strict,
         test_observability_build_status_v1_schema,
+        test_observability_build_status_duration_ms_and_category_override,
         test_observability_provider_body_stderr_default_redact,
         test_observability_emit_json_disabled_no_print,
     ]
