@@ -50,6 +50,11 @@ ALL_RISK_KEYS = [
 ]
 
 
+class FFprobeError(Exception):
+    """run_ffprobe() failure を main() 側で捕捉して emit する用 (Codex 21:34 PR5 P1 fix)。"""
+    pass
+
+
 def run_ffprobe(path: str) -> dict:
     """ffprobe を JSON で取得。失敗なら exit 3."""
     cmd = [
@@ -60,12 +65,13 @@ def run_ffprobe(path: str) -> dict:
         "-show_streams",
         path,
     ]
+    # Codex 21:34 PR5 review P1 fix: bare sys.exit(3) を撤去し caller に raise する。
+    # main() 側で try/except → _emit() で v1 status JSON tail を出してから exit。
     try:
         out = subprocess.run(cmd, capture_output=True, check=True, text=True)
         return json.loads(out.stdout)
     except (subprocess.CalledProcessError, json.JSONDecodeError, FileNotFoundError) as e:
-        print(f"ERROR: ffprobe failed for {path}: {e}", file=sys.stderr)
-        sys.exit(3)
+        raise FFprobeError(f"ffprobe failed for {path}: {e}") from e
 
 
 def normalize_rotation(raw: int | None) -> int | None:
@@ -314,9 +320,12 @@ def main():
     start_time = _time.monotonic()
     PROJ_ROOT = Path(__file__).resolve().parent.parent
 
-    def _emit(v0_status, exit_code, **extra):
-        """v1 status JSON tail emit (preflight)。category_override="preflight-source-meta"。
-        既存 stdout (source JSON dump + write-config message) は維持される。"""
+    def _emit(v0_status, exit_code, *, category=None, **extra):
+        """v1 status JSON tail emit (preflight)。Codex 21:34 PR5 review P2 fix:
+        category は default で STATUS_MAP entry (input-not-found / no-video-stream 等)
+        を活かす。success path のみ "preflight-source-meta" override で意味付け。
+        既存 stdout (source JSON dump + write-config message) は維持される。
+        """
         duration_ms = int((_time.monotonic() - start_time) * 1000)
         artifacts = []
         if args.write_config:
@@ -339,7 +348,7 @@ def main():
             artifacts=artifacts,
             cost=None,
             duration_ms=duration_ms,
-            category_override="preflight-source-meta",
+            category_override=category,
             redaction_rules=redaction_rules,
             **extra,
         )
@@ -350,7 +359,14 @@ def main():
         print(f"ERROR: input not found: {args.input_video}", file=sys.stderr)
         sys.exit(_emit("input_not_found", 3))
 
-    probe = run_ffprobe(args.input_video)
+    # Codex 21:34 PR5 review P1 fix: run_ffprobe failure (CalledProcess /
+    # JSONDecode / FileNotFound) を try/except で捕捉し _emit() 経由で
+    # v1 status JSON tail emit してから exit。
+    try:
+        probe = run_ffprobe(args.input_video)
+    except FFprobeError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(_emit("ffprobe_failed", 3, error=str(e)))
     streams = probe.get("streams", []) or []
     video_streams = [s for s in streams if s.get("codec_type") == "video"]
     audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
@@ -404,7 +420,13 @@ def main():
     if chosen_format is None:
         print("\nERROR: format could not be inferred (--force-format required)", file=sys.stderr)
         sys.exit(_emit("format_inference_failed", 2))
-    sys.exit(_emit("preflight_ok", 0, chosen_format=chosen_format, risks=risks))
+    # Codex 21:34 PR5 review P2 fix: success path のみ preflight-source-meta category 上書き
+    # (success に意味付け)。error path は STATUS_MAP の詳細 category (input-not-found 等) 維持。
+    sys.exit(_emit(
+        "preflight_ok", 0,
+        category="preflight-source-meta",
+        chosen_format=chosen_format, risks=risks,
+    ))
 
 
 if __name__ == "__main__":

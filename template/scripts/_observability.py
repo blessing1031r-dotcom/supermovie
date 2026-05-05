@@ -65,9 +65,10 @@ STATUS_MAP = {
     "env_video_config_missing": ("error", "env-failure"),
     "usage_error_frames_invalid": ("error", "usage-error"),
     # preflight_video (PR-B、Codex 21:01 step 3 S3-3、category_override="preflight-source-meta")
-    "preflight_ok": ("ok", None),
+    "preflight_ok": ("ok", "preflight-source-meta"),
     "input_not_found": ("error", "input-not-found"),
     "no_video_stream": ("error", "no-video-stream"),
+    "ffprobe_failed": ("error", "ffprobe-failed"),
     "risks_not_allowed": ("error", "risks-not-allowed"),
     "format_inference_failed": ("error", "format-inference-failed"),
 }

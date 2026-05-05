@@ -2486,7 +2486,7 @@ def test_observability_helper_status_map() -> None:
         "env_remotion_cli_missing", "env_video_config_missing",
         "usage_error_frames_invalid",
         # preflight_video (PR-B、Codex 21:01 step 3 S3-3 既存 stdout 維持 + tail v1)
-        "preflight_ok", "input_not_found", "no_video_stream",
+        "preflight_ok", "input_not_found", "no_video_stream", "ffprobe_failed",
         "risks_not_allowed", "format_inference_failed",
     }
     missing = must_have - set(STATUS_MAP.keys())

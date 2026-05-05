@@ -28,12 +28,12 @@
 | `voicevox_narration.py` | ✓ helper 経由 v1 (PR #3 merged) | minimal | — | helper 経由 (chunk text default redact、summary path safe) |
 | `compare_telop_split.py` | ✓ helper 経由 v1 + category_override=`kpi-comparison` (PR-A) | — | — | helper 経由 (artifact path safe、`/tmp/` 等 system tmpdir も placeholder) |
 | `visual_smoke.py` | ✓ helper 経由 v1 + category_override=`dimension-regression` (PR-A)、summary JSON artifact ([:365](../template/scripts/visual_smoke.py)) は維持 | — | — | helper 経由 (summary / grid path safe) |
-| `preflight_video.py` | — (PR-B 候補) | — | — | — (input path 出力あり) |
+| `preflight_video.py` | ✓ helper 経由 v1 (PR-B、既存 stdout source JSON 維持 + --json-log で末尾 v1 tail emit、success category=`preflight-source-meta` / error は STATUS_MAP 詳細 category) | — | — | helper 経由 (write-config path safe) |
 | `timeline.py` | — (library 性質、Codex 21:01 step 3 S3-2 で migration 対象外) | — | — | — |
 | `build_slide_data.py` | — (PR-C 候補) | — | — | raw title/telop text on stdout |
 | `build_telop_data.py` | — (PR-C 候補) | — | — | raw title/telop text on stdout |
 
-v1 helper 経由は generate_slide_plan / voicevox_narration / compare_telop_split / visual_smoke の **4 script** が適用済 (PR #3 + PR-A merged 後)。残 3 script (`preflight_video.py` / `build_slide_data.py` / `build_telop_data.py`) は別 PR (PR-B / PR-C) で migration。`timeline.py` は呼び出し元 script 側で status emit される library 設計。
+v1 helper 経由は generate_slide_plan / voicevox_narration / compare_telop_split / visual_smoke / preflight_video の **5 script** が適用済 (PR #3 + PR-A + PR-B merged 後)。残 2 script (`build_slide_data.py` / `build_telop_data.py`) は PR-C で migration。`timeline.py` は呼び出し元 script 側で status emit される library 設計。
 
 ### v0 JSON tail / output gap (Codex 20:08 review O-1, P2 #3 reflect)
 
