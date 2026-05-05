@@ -4489,6 +4489,103 @@ def test_observability_build_status_counts_artifacts_strict() -> None:
             )
 
 
+def test_observability_build_status_script_identifier_contract() -> None:
+    """`build_status(script=...)` の str + non-empty + no-control-char contract
+    lock-in (Codex 04:04 PR-AM verdict AZ、observability v1 core identifier
+    drift 防止 + emit_json 1-line format protection)。
+
+    `script` は v1 status JSON の core identifier で、downstream consumer /
+    log filter / dashboard が script 名で payload を bucket する根拠 field。
+    旧実装は型 / 空文字 / 制御文字 validation なしで以下の drift を silent
+    payload 通過させていた:
+
+      - `""` / `"   "` (whitespace-only) → bucket 不能 / dashboard で
+        unidentified group に集約
+      - `"a\\nb"` / `"a\\tb"` → emit_json `print(json.dumps(payload))` で
+        json.dumps が escape はするが、caller の grep / log line parse が
+        broken
+      - `"a\\x00b"` → null byte が JSON output / log file で表示崩れ
+      - None / int / bool / list → downstream str-method 呼び出しで
+        AttributeError / TypeError
+
+    新 contract:
+      - script: 非 None str (TypeError on type mismatch)
+      - 非空 (whitespace-only も含む) (ValueError)
+      - 制御文字 \\x00-\\x1F + \\x7F 不含 (ValueError)
+
+    既存 strict 系 (PR-AC exit_code int / PR-AD redaction_rules / PR-AF cost /
+    PR-AK counts/artifacts / PR-AL rate_source) と同 level の defensive lint。
+    """
+    from _observability import build_status
+
+    # ===== accept =====
+    # (1a) 通常 script 名 (snake_case identifier)
+    p_normal = build_status(script="generate_slide_plan",
+                            v0_status="success", exit_code=0)
+    assert p_normal["script"] == "generate_slide_plan"
+
+    # (1b) 拡張子付き
+    p_ext = build_status(script="visual_smoke.py",
+                         v0_status="success", exit_code=0)
+    assert p_ext["script"] == "visual_smoke.py"
+
+    # (1c) 1 char
+    p_min = build_status(script="x", v0_status="success", exit_code=0)
+    assert p_min["script"] == "x"
+
+    # (1d) 日本語 / unicode (制御文字以外は accept)
+    p_jp = build_status(script="日本語スクリプト",
+                        v0_status="success", exit_code=0)
+    assert p_jp["script"] == "日本語スクリプト"
+
+    # ===== reject =====
+    # (2) 型違反: None / int / float / bool / list / dict
+    for bad_type in (None, 5, 1.5, True, False, ["script"], {"name": "x"}):
+        try:
+            build_status(script=bad_type, v0_status="success", exit_code=0)
+        except TypeError as e:
+            assert "script" in str(e) and "str" in str(e), (
+                f"TypeError msg should mention script + str, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"non-str script={bad_type!r} must raise TypeError"
+            )
+
+    # (3) 空文字 / whitespace-only (bucket 不能)
+    for empty_or_ws in ("", " ", "   ", "\t", "\n", "  \t  "):
+        try:
+            build_status(script=empty_or_ws, v0_status="success", exit_code=0)
+        except (ValueError, TypeError):
+            pass
+        else:
+            raise AssertionError(
+                f"empty/whitespace-only script={empty_or_ws!r} must raise"
+            )
+
+    # (4) 制御文字含む (emit_json format / log line parser 破壊)
+    for ctrl_script in ("a\nb", "a\rb", "a\x00b", "abc\x01",
+                        "abc\x1f", "a\x7fb", "\nabc"):
+        try:
+            build_status(script=ctrl_script, v0_status="success", exit_code=0)
+        except ValueError as e:
+            assert "control" in str(e) and "script" in str(e), (
+                f"ValueError msg should mention control + script, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"control-char script={ctrl_script!r} must raise ValueError"
+            )
+
+    # (5) regression guard: 既存 callers が使う 7 script 名は全 accept
+    for existing in ("generate_slide_plan", "voicevox_narration",
+                     "build_slide_data", "build_telop_data",
+                     "preflight_video", "visual_smoke",
+                     "compare_telop_split"):
+        p = build_status(script=existing, v0_status="success", exit_code=0)
+        assert p["script"] == existing
+
+
 def test_observability_resolve_run_context_uses_env() -> None:
     """env (SUPERMOVIE_RUN_ID / PARENT_RUN_ID / STEP_ID) 設定値をそのまま採用する。"""
     import os as _os
@@ -6277,6 +6374,7 @@ def main() -> int:
         test_observability_build_status_reserved_key_collision,
         test_observability_build_status_cost_dict_strict,
         test_observability_build_status_counts_artifacts_strict,
+        test_observability_build_status_script_identifier_contract,
         test_observability_build_cost_payload_nan_inf_defense,
         test_observability_build_cost_payload_rate_source_contract,
         # PR-E (distributed tracing run_id active emission): 7 件

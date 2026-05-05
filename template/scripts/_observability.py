@@ -549,6 +549,28 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
     # を引き起こす。caller の型違いを fail-loud で reject、payload 構築側責務に
     # 固定。bool は dict subclass ではないが、念のため None と dict のみ受理する
     # 厳密な isinstance 検査。
+    # PR-AM (Codex 04:04 verdict AZ) defense: script は v1 status JSON の core
+    # identifier (downstream consumer / log filter / dashboard が script 名で
+    # bucket する根拠 field)。旧実装は型 / 空文字 / 制御文字 validation なしで
+    # `""` / `"   "` / `"a\nb"` / `"a\x00b"` / int / bool / list / None を silent
+    # payload 通過、emit_json の 1-line format invariant (PR-Y) も control char
+    # 経由で破壊しうる。caller の bug を helper が隠す経路を断ち、payload 構築
+    # 側責務に固定する。
+    if not isinstance(script, str):
+        raise TypeError(
+            f"build_status: script must be str, got "
+            f"{type(script).__name__} ({script!r})"
+        )
+    if not script.strip():
+        raise ValueError(
+            f"build_status: script must be non-empty (whitespace-only "
+            f"rejected), got {script!r}"
+        )
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in script):
+        raise ValueError(
+            f"build_status: script must not contain control characters "
+            f"(\\x00-\\x1F / \\x7F), got {script!r}"
+        )
     if cost is not None and not isinstance(cost, dict):
         raise TypeError(
             f"build_status: cost must be dict or None, got "
