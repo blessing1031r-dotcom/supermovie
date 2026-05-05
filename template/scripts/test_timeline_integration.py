@@ -3792,6 +3792,45 @@ def test_observability_redact_secret_last_n_zero_or_negative_full_mask() -> None
     assert redacted_zero == "*" * len("sk-1234567890")
 
 
+def test_voicevox_narration_summary_path_redacted_by_default() -> None:
+    """PR-I fix iter (Codex 00:13 P1 #1): voicevox_narration の human stdout summary JSON で
+    raw path leak しない (engine 不在で skip 経由しないため、内部 helper 関数を直接 audit)。
+
+    summary dict 構築箇所の path 4 fields が safe_artifact_path() 経由で redact されること。
+    """
+    from _observability import safe_artifact_path
+
+    proj = Path(tempfile.mkdtemp(prefix="vv_summary_redact_"))
+    try:
+        ts_path = proj / "src/Narration/narrationData.ts"
+        meta_path = proj / "narration_chunks_meta.json"
+        out_path = proj / "public/narration.wav"
+        ready_path = proj / "narration.ready.json"
+
+        # default (redact) — proj path が tmpdir 配下の絶対 path で、placeholder/相対化される
+        summary = {
+            "narration_wav": safe_artifact_path(out_path, project_root=proj, unsafe_keep_abs_path=False),
+            "narration_data_ts": safe_artifact_path(ts_path, project_root=proj, unsafe_keep_abs_path=False),
+            "chunk_meta_json": safe_artifact_path(meta_path, project_root=proj, unsafe_keep_abs_path=False),
+            "narration_ready_json": safe_artifact_path(ready_path, project_root=proj, unsafe_keep_abs_path=False),
+        }
+        rendered = json.dumps(summary, ensure_ascii=False)
+        # default redact: raw proj 絶対 path は出ない
+        assert str(proj) not in rendered, \
+            f"raw proj path leaked in default summary: {rendered!r}"
+
+        # unsafe-keep-abs-path: raw 出力
+        summary_unsafe = {
+            "narration_wav": safe_artifact_path(out_path, project_root=proj, unsafe_keep_abs_path=True),
+        }
+        rendered_unsafe = json.dumps(summary_unsafe, ensure_ascii=False)
+        assert str(out_path) in rendered_unsafe, \
+            f"unsafe-keep-abs-path should preserve raw path, got {rendered_unsafe!r}"
+    finally:
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
 def test_build_slide_data_human_stdout_path_redacted_by_default() -> None:
     """PR-I (Codex 00:08): build_slide_data の human stdout `path: ...` 行は default redact、
     --unsafe-keep-abs-path で raw 切替。
@@ -3941,8 +3980,9 @@ def main() -> int:
         test_observability_redact_secret_non_string_passthrough,
         test_observability_redact_secret_custom_last_n_and_mask_char,
         test_observability_redact_secret_last_n_zero_or_negative_full_mask,
-        # PR-I (human stdout path leak audit、Codex 00:08 approve): 1 件
+        # PR-I (human stdout path leak audit、Codex 00:08 approve): 2 件 (1 feat + 1 fix iter voicevox summary redact)
         test_build_slide_data_human_stdout_path_redacted_by_default,
+        test_voicevox_narration_summary_path_redacted_by_default,
     ]
     failed = []
     for t in tests:

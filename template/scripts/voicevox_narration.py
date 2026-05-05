@@ -825,6 +825,8 @@ def main():
     _safe_ready = safe_artifact_path(NARRATION_READY_JSON, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
     print(f"wrote: {_safe_ready} (publish 完了 signal sentinel)")
 
+    # PR-I fix iter (Codex 00:13 P1 #1): summary dict の path field を safe_artifact_path 経由化、
+    # human stdout の summary JSON が default で raw path leak しないよう redact (json tail emit_json は別経路で既に redact 済)。
     summary = {
         "speaker": args.speaker,
         "fps": fps,
@@ -835,10 +837,10 @@ def main():
         "transcript_aligned_count": sum(
             1 for s in segments if s.get("timing_source") == "transcript_aligned"
         ),
-        "narration_wav": str(out_path),
-        "narration_data_ts": str(ts_path),
-        "chunk_meta_json": str(meta_path),
-        "narration_ready_json": str(NARRATION_READY_JSON),
+        "narration_wav": safe_artifact_path(out_path, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path),
+        "narration_data_ts": safe_artifact_path(ts_path, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path),
+        "chunk_meta_json": safe_artifact_path(meta_path, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path),
+        "narration_ready_json": safe_artifact_path(NARRATION_READY_JSON, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path),
         "engine_version": info,
     }
     print(f"\nsummary: {json.dumps(summary, ensure_ascii=False)}")

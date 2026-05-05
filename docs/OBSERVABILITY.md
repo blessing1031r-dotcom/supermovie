@@ -136,7 +136,7 @@ post-migration (v1) では `generate_slide_plan.py` / `voicevox_narration.py` / 
 
 ### Path Policy
 
-artifact `path` field は repo root or project root からの **相対 path** で記録する。絶対 path は `redaction.applied_rules` に `abs_path` を含めて redacted variant を記録する (PR #3 helper `safe_artifact_path` で `<HOME>` / `<TMP>` / `<ABS>` placeholder を機械置換、全 7 script 適用済)。明示 opt-in flag (`--unsafe-keep-abs-path`) は本 doc では予約のみ、現在実装なし。
+artifact `path` field は repo root or project root からの **相対 path** で記録する。絶対 path は `redaction.applied_rules` に `abs_path` を含めて redacted variant を記録する (PR #3 helper `safe_artifact_path` で `<HOME>` / `<TMP>` / `<ABS>` placeholder を機械置換、全 7 script 適用済)。明示 opt-in flag `--unsafe-keep-abs-path` は PR #3 で json tail / artifact path 用に実装、PR-I で human stdout (各 script の `print(f"... {path}")` 経路 / voicevox summary JSON) にも適用範囲拡大、両経路で同 knob 制御 (一貫した default redact / opt-in raw)。
 
 ### User Content Policy
 
