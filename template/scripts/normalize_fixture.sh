@@ -50,6 +50,15 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# Codex 20:04 3rd review P2: --format unknown validation を arg parse 直後 (skip/backup より前) に移動。
+# 旧位置は section 3 (target dim 決定) で、idempotent skip path で invalid format を素通りさせる構造だった。
+case "$TARGET_FORMAT" in
+  short|youtube|square|"") ;;
+  *)
+    echo "unknown --format: $TARGET_FORMAT (expected short|youtube|square)" >&2
+    exit 2 ;;
+esac
+
 if [ ! -f "$INPUT" ]; then
   echo "input not found: $INPUT" >&2
   exit 2
@@ -117,12 +126,20 @@ if [ "$HAS_DISPLAY_MATRIX" = "yes" ]; then
   NEED_REMUX="yes"
 fi
 
-if [ "$NEED_TRANSCODE" = "no" ] && [ "$NEED_REMUX" = "no" ] && [ "$INPUT" = "$OUTPUT" ]; then
-  echo "[normalize] skip: $INPUT is already H.264 SDR + no Display Matrix + risks=[$RISKS]"
+# Codex 20:04 3rd review P2: idempotent skip 条件に RISKS empty 判定を追加。
+# 旧条件は NEED_TRANSCODE=no + NEED_REMUX=no + INPUT=OUTPUT のみで、interlaced /
+# multiple-or-missing-* / non-square-sar 等 (NEED_TRANSCODE 判定対象外の risks)
+# を持つ source も skip exit 0 してしまう構造だった。RISKS empty を必須化。
+if [ "$NEED_TRANSCODE" = "no" ] && [ "$NEED_REMUX" = "no" ] && [ "$INPUT" = "$OUTPUT" ] && [ -z "$RISKS" ]; then
+  echo "[normalize] skip: $INPUT is already H.264 SDR + no Display Matrix + risks=[]"
   exit 0
 fi
 
-# === 2. backup ===
+# === 2. backup (Codex 20:04 P2: stale backup reuse 防止) ===
+# 旧実装は BACKUP が既にあれば SRC=BACKUP 固定だった。INPUT が後から書き換えられた
+# 場合 (例: ユーザが別 fixture を同 path に置いた) に古い BACKUP を source に使う bug。
+# 本 fix: BACKUP が既存で INPUT と内容差分ありなら、timestamp suffix で別 BACKUP に
+# 退避してから INPUT を改めて backup。SRC は常に INPUT (current state) を使う。
 if [ "$INPUT" = "$OUTPUT" ]; then
   TAG=$(echo "$SOURCE_CODEC" | tr '[:upper:]' '[:lower:]')
   if echo "$SOURCE_PIXFMT" | grep -qi "10le\|p10"; then TAG="${TAG}_10bit"; fi
@@ -130,13 +147,20 @@ if [ "$INPUT" = "$OUTPUT" ]; then
     TAG="${TAG}_hdr"
   fi
   BACKUP="$INPUT_DIR/main_orig_${TAG}.mp4"
-  if [ ! -f "$BACKUP" ]; then
+  if [ -f "$BACKUP" ]; then
+    if cmp -s "$INPUT" "$BACKUP"; then
+      echo "[normalize] backup already exists (matches INPUT): $BACKUP"
+    else
+      OLD_BACKUP="$INPUT_DIR/main_orig_${TAG}_$(date +%s).mp4"
+      mv "$BACKUP" "$OLD_BACKUP"
+      cp -p "$INPUT" "$BACKUP"
+      echo "[normalize] backup (existing differs, archived to $OLD_BACKUP): $BACKUP"
+    fi
+  else
     cp -p "$INPUT" "$BACKUP"
     echo "[normalize] backup: $BACKUP"
-  else
-    echo "[normalize] backup already exists: $BACKUP (skip)"
   fi
-  SRC="$BACKUP"
+  SRC="$INPUT"
 else
   SRC="$INPUT"
 fi
