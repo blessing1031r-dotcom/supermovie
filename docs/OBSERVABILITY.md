@@ -120,7 +120,7 @@ post-migration (v1) では `generate_slide_plan.py` / `voicevox_narration.py` / 
 
 ### Redaction Rules (Codex 20:08 review P1 #2 で strict 化)
 
-- secret: 値の最後 4 文字以外をマスク (`sk-...XXXX`)。env name / config key 名は出して可。stderr / json tail / human stdout 全て同 rule。
+- secret: 値の最後 4 文字以外をマスク (`sk-...XXXX`)。env name / config key 名は出して可。stderr / json tail / human stdout 全て同 rule。helper `redact_secret(value, *, last_n=4, mask_char="*")` で実装 (PR-H、`_observability.py`)。短い value (last_n+1 char 以下) は partial leak 回避のため全 mask、non-string は passthrough。現 codebase に secret 直接 emit 経路はなく、本 helper は将来の secret-bearing emission の contract enforcement として置く。
 - user_content (transcript / segments / chunk text / telop raw):
   - human stdout: **default は `length` / `hash` のみ表示**、raw 出力は debug opt-in flag (`--unsafe-show-user-content` 等) 限定。`first-N-chars` 等の partial preview も default では出さない (raw partial も raw の subset とみなす)。`voicevox_narration.py` chunk text human log は PR #3 で `--unsafe-show-user-content` 化済み。
   - external structured log / json tail: `length` / `hash` のみ、raw 禁止 (default / debug 共通)。
@@ -261,6 +261,7 @@ cap: 全 3 field に `MAX_TRACE_CONTEXT_VALUE_LEN = 128` 適用、超過時は `
 | 6 | distributed tracing run_id active emission 実装 (`resolve_run_context()` helper + 7 script propagate + cap validation + 7 件 regression test) | PR-E |
 | 7 | pre-API cost abort threshold 実装 (`SUPERMOVIE_COST_USD_ABORT_AT` env + `--cost-abort-at` CLI + `cost_guard_aborted` status_map 追加 + estimate 共通化 + 3 件 regression test) | PR-F |
 | 8 | error path tail emit consistency audit (`compare_telop_split` の transcript / typo_dict / telop ts read failure を `_emit_early` 経由化、`preflight_video` の `--write-config` parse / write failure を `_emit` 経由化、`visual_smoke` の `out_dir.mkdir` / `videoConfig.ts read` failure を `_emit_early` 経由化、9 status 追加 + 4 件 regression test) | PR-G |
+| 9 | helper-level secret redaction 実装 (`redact_secret()` で last-4 mask + short-value 全 mask + non-string passthrough、`docs/OBSERVABILITY.md:123` secret class contract enforcement、4 件 regression test) | PR-H |
 
 ## Test Requirements
 

@@ -144,6 +144,31 @@ def _lexical_redact(s, home):
 _ABS_PATH_RE = re.compile(r"(?<![A-Za-z0-9_:/])(/[A-Za-z0-9._/\-]+)")
 
 
+def redact_secret(value, *, last_n=4, mask_char="*"):
+    """Secret value (API key / token / credential) を contract 通り redact する。
+
+    PR-H (Codex 23:18 medium / 23:58 approve): docs/OBSERVABILITY.md §Redaction Rules
+    secret class の last-4 mask rule (`sk-...XXXX`) を helper として実装。
+    helper module には PR #3 で `safe_artifact_path` / `user_content_meta` /
+    `redact_provider_body` が入ったが secret 専用 helper は欠落していた。
+
+    Behavior:
+      - non-string (None / int / etc.) → そのまま return (caller 側で type check 不要)
+      - 長さ <= last_n+1 → 全 mask (`****`、value 露出回避)
+      - 長さ > last_n+1 → mask + 末尾 last_n char ("sk-1234567890abc" → "****abc" 等)
+
+    Codex 23:58 verdict: helper 化 + unit test 化で contract 閉じる。
+    """
+    if not isinstance(value, str):
+        return value
+    if not value:
+        return value
+    if len(value) <= last_n + 1:
+        return mask_char * len(value)
+    masked_len = len(value) - last_n
+    return (mask_char * masked_len) + value[-last_n:]
+
+
 def redact_error_message(msg):
     """Error message 文字列内の絶対 path token を `_lexical_redact` で安全化する。
 
