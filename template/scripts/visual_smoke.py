@@ -383,8 +383,9 @@ def cli() -> int:
                     render_still(PROJ, frame, png)
                 except subprocess.CalledProcessError as e:
                     # P1 #1: render 失敗は環境問題 (exit 3) として即終了
+                    # PR-J fix iter 2 (Codex 00:28 P1 #2): CalledProcessError str は cmd args 含む raw path leak、redact 必須。
                     print(
-                        f"  ERROR: remotion still failed (fmt={fmt}, frame={frame}): {e}",
+                        f"  ERROR: remotion still failed (fmt={fmt}, frame={frame}): {redact_error_message(str(e))}",
                         file=sys.stderr,
                     )
                     env_error = "still_failed"
@@ -430,7 +431,8 @@ def cli() -> int:
             VIDEO_CONFIG.write_text(original, encoding="utf-8")
             print(f"\n[smoke] videoConfig.ts を原本に restore しました")
         except OSError as e:
-            print(f"ERROR: videoConfig.ts restore failed: {e}", file=sys.stderr)
+            # PR-J fix iter 2 (Codex 00:28): redact OSError args path。
+            print(f"ERROR: videoConfig.ts restore failed: {redact_error_message(str(e))}", file=sys.stderr)
             env_error = env_error or "video_config_restore_error"
 
     grid_status = "skipped"
@@ -441,13 +443,17 @@ def cli() -> int:
         grid_out = out_dir / "grid.png"
         try:
             make_grid(stills, grid_out, formats, frames, label=grid_label)
-            print(f"\n[smoke] grid: {grid_out}")
+            # PR-J fix iter 2: grid_out も redact (default redact、--unsafe-keep-abs-path で raw)
+            _safe_grid = safe_artifact_path(grid_out, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
+            print(f"\n[smoke] grid: {_safe_grid}")
             grid_status = "ok"
         except subprocess.CalledProcessError as e:
             # P1 #2: grid 失敗は環境問題として exit 3 (silent WARN にしない)
-            print(f"ERROR: ffmpeg grid 合成失敗: {e}", file=sys.stderr)
+            # PR-J fix iter 2 (Codex 00:28 P1 #2): CalledProcessError str redact + grid_error も redact 形で保存。
+            redacted_err = redact_error_message(str(e))
+            print(f"ERROR: ffmpeg grid 合成失敗: {redacted_err}", file=sys.stderr)
             grid_status = "failed"
-            grid_error = str(e)
+            grid_error = redacted_err
 
     summary_path = out_dir / "summary.json"
     # PR-G: summary.json write failure (full-disk / read-only mount 等) を tail emit。
