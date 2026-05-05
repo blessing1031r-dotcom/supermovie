@@ -138,14 +138,11 @@ main
 - supermovie-se 統合 (素材判断)
 - SadTalker / HeyGen / Kling 統合 (法的 / モラルリスク + API 課金)
 
-## 全 commit count (roku/phase3j-timeline branch、最新 130 件)
+## 全 commit count (roku/phase3j-timeline branch、最新 127 件)
 
 ```
-11ded8c fix(observability): STATUS_MAP completeness — partial_chunks_disallowed + sentinel_write_fail (Codex 20:53 PR3 re-review P2)
-33ecfe1 docs(phase3): refresh anchor/progress to a9f7978 / 146 — Codex 20:48 PR3 fix iter 1 反映
-a9f7978 fix(observability): voicevox redaction key + chunk text default redact + STATUS_MAP completeness + stderr regression test (Codex 20:48 PR3 review P1+P2)
-3592a08 docs(phase3): refresh anchor/progress to 987c3d0 / 144 — obs migration core source 反映
-987c3d0 feat(observability): _observability.py helper + slide-plan/narration v1 refactor + regression test (Tech 改善 Medium #3 migration core)
+133fa28 feat(observability): helper hardening (duration_ms / category_override) + compare_telop_split + visual_smoke v1 (PR-A、Codex 21:01 step 3 verdict)
+eede8a1 feat(observability): _observability.py helper + slide-plan/narration v1 refactor + regression test (#3)
 4565ebb Merge pull request #2 from blessing1031r-dotcom/roku/observability-doc
 a6e3bed docs(phase3): refresh anchor/progress to 184f616 (merge commit) / 141 / 123 — PR #1 取込後の anchor refresh
 184f616 Merge remote-tracking branch 'fork/main' into roku/observability-doc
@@ -273,7 +270,7 @@ e2a1a39 fix(timeline): Codex Phase 3-J review 4 件 fix (P1×1 + P2×2 + P3×1)
 66e2aeb feat(timeline): timeline.py 共通化 + Phase 3-I review 6 件 fix (Phase 3-J)
 ```
 
-(更新: 2026-05-05_20:57、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
+(更新: 2026-05-05_21:08、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
 本 script で regen → docs commit する形のため、docs 上の commit chain は
 docs commit を作る前の HEAD を反映する設計 (off-by-one は intrinsic、
 `--verify` mode で count drift を CI 検査可)。)
