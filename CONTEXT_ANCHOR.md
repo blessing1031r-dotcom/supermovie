@@ -14,8 +14,8 @@
 
 | 項目 | 値 (Bash 実測 2026-05-05 23:23) |
 |---|---|
-| HEAD (source commit) | `311c92a` (PR-G fix iter — Codex 23:25 P1×3 + P2×1: sys.exit(main()) / redact_error_message + abs_path leak fix / visual_smoke patch+restore+summary write 全 tail emit 化 / 11 status must_have 追加) |
-| prev source commit (PR-G feat) | `44b30be` (PR-G feat: 3 script error path tail emit audit + 9 status + 4 件 regression test + docs Migration step 8) |
+| HEAD (source commit) | `b7d96af` (PR-G fix iter 2 — Codex 23:33 P1×1 + P2×2: preflight ffprobe redact + URL 破壊回避 + visual_smoke env_error specific status preserve) |
+| prev source commits | `311c92a` (fix iter 1) → `44b30be` (PR-G feat) |
 | prev source commit | `00ed6d4` (= fork/main、PR #9 PR-F cost abort threshold squash merge commit、PR-G 着手前 base) |
 | branch | `roku/error-path-tail-audit` (`fork/main=00ed6d4` 起点、PR #1-#9 全 merged 後の **PR-G** = error path tail emit consistency audit cycle) |
 | main..HEAD | 1 commit (本 anchor refresh 前の feat commit、refresh 後 2 commits) |
@@ -25,7 +25,7 @@
 | fork remote | `https://github.com/blessing1031r-dotcom/supermovie.git` (PR #1-#9 全 merged into fork/main = `00ed6d4`、本 PR #10 は **error-path-tail-audit (PR-G)** error path tail emit consistency audit、fork-internal squash merge 予定) |
 | gh auth status | ✓ Logged in (account: blessing1031r-dotcom、scopes: gist read:org repo workflow、Claude Code 側 12:00 / 12:32 / 12:38 / 12:41 で 4 回 valid 確認。Codex `--ephemeral` sandbox 内では token 不可視 = invalid 表示されるが Claude Code 実行環境に影響なし) |
 | worktree | clean (cleanup commit `e0f5107` で `docs/reviews/**` 38 files + `docs/roadmap/FUTURE_FEATURES_REQUIREMENTS_v0.md` を release scope から外し済み、future doc は別 worktree `../supermovie-future-features-v0` の `roku/future-features-v0` branch `72a6ef4` に保全済) |
-| 7 gate composite | ALL PASS at 311c92a (env / worktree clean / regen drift 1 / **69/69 python smoke (62 PR-F + 4 PR-G feat + 3 fix iter)** / lint exit 0 / React 22/22 / **gate 7 anchor drift = 1 intrinsic OK**、Bash 実測 23:30) |
+| 7 gate composite | ALL PASS at b7d96af (env / worktree clean / regen drift 1 / **69/69 python smoke** / lint exit 0 / React 22/22 / **gate 7 anchor drift = 1 intrinsic OK**、Bash 実測 23:36) |
 | b1 fixture e2e (`npm run test:visual-smoke` + `npm run render`) | proj1 で全 PASS (Bash 実測 2026-05-05 18:42-18:55、HEVC HDR DoVi 4K → H.264 SDR 1080x1920 60fps + 2516 frames render、`docs/PHASE3_RELEASE_NOTE.md` `b1 fixture normalize evidence trail` 参照) — PR #1 merged into fork/main |
 | obs migration core | helper module `template/scripts/_observability.py` (~150 line) + slide-plan/narration helper 経由 refactor + redaction default strict + 6 regression test 全 PASS (Bash 実測 2026-05-05 20:42) |
 

@@ -138,9 +138,11 @@ main
 - supermovie-se 統合 (素材判断)
 - SadTalker / HeyGen / Kling 統合 (法的 / モラルリスク + API 課金)
 
-## 全 commit count (roku/error-path-tail-audit branch、最新 135 件)
+## 全 commit count (roku/error-path-tail-audit branch、最新 137 件)
 
 ```
+b7d96af fix(observability): PR-G fix iter 2 — Codex 23:33 P1×1 + P2×2
+5c91493 docs(phase3): refresh anchor/progress to 311c92a — PR-G fix iter (P1×3 + P2×1)
 311c92a fix(observability): PR-G fix iter — Codex 23:25 P1×3 + P2×1
 674978d docs(phase3): refresh anchor/progress to 44b30be / 2 — PR-G feat (error path tail audit)
 44b30be feat(observability): error path tail emit consistency audit (PR-G、Codex 23:18 next priority)
@@ -278,7 +280,7 @@ e2a1a39 fix(timeline): Codex Phase 3-J review 4 件 fix (P1×1 + P2×2 + P3×1)
 66e2aeb feat(timeline): timeline.py 共通化 + Phase 3-I review 6 件 fix (Phase 3-J)
 ```
 
-(更新: 2026-05-05_23:34、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
+(更新: 2026-05-05_23:40、source=HEAD、`scripts/regen_phase3_progress.sh` で auto-gen。
 本 script で regen → docs commit する形のため、docs 上の commit chain は
 docs commit を作る前の HEAD を反映する設計 (off-by-one は intrinsic、
 `--verify` mode で count drift を CI 検査可)。)
