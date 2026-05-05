@@ -8646,15 +8646,11 @@ def test_all_seven_scripts_use_sys_exit_in_main() -> None:
     iter で compare_telop_split.py で発見・修正された pattern を全 script に展開。
     """
     scripts_dir = Path(__file__).resolve().parent
-    target_scripts = [
-        "build_slide_data.py",
-        "build_telop_data.py",
-        "voicevox_narration.py",
-        "visual_smoke.py",
-        "compare_telop_split.py",
-        "preflight_video.py",
-        "generate_slide_plan.py",
-    ]
+    # PR-BH P2 fix #2 (Codex 06:55 review): shared module-level
+    # V1_CALLER_SCRIPTS を参照して 7 script audit set の single source of
+    # truth に統一、PR-AZ caller usage / PR-BH script coverage docs lint と
+    # 同期 update。
+    target_scripts = list(V1_CALLER_SCRIPTS)
     missing_sys_exit = []
     for name in target_scripts:
         src = (scripts_dir / name).read_text(encoding="utf-8")
@@ -8823,15 +8819,11 @@ def test_unsafe_keep_abs_path_flag_present_in_all_seven_scripts() -> None:
     PR-I/J/K で abs_path contract が unified knob 化された前提を維持する lint。
     """
     scripts_dir = Path(__file__).resolve().parent
-    target_scripts = [
-        "build_slide_data.py",
-        "build_telop_data.py",
-        "voicevox_narration.py",
-        "visual_smoke.py",
-        "compare_telop_split.py",
-        "preflight_video.py",
-        "generate_slide_plan.py",
-    ]
+    # PR-BH P2 fix #2 (Codex 06:55 review): shared module-level
+    # V1_CALLER_SCRIPTS を参照して 7 script audit set の single source of
+    # truth に統一、PR-AZ caller usage / PR-BH script coverage docs lint と
+    # 同期 update。
+    target_scripts = list(V1_CALLER_SCRIPTS)
     missing_argparse = []
     missing_usage = []
     for name in target_scripts:
