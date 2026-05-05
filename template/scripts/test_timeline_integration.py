@@ -8788,6 +8788,181 @@ def test_observability_path_policy_placeholder_set_docs_code_lint() -> None:
     )
 
 
+def test_observability_emit_json_disabled_silent_caller_ast_lint() -> None:
+    """V1_CALLER_SCRIPTS 7 caller の `_obs_emit_json` 直接 Call (helper alias
+    bypass 経路) の 1st positional arg = `args.json_log` Attribute (or 同等
+    args 経路 Name) であることを AST audit
+    (Codex 08:55 PR-BR verdict、PR-BT trailing stdout writer audit と相補な
+    `--json-log` disabled silent contract caller-side 固定化)。
+
+    docs §Emission Contract (line 50) 「`--json-log` flag が指定された時のみ、
+    stdout の **末尾 1 行** に純 JSON (改行で終端) を emit する」 contract に
+    対する caller-side 違反 risk:
+      (a) caller が hardcoded `True` を 1st arg に渡すと、`--json-log` flag
+          無関係に v1 status JSON が常時 stdout に流れ、disabled silent
+          invariant 崩壊 → human-readable 経路 + downstream parser の双方を
+          汚染
+      (b) caller が hardcoded `False` を 1st arg に渡すと、`--json-log`
+          指定時も silent になり downstream parser が status を受け取れず
+          observability ホール
+      (c) caller が args 以外の Name 変数 (例: temp local var) を渡すと
+          flag propagation chain が壊れ、CLI flag 1 source of truth 契約
+          が drift
+
+    helper 側は `emit_json(enabled, payload)` で `if enabled: print(...)` の
+    contract (PR-Y format invariant + PR-AC int contract で固定済)。caller
+    側は `_obs_emit_json(args.json_log, payload)` 形を 7 caller × 11 sites
+    で揃えており (Bash 実測)、本 lint で形式を AST 機械検査して disabled
+    silent invariant の caller-side drift を fail-loud。
+
+    本 lint は 3-part validation:
+      1. docs §Emission Contract section に「`--json-log`」「指定された時
+         のみ」の literal docs presence (disabled silent contract 文言の
+         docs spec drift fail-loud)
+      2. V1_CALLER_SCRIPTS 7 caller の AST から `_obs_emit_json(...)` の
+         Call site を全列挙し、(a) 1st positional arg が `Attribute` で
+         attr が `json_log` (e.g. `args.json_log`) または `Name` で `id`
+         に `json_log` を含むこと、(b) `Constant` (hardcoded True/False
+         /None/数値) は reject、(c) Call site は最低 1 件存在 (helper
+         alias bypass 経路の使用 lock-in)
+      3. _obs_emit_json import alias が `from _observability import
+         emit_json as _obs_emit_json` で各 caller に存在 (alias rename
+         drift fail-loud)
+
+    PR-BT trailing stdout writer audit / PR-BL stream emission presence
+    と相補な caller-side static lint、本 lint は emit_json disabled silent
+    contract の caller-side 形式 audit という別 axis を fix。
+    """
+    import ast as _ast_re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+
+    # part 1: docs §Emission Contract literal presence
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    md = obs_md.read_text(encoding="utf-8")
+    DOCS_LITERALS = ["--json-log", "指定された時のみ"]
+    for lit in DOCS_LITERALS:
+        assert lit in md, (
+            f"docs/OBSERVABILITY.md §Emission Contract に "
+            f"`--json-log` disabled silent contract literal '{lit}' が "
+            f"見つからない (docs spec drift?)"
+        )
+
+    SCRIPT_NAMES = (
+        "build_slide_data",
+        "build_telop_data",
+        "preflight_video",
+        "compare_telop_split",
+        "visual_smoke",
+        "generate_slide_plan",
+        "voicevox_narration",
+    )
+
+    violations: list[str] = []
+    total_call_sites = 0
+    audited_scripts = 0
+
+    for script_name in SCRIPT_NAMES:
+        script_path = (
+            repo_root / "template" / "scripts" / f"{script_name}.py"
+        )
+        assert script_path.exists(), (
+            f"V1 caller script {script_name}.py が repo に存在しない "
+            f"(削除 / rename drift?)"
+        )
+        src = script_path.read_text(encoding="utf-8")
+        tree = _ast_re.parse(src, filename=f"{script_name}.py")
+
+        # part 3: _obs_emit_json import alias presence
+        # `from _observability import emit_json as _obs_emit_json`
+        found_alias = False
+        for node in _ast_re.walk(tree):
+            if not isinstance(node, _ast_re.ImportFrom):
+                continue
+            if node.module != "_observability":
+                continue
+            for alias in node.names:
+                if (
+                    alias.name == "emit_json"
+                    and alias.asname == "_obs_emit_json"
+                ):
+                    found_alias = True
+                    break
+            if found_alias:
+                break
+        assert found_alias, (
+            f"{script_name}.py に "
+            f"`from _observability import emit_json as _obs_emit_json` "
+            f"alias import が見つからない (alias rename / 削除 drift?)"
+        )
+
+        # part 2: _obs_emit_json Call sites の 1st arg shape audit
+        script_call_count = 0
+        for node in _ast_re.walk(tree):
+            if not isinstance(node, _ast_re.Call):
+                continue
+            func = node.func
+            if not (
+                isinstance(func, _ast_re.Name)
+                and func.id == "_obs_emit_json"
+            ):
+                continue
+            script_call_count += 1
+            total_call_sites += 1
+            if not node.args:
+                violations.append(
+                    f"{script_name}: line {node.lineno} で "
+                    f"_obs_emit_json() が positional arg なしで呼ばれて "
+                    f"いる (enabled flag propagation 欠落?)"
+                )
+                continue
+            first_arg = node.args[0]
+            # 想定: Attribute(value=Name('args'), attr='json_log')
+            # or Name (json_log を含む変数名)
+            ok = False
+            if (
+                isinstance(first_arg, _ast_re.Attribute)
+                and first_arg.attr == "json_log"
+            ):
+                ok = True
+            elif (
+                isinstance(first_arg, _ast_re.Name)
+                and "json_log" in first_arg.id
+            ):
+                # 安全側 (loop 内 local var 経由等) で許容
+                ok = True
+            if not ok:
+                violations.append(
+                    f"{script_name}: line {node.lineno} で "
+                    f"_obs_emit_json() の 1st positional arg が "
+                    f"args.json_log Attribute / json_log Name 形ではない "
+                    f"({_ast_re.unparse(first_arg)[:60]}) "
+                    f"(disabled silent invariant drift / hardcoded "
+                    f"True/False / wrong source flag risk)"
+                )
+
+        assert script_call_count >= 1, (
+            f"{script_name}.py に _obs_emit_json() Call site が 0 件 "
+            f"(helper alias bypass 経路の使用消失 / refactor drift?)"
+        )
+        audited_scripts += 1
+
+    assert audited_scripts == 7, (
+        f"V1_CALLER_SCRIPTS 7 件全 audit 想定 / 実測={audited_scripts} "
+        f"(script discovery drift?)"
+    )
+    assert total_call_sites >= 7, (
+        f"_obs_emit_json Call site 合計が 7 caller 全て最低 1 件 "
+        f"想定 / 実測={total_call_sites} (alias bypass 全削除 drift?)"
+    )
+    assert not violations, (
+        "_obs_emit_json() 1st arg shape drift (disabled silent "
+        "invariant caller-side 違反):\n"
+        + "\n".join(violations)
+    )
+
+
 def test_observability_emit_json_tail_invariant_caller_ast_lint() -> None:
     """V1_CALLER_SCRIPTS 7 caller の `_obs_emit_json` / `emit_json` /
     wrapper Call site が同一 body 内で stdout 末尾 1 行 invariant を破る
@@ -11195,6 +11370,7 @@ def main() -> int:
         test_observability_cost_abort_threshold_docs_code_lint,
         test_observability_provider_notes_routing_docs_code_lint,
         test_observability_emit_json_tail_invariant_caller_ast_lint,
+        test_observability_emit_json_disabled_silent_caller_ast_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
