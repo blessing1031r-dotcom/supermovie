@@ -8289,6 +8289,117 @@ def test_observability_normalize_redaction_rules_membership_reject() -> None:
     assert out_caller == ["abs_path", "user_content"]
 
 
+def test_observability_redaction_rules_helper_mapping_lint() -> None:
+    """`docs/OBSERVABILITY.md §Redaction Rules` ↔ helper / flag mapping の
+    presence lint
+    (Codex 07:17 PR-BK verdict BV-rules、PR-BJ Sensitive Classes 双方向 lint
+    の rule-side 対応物)。
+
+    docs §Redaction Rules は 4 class の各 rule に対応する helper / flag を
+    明記している:
+      - secret: `redact_secret(value, *, last_n=4, mask_char="*")` 経由
+      - user_content: `--unsafe-show-user-content` opt-in flag + length/hash
+        (`user_content_meta` 経由)
+      - abs_path: `safe_artifact_path()` 経由 + `--unsafe-keep-abs-path` flag
+      - provider_response_body: `--unsafe-dump-response` opt-in flag +
+        structured summary (`redact_provider_body` 経由)
+
+    docs に書かれた helper 名 / flag 名が code に実在するかを機械検査して、
+    docs と implementation の drift を防ぐ。helper 名が改名・削除された時
+    docs だけ取り残されたり、逆に docs に新しい flag を書いたが code 未実装
+    で contract が空文に終わったりする drift を fail-loud 化。
+
+    PR-BD/BE/BF/BH/BI/BJ docs/code 双方向 audit pattern の rule-mapping
+    extension。PR-BJ は class set (REDACTION_CLASSES) ↔ docs 表 だが、本 lint
+    は rule の implementation handle (helper function name / CLI flag) ↔ docs
+    spec text を bridge する。
+    """
+    import re
+    from pathlib import Path
+
+    from _observability import (
+        redact_provider_body,
+        redact_secret,
+        safe_artifact_path,
+        user_content_meta,
+    )
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    md = obs_md.read_text(encoding="utf-8")
+
+    # `### Redaction Rules` heading 直後 ～ 次 `### ` までを section として抽出
+    section_re = re.compile(
+        r"^### Redaction Rules[^\n]*\n(?P<body>.*?)(?=^### )",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = section_re.search(md)
+    assert m is not None, (
+        "`### Redaction Rules` の section が docs に見つからない "
+        "(heading rename / 構造変更?)"
+    )
+    body = m.group("body")
+
+    # Helper presence: 4 redaction class それぞれに対応する helper 関数が
+    # code 側で callable 存在を保証。docs §Redaction Rules で helper 名が
+    # explicitly mention されているのは redact_secret / safe_artifact_path
+    # の 2 件のみ (user_content / provider_response_body は flag 中心の記述
+    # で helper 関数名は別 section / class enum 経由で言及される設計)、
+    # 残り 2 helper は code presence だけ要件。
+    HELPERS_REQUIRED_CALLABLE = (
+        ("redact_secret", redact_secret),
+        ("safe_artifact_path", safe_artifact_path),
+        ("user_content_meta", user_content_meta),
+        ("redact_provider_body", redact_provider_body),
+    )
+    for name, code_obj in HELPERS_REQUIRED_CALLABLE:
+        assert callable(code_obj), (
+            f"code 側 {name} が callable でない (rename / 削除?)、"
+            f"got {type(code_obj).__name__}"
+        )
+
+    # Helper docs mention: docs §Redaction Rules で helper 名が
+    # explicitly 書かれている helper のみ docs↔code drift を assert。
+    HELPERS_REQUIRED_DOCS_MENTION = ("redact_secret", "safe_artifact_path")
+    for name in HELPERS_REQUIRED_DOCS_MENTION:
+        assert name in body, (
+            f"docs §Redaction Rules に '{name}' helper の mention が消えた "
+            f"(helper rename or docs spec drift?)、"
+            f"section body excerpt: {body[:300]!r}..."
+        )
+
+    # CLI flag presence: docs section に書かれた flag 名 → 7 v1 caller の
+    # いずれかに argparse / 文字列 literal で登場すること。
+    DOCS_FLAGS = (
+        "--unsafe-show-user-content",
+        "--unsafe-keep-abs-path",
+        "--unsafe-dump-response",
+    )
+    scripts_dir = Path(__file__).resolve().parent
+    for flag in DOCS_FLAGS:
+        # docs section に flag 名が出ているか
+        assert flag in body, (
+            f"docs §Redaction Rules に '{flag}' flag の mention が消えた "
+            f"(flag rename / docs spec drift?)、"
+            f"section body excerpt: {body[:300]!r}..."
+        )
+        # code 側で 7 v1 caller のいずれかが flag 名を持つ
+        # (個別 audit は PR-M `test_unsafe_keep_abs_path_flag_present_in_all_seven_scripts`
+        # に任せて、本 lint は flag が code base 全体に存在することのみ確認)
+        found_in = []
+        for path in scripts_dir.glob("*.py"):
+            if path.name == "test_timeline_integration.py":
+                continue
+            txt = path.read_text(encoding="utf-8")
+            if flag in txt:
+                found_in.append(path.name)
+        assert found_in, (
+            f"docs §Redaction Rules に書かれた flag '{flag}' が "
+            f"template/scripts/*.py のどこにも登場しない "
+            f"(flag rename / 実装削除 / docs spec drift?)"
+        )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -9455,6 +9566,7 @@ def main() -> int:
         test_observability_trace_context_docs_code_lint,
         test_observability_sensitive_classes_docs_code_lint,
         test_observability_normalize_redaction_rules_membership_reject,
+        test_observability_redaction_rules_helper_mapping_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
