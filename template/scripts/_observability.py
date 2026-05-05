@@ -347,7 +347,12 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
         "artifacts": artifacts or [],
         "cost": cost,
         "redaction": {
-            "applied_rules": list(redaction_rules) if redaction_rules else [],
+            # PR-Q (Codex 01:30 AC approve): redaction.applied_rules を helper 側で正規化。
+            # caller (generate_slide_plan / voicevox / build_slide / build_telop / etc.) で
+            # `redaction_rules.append(...)` を繰り返す pattern が多く、重複や順序が
+            # non-deterministic だった。helper で sorted(set(...)) に正規化、downstream
+            # diff / regression test の安定性を確保。empty も空 list で固定。
+            "applied_rules": sorted(set(redaction_rules)) if redaction_rules else [],
             "version": REDACTION_VERSION,
         },
     }

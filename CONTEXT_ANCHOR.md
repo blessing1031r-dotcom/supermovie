@@ -12,19 +12,19 @@
 
 ## Verified Snapshot (作成時点で Bash 実測、push/PR 前に再更新)
 
-| 項目 | 値 (Bash 実測 2026-05-06 01:23) |
+| 項目 | 値 (Bash 実測 2026-05-06 01:32) |
 |---|---|
-| HEAD (source commit) | `e4b1a7a` (PR-P feat: 3 script entry sys.exit 化 + 1 件 lint test + Migration step 16) |
-| prev source commit | `88662a7` (= fork/main、PR #18 PR-O compute_rate_missing helper sink squash merge commit、PR-P 着手前 base) |
-| branch | `roku/exit-code-entry-audit` (`fork/main=88662a7` 起点、PR #1-#18 全 merged 後の **PR-P** = entry exit code propagation audit cycle) |
-| main..HEAD | 1 commit (本 anchor refresh 前の feat、refresh 後 2 commits) |
+| HEAD (source commit) | PR-Q 着手中 (CONTEXT_ANCHOR + applied_rules canonicalize + 1 件 unit test + Migration step 17、commit 直前) |
+| prev source commit | `359c7ff` (= fork/main、PR #19 PR-P entry exit code audit squash merge commit、PR-Q 着手前 base) |
+| branch | `roku/redaction-rules-canonicalize` (`fork/main=359c7ff` 起点、PR #1-#19 全 merged 後の **PR-Q** = applied_rules canonicalize cycle) |
+| main..HEAD | 0 commits (commit 直前) |
 | roku/phase3i-transcript-alignment..HEAD | merge commit を含むため raw count は意味薄、source 内訳は別 doc 参照 |
 | origin remote | `https://github.com/RenTonoduka/supermovie.git` (READ only) |
 | origin viewerPermission | READ (Roku gh account `blessing1031r-dotcom` は write 権限なし) |
-| fork remote | `https://github.com/blessing1031r-dotcom/supermovie.git` (PR #1-#18 全 merged into fork/main = `88662a7`、本 PR #19 は **exit-code-entry-audit (PR-P)** 3 script entry を sys.exit 化 + 漏れ防止 lint test、fork-internal squash merge 予定) |
+| fork remote | `https://github.com/blessing1031r-dotcom/supermovie.git` (PR #1-#19 全 merged into fork/main = `359c7ff`、本 PR #20 は **redaction-rules-canonicalize (PR-Q)** applied_rules sorted(set) helper 正規化、fork-internal squash merge 予定) |
 | gh auth status | ✓ Logged in (account: blessing1031r-dotcom、scopes: gist read:org repo workflow、Claude Code 側 12:00 / 12:32 / 12:38 / 12:41 で 4 回 valid 確認。Codex `--ephemeral` sandbox 内では token 不可視 = invalid 表示されるが Claude Code 実行環境に影響なし) |
 | worktree | clean (cleanup commit `e0f5107` で `docs/reviews/**` 38 files + `docs/roadmap/FUTURE_FEATURES_REQUIREMENTS_v0.md` を release scope から外し済み、future doc は別 worktree `../supermovie-future-features-v0` の `roku/future-features-v0` branch `72a6ef4` に保全済) |
-| 7 gate composite | ALL PASS at e4b1a7a (env / worktree clean / regen drift 1 / **85/85 python smoke (84 PR-O + 1 PR-P)** / lint exit 0 / React 22/22 / **gate 7 anchor drift = 1 intrinsic OK**、Bash 実測 01:24) |
+| 7 gate composite | ALL PASS at PR-Q 着手中 (env / worktree clean / **86/86 python smoke (85 PR-P + 1 PR-Q: applied_rules_canonicalized)** / lint exit 0 / React 22/22、Bash 実測 01:32) |
 | b1 fixture e2e (`npm run test:visual-smoke` + `npm run render`) | proj1 で全 PASS (Bash 実測 2026-05-05 18:42-18:55、HEVC HDR DoVi 4K → H.264 SDR 1080x1920 60fps + 2516 frames render、`docs/PHASE3_RELEASE_NOTE.md` `b1 fixture normalize evidence trail` 参照) — PR #1 merged into fork/main |
 | obs migration core | helper module `template/scripts/_observability.py` (~150 line) + slide-plan/narration helper 経由 refactor + redaction default strict + 6 regression test 全 PASS (Bash 実測 2026-05-05 20:42) |
 

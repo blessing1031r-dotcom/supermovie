@@ -3875,6 +3875,44 @@ def test_observability_compute_rate_missing_helper() -> None:
     assert compute_rate_missing(0.0) is False
 
 
+def test_observability_redaction_applied_rules_canonicalized() -> None:
+    """PR-Q (Codex 01:30 AC approve): build_status() が redaction.applied_rules を
+    sorted(set(...)) で正規化すること。caller 側 dedup 漏れ / 順序差を helper で吸収、
+    downstream diff の安定性を確保。
+    """
+    from _observability import build_status
+
+    # 重複あり、順序逆 → sorted unique
+    p1 = build_status(
+        script="x", v0_status="success", exit_code=0,
+        redaction_rules=["user_content", "abs_path", "abs_path", "user_content"],
+    )
+    assert p1["redaction"]["applied_rules"] == ["abs_path", "user_content"], \
+        f"applied_rules should be sorted set, got {p1['redaction']['applied_rules']!r}"
+
+    # 単一値、変更なし
+    p2 = build_status(
+        script="x", v0_status="success", exit_code=0,
+        redaction_rules=["secret"],
+    )
+    assert p2["redaction"]["applied_rules"] == ["secret"]
+
+    # None / 空 → 空 list
+    p3 = build_status(script="x", v0_status="success", exit_code=0)
+    assert p3["redaction"]["applied_rules"] == []
+    p4 = build_status(script="x", v0_status="success", exit_code=0, redaction_rules=[])
+    assert p4["redaction"]["applied_rules"] == []
+
+    # 4 class 全部 sorted alphabetical
+    p5 = build_status(
+        script="x", v0_status="success", exit_code=0,
+        redaction_rules=["user_content", "secret", "provider_response_body", "abs_path"],
+    )
+    assert p5["redaction"]["applied_rules"] == [
+        "abs_path", "provider_response_body", "secret", "user_content"
+    ]
+
+
 def test_all_seven_scripts_use_sys_exit_in_main() -> None:
     """PR-P (Codex 01:21 Z approve): 7 script すべてが `if __name__ == "__main__":` で
     `sys.exit(...)` 経由で exit code を propagate していることを static check。
@@ -4348,6 +4386,8 @@ def main() -> int:
         test_observability_compute_rate_missing_helper,
         # PR-P (entry exit code propagation audit、Codex 01:21 approve): 1 件 (lint-style)
         test_all_seven_scripts_use_sys_exit_in_main,
+        # PR-Q (redaction.applied_rules canonicalize、Codex 01:30 approve): 1 件
+        test_observability_redaction_applied_rules_canonicalized,
         # PR-I (human stdout path leak audit、Codex 00:08 approve): 2 件 (1 feat + 1 fix iter voicevox summary redact)
         test_build_slide_data_human_stdout_path_redacted_by_default,
         test_voicevox_narration_summary_path_redacted_by_default,
