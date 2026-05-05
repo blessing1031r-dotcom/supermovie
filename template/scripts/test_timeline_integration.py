@@ -8475,57 +8475,83 @@ def test_observability_stdout_stderr_stream_contract_lint() -> None:
             f"table excerpt: {table!r}"
         )
 
-    # 7 v1 caller それぞれが 3 stream emission primitive を持つ
+    # 7 v1 caller それぞれが 3 stream emission primitive を持つ。
+    # Codex 07:34 review P2 fix: 旧 regex `[^)]*file\s*=` は引数内 `str(e)`
+    # 等の call で `)` が `file=` より前に出ると false-positive (file 付き
+    # print を file 無しと誤分類)、visual_smoke.py:316 等の現実 case で
+    # 誤検出。AST ベースの `ast.Call(func=Name('print'))` + keyword 'file'
+    # 検査に切替、引数 expression complexity に依存しない判定に変更。
+    import ast as _ast
+
     scripts_dir = Path(__file__).resolve().parent
-    # stdout (human): file= kwarg を持たない print(...)
-    # 簡易 regex: `print\(` で始まり `file=` を含まない call のうち、
-    # multi-line 対応で慎重にする。実用的には source 全体に file= 無しの
-    # `print(` が 1 件以上あれば OK。逆に file= 指定 print のみ存在する
-    # caller は human stream が空という drift を疑う。
-    stdout_human_re = re.compile(r"\bprint\(")
-    stdout_human_with_file_re = re.compile(r"\bprint\([^)]*file\s*=")
-    # stderr: print(file=...stderr) または ...stderr.write。
-    # caller によっては `import sys as _sys` で `file=_sys.stderr` 経由
-    # する (build_telop_data.py:354 で実例) ので、`<word>.stderr` /
-    # `<word>.stderr.write` を許容する正規表現に広げる。素の `stderr`
-    # (from sys import stderr) も match。
-    stderr_print_re = re.compile(
-        r"\bprint\([^)]*file\s*=\s*(?:\w+\.)?stderr\b"
-    )
-    stderr_write_re = re.compile(r"\b\w*\.?stderr\.write\b")
-    # json tail: _obs_emit_json または emit_json wrapper の呼び出し
+    # stderr: print(file=...stderr) または ...stderr.write。caller によって
+    # は `import sys as _sys` で `file=_sys.stderr` 経由する
+    # (build_telop_data.py:354) ので、AST で keyword 'file' の value を抽
+    # 出して `<name>.stderr` を含むか判定する形。
     json_tail_re = re.compile(r"\b(?:_obs_)?emit_json\(")
+
+    def _is_stderr_value(node: _ast.AST) -> bool:
+        """`<name>.stderr` / 素の `stderr` を AST で判定。"""
+        if isinstance(node, _ast.Attribute) and node.attr == "stderr":
+            return True
+        if isinstance(node, _ast.Name) and node.id == "stderr":
+            return True
+        return False
 
     for caller_name in V1_CALLER_SCRIPTS:
         path = scripts_dir / caller_name
         assert path.is_file(), f"caller missing: {path}"
         src = path.read_text(encoding="utf-8")
+        tree = _ast.parse(src, filename=caller_name)
 
-        # stdout (human): file= 無し `print(` が少なくとも 1 件
-        all_print = stdout_human_re.findall(src)
-        with_file_print = stdout_human_with_file_re.findall(src)
-        # all_print は file= 付きも含むので、(全 print) - (file= 付き) > 0
-        # で human stream presence を判定。
-        assert len(all_print) > len(with_file_print), (
+        print_calls_no_file: list[int] = []
+        print_calls_to_stderr: list[int] = []
+        stderr_write_calls: list[int] = []
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.Call):
+                continue
+            fn = node.func
+            # print(...) call detection
+            if isinstance(fn, _ast.Name) and fn.id == "print":
+                file_kw = next(
+                    (kw for kw in node.keywords if kw.arg == "file"), None,
+                )
+                if file_kw is None:
+                    print_calls_no_file.append(node.lineno)
+                elif _is_stderr_value(file_kw.value):
+                    print_calls_to_stderr.append(node.lineno)
+            # <name>.stderr.write(...) call detection
+            elif isinstance(fn, _ast.Attribute) and fn.attr == "write":
+                # fn.value が <name>.stderr 形式
+                if (
+                    isinstance(fn.value, _ast.Attribute)
+                    and fn.value.attr == "stderr"
+                ):
+                    stderr_write_calls.append(node.lineno)
+                elif isinstance(fn.value, _ast.Name) and fn.value.id == "stderr":
+                    stderr_write_calls.append(node.lineno)
+
+        # stdout (human): file= 無し `print(...)` が 1 件以上
+        assert print_calls_no_file, (
             f"{caller_name}: docs §Stdout And Stderr 'stdout (human)' に "
-            f"対応する file= なし `print(...)` が 0 件 (human stream が "
-            f"caller から消えた / 全 print が stderr に追放された drift?)"
+            f"対応する file= なし `print(...)` AST node が 0 件 (human "
+            f"stream が caller から消えた / 全 print が stderr に追放?)"
         )
 
-        # json tail: _obs_emit_json or emit_json call
+        # json tail: _obs_emit_json / emit_json call (regex のままで OK、
+        # call name は確実に literal text なので false-positive 余地小)
         assert json_tail_re.search(src), (
             f"{caller_name}: docs §Stdout And Stderr 'stdout (json tail)' "
             f"に対応する `_obs_emit_json(...)` / `emit_json(...)` 呼び出しが "
             f"見つからない (v1 schema tail emit 経路が caller から消えた?)"
         )
 
-        # stderr: print(file=sys.stderr) or sys.stderr.write
-        has_stderr_print = bool(stderr_print_re.search(src))
-        has_stderr_write = bool(stderr_write_re.search(src))
-        assert has_stderr_print or has_stderr_write, (
+        # stderr: print(..., file=<...>.stderr) または <...>.stderr.write
+        assert print_calls_to_stderr or stderr_write_calls, (
             f"{caller_name}: docs §Stdout And Stderr 'stderr' に対応する "
-            f"`print(..., file=sys.stderr)` または `sys.stderr.write(...)` "
-            f"が見つからない (error / warning が stderr 以外に流れる drift?)"
+            f"`print(..., file=<...>.stderr)` AST keyword または "
+            f"`<...>.stderr.write(...)` AST attribute call が "
+            f"見つからない (error / warning が stderr 以外に流れる drift?)"
         )
 
 
