@@ -7459,6 +7459,100 @@ def test_observability_build_status_counts_value_contract() -> None:
             )
 
 
+def test_observability_common_fields_docs_payload_key_lint() -> None:
+    """`docs/OBSERVABILITY.md §Common Fields` の JSON 例 top-level keys と
+    `build_status()` 出力 payload keys の双方向整合性 lint
+    (Codex 06:25 PR-BD verdict BQ、observability v1 schema docs↔code drift 防止)。
+
+    docs §Common Fields は v1 schema の正準 source として top-level field を
+    JSON code block で列挙している (schema_version / script / status / ok /
+    exit_code / category / duration_ms / counts / artifacts / cost / redaction /
+    run_id / parent_run_id / step_id の 14 件)。caller / consumer / 後続
+    refactor が片側だけ追加・削除すると、docs と payload の field set が
+    drift し downstream parser に missing key / unknown key を生む。
+
+    PR-W field order と相補で、本 lint は集合一致を保証:
+      - docs JSON block top-level keys (2-space indent で抽出)
+      - build_status(...) payload keys (全 optional field を populate)
+    両 set が完全一致しなければ fail (missing in payload / extra in payload を
+    msg に列挙)。
+
+    既存 PR-T STATUS_MAP static lint / PR-AV docs migration steps numbering
+    lint と同 level の docs/code 双方向 audit。
+    """
+    import re
+    from pathlib import Path
+
+    from _observability import build_status, build_cost_payload
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    assert obs_md.is_file(), (
+        f"docs/OBSERVABILITY.md must exist at {obs_md}"
+    )
+    md = obs_md.read_text(encoding="utf-8")
+
+    # `### Common Fields` section の JSON code block を抽出
+    section_re = re.compile(
+        r"^### Common Fields[^\n]*\n\s*\n```json\n(?P<body>.*?)```",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = section_re.search(md)
+    assert m is not None, (
+        "`### Common Fields` の JSON code block が docs に見つからない "
+        "(heading rename / fence 形式変更?)"
+    )
+    block = m.group("body")
+
+    # Top-level keys: 2-space indent 直下の `"key":` のみ抽出 (nested cost.* /
+    # redaction.* / artifacts[].* は除外)
+    docs_keys = set(
+        re.findall(r"^  \"(\w+)\"\s*:", block, re.MULTILINE)
+    )
+    assert docs_keys, (
+        "docs Common Fields JSON block から top-level key が 0 件 抽出された "
+        "(indent / 形式変更?)"
+    )
+
+    # build_status payload を全 optional field 付きで構築
+    cost_payload = build_cost_payload(
+        estimate=0.001, rate_input=3.0, rate_output=15.0,
+        tokens_input=100, tokens_output=200,
+    )
+    payload = build_status(
+        script="x", v0_status="success", exit_code=0,
+        counts={"x": 1},
+        artifacts=[{"path": "x.ts", "kind": "ts"}],
+        cost=cost_payload,
+        duration_ms=100,
+        redaction_rules=["abs_path"],
+        run_id="abcdef0123456789abcdef0123456789",
+        parent_run_id="ffffffff" * 4,
+        step_id="step-1",
+    )
+    payload_keys = set(payload.keys())
+
+    # 双方向 set diff
+    missing_in_payload = sorted(docs_keys - payload_keys)
+    extra_in_payload = sorted(payload_keys - docs_keys)
+    assert not missing_in_payload, (
+        f"docs §Common Fields に列挙された field が payload に欠落: "
+        f"{missing_in_payload}\n"
+        f"docs side か helper side のどちらかが drift。"
+    )
+    assert not extra_in_payload, (
+        f"payload に出ているが docs §Common Fields に未掲載の field: "
+        f"{extra_in_payload}\n"
+        f"docs に追記するか、helper を docs に合わせて削減。"
+    )
+
+    # 集合一致 (2 重 check、msg は上の 2 つで詳しく出るので最終は単純等価)
+    assert docs_keys == payload_keys, (
+        f"docs keys != payload keys (missing={missing_in_payload}, "
+        f"extra={extra_in_payload})"
+    )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -8625,6 +8719,7 @@ def main() -> int:
         test_observability_build_status_exit_code_consistency,
         test_observability_build_status_artifact_kind_enum_contract,
         test_observability_build_status_counts_value_contract,
+        test_observability_common_fields_docs_payload_key_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
