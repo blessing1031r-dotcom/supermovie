@@ -71,6 +71,9 @@ STATUS_MAP = {
     "ffprobe_failed": ("error", "ffprobe-failed"),
     "risks_not_allowed": ("error", "risks-not-allowed"),
     "format_inference_failed": ("error", "format-inference-failed"),
+    # build_slide_data / build_telop_data (PR-C、Codex 21:01 step 3 S3-5 user_content redaction)
+    "build_slide_ok": ("ok", "slide-build"),
+    "build_telop_ok": ("ok", "telop-build"),
 }
 
 

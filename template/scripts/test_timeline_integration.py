@@ -2488,6 +2488,8 @@ def test_observability_helper_status_map() -> None:
         # preflight_video (PR-B、Codex 21:01 step 3 S3-3 既存 stdout 維持 + tail v1)
         "preflight_ok", "input_not_found", "no_video_stream", "ffprobe_failed",
         "risks_not_allowed", "format_inference_failed",
+        # build_slide_data / build_telop_data (PR-C、Codex 21:01 step 3 S3-5 user_content redaction)
+        "build_slide_ok", "build_telop_ok",
     }
     missing = must_have - set(STATUS_MAP.keys())
     assert not missing, f"STATUS_MAP missing v0 statuses: {missing}"

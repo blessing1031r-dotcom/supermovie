@@ -25,11 +25,20 @@ import json
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 PROJ = Path(__file__).resolve().parent.parent
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Phase 3 obs migration step 3 PR-C (Codex 21:01 step 3 verdict S3-5):
+# build_telop_data の telop raw text を default redact、--unsafe-show-user-content で raw。
+from _observability import (  # noqa: E402
+    build_status,
+    emit_json as _obs_emit_json,
+    safe_artifact_path,
+    user_content_meta,
+)
 from timeline import (  # noqa: E402
     TranscriptSegmentError,
     VadSchemaError,
@@ -286,7 +295,16 @@ def ms_to_playback_frame(ms, cut_segments):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--baseline", action="store_true", help="BudouX を使わず Phase 1 旧ロジックで生成")
+    ap.add_argument("--json-log", action="store_true",
+                    help="末尾に summary を 1 行純 JSON として emit "
+                         "(downstream observability、既存 stdout は維持)")
+    ap.add_argument("--unsafe-show-user-content", action="store_true",
+                    help="telop raw text を stdout に raw で出す "
+                         "(default: length / sha256 only、debug 専用)")
+    ap.add_argument("--unsafe-keep-abs-path", action="store_true",
+                    help="json tail の artifact path を絶対 path のまま emit (debug 専用)")
     args = ap.parse_args()
+    start_time = time.monotonic()
 
     transcript = json.loads((PROJ / "transcript_fixed.json").read_text(encoding="utf-8"))
     vad = json.loads((PROJ / "vad_result.json").read_text(encoding="utf-8"))
@@ -443,14 +461,51 @@ def main():
     out_path = PROJ / "src" / "テロップテンプレート" / "telopData.ts"
     out_path.write_text("\n".join(ts_lines), encoding="utf-8")
 
-    print(f"=== telopData.ts 生成 ({'baseline' if args.baseline else 'BudouX'}) ===")
+    mode_label = "baseline" if args.baseline else "BudouX"
+    print(f"=== telopData.ts 生成 ({mode_label}) ===")
     print(f"path: {out_path}")
     print(f"telop count: {len(telop_segments)}")
     print(f"weaknesses: {len(weaknesses)}")
     print()
+    # Codex 21:01 step 3 S3-5 fix: default は telop raw を出さず length/hash で表示。
+    # --unsafe-show-user-content で raw (debug 用)。docs/OBSERVABILITY.md §Redaction Rules 整合。
     for t in telop_segments:
-        text_oneline = t["text"].replace("\n", "↵")
-        print(f"  [{t['id']:2}] f{t['startFrame']:5}-{t['endFrame']:5} '{text_oneline}'")
+        if args.unsafe_show_user_content:
+            text_oneline = t["text"].replace("\n", "↵")
+            text_repr = f"'{text_oneline}'"
+        else:
+            meta = user_content_meta(t["text"])
+            text_repr = f"<redacted len={meta['length']} sha256={meta['sha256']}>"
+        print(f"  [{t['id']:2}] f{t['startFrame']:5}-{t['endFrame']:5} {text_repr}")
+
+    # Phase 3 obs migration step 3 PR-C: v1 status JSON tail emit (--json-log 時のみ)
+    duration_ms = int((time.monotonic() - start_time) * 1000)
+    artifacts = [{
+        "path": safe_artifact_path(
+            out_path, project_root=PROJ,
+            unsafe_keep_abs_path=args.unsafe_keep_abs_path,
+        ),
+        "kind": "ts",
+    }]
+    redaction_rules = ["user_content"]
+    if not args.unsafe_keep_abs_path:
+        redaction_rules.append("abs_path")
+    payload = build_status(
+        script="build_telop_data",
+        v0_status="build_telop_ok",
+        exit_code=0,
+        counts={
+            "telop_count": len(telop_segments),
+            "weaknesses": len(weaknesses),
+        },
+        artifacts=artifacts,
+        cost=None,
+        duration_ms=duration_ms,
+        category_override="telop-build",
+        redaction_rules=redaction_rules,
+        mode=mode_label,
+    )
+    _obs_emit_json(args.json_log, payload)
 
 
 if __name__ == "__main__":

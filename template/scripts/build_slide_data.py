@@ -22,7 +22,18 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
+
+# Phase 3 obs migration step 3 PR-C (Codex 21:01 step 3 verdict S3-5):
+# build_slide_data の title/telop raw text を default redact、--unsafe-show-user-content で raw。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _observability import (  # noqa: E402
+    build_status,
+    emit_json as _obs_emit_json,
+    safe_artifact_path,
+    user_content_meta,
+)
 
 PROJ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -311,7 +322,16 @@ def main():
     ap.add_argument("--plan", help="optional slide_plan.json (LLM 生成)")
     ap.add_argument("--strict-plan", action="store_true",
                     help="--plan の validate 失敗時に exit 2 (default は warning + deterministic fallback)")
+    ap.add_argument("--json-log", action="store_true",
+                    help="末尾に summary を 1 行純 JSON として emit "
+                         "(downstream observability、既存 stdout は維持)")
+    ap.add_argument("--unsafe-show-user-content", action="store_true",
+                    help="title/bullets raw text を stdout に raw で出す "
+                         "(default: length / sha256 only、debug 専用)")
+    ap.add_argument("--unsafe-keep-abs-path", action="store_true",
+                    help="json tail の artifact path を絶対 path のまま emit (debug 専用)")
     args = ap.parse_args()
+    start_time = time.monotonic()
 
     transcript_path = PROJ / "transcript_fixed.json"
     config_path = PROJ / "project-config.json"
@@ -383,9 +403,47 @@ def main():
     print(f"path: {out_path}")
     print(f"input segments: {len(segments)}")
     print(f"output slides: {len(slides)}")
+    # Codex 21:01 step 3 S3-5 fix: default は title raw を出さず length/hash で表示。
+    # --unsafe-show-user-content で raw (debug 用)。docs/OBSERVABILITY.md §Redaction Rules 整合。
     for s in slides:
         bullets_count = len(s.get("bullets") or [])
-        print(f"  [{s['id']:2}] f{s['startFrame']:5}-{s['endFrame']:5} '{s['title']}' (bullets={bullets_count})")
+        title = s["title"]
+        if args.unsafe_show_user_content:
+            title_repr = f"'{title}'"
+        else:
+            meta = user_content_meta(title)
+            title_repr = f"<redacted len={meta['length']} sha256={meta['sha256']}>"
+        print(f"  [{s['id']:2}] f{s['startFrame']:5}-{s['endFrame']:5} {title_repr} (bullets={bullets_count})")
+
+    # Phase 3 obs migration step 3 PR-C: v1 status JSON tail emit (--json-log 時のみ)
+    duration_ms = int((time.monotonic() - start_time) * 1000)
+    artifacts = [{
+        "path": safe_artifact_path(
+            out_path, project_root=PROJ,
+            unsafe_keep_abs_path=args.unsafe_keep_abs_path,
+        ),
+        "kind": "ts",
+    }]
+    redaction_rules = ["user_content"]
+    if not args.unsafe_keep_abs_path:
+        redaction_rules.append("abs_path")
+    payload = build_status(
+        script="build_slide_data",
+        v0_status="build_slide_ok",
+        exit_code=0,
+        counts={
+            "input_segments": len(segments),
+            "output_slides": len(slides),
+            "used_plan": used_plan,
+        },
+        artifacts=artifacts,
+        cost=None,
+        duration_ms=duration_ms,
+        category_override="slide-build",
+        redaction_rules=redaction_rules,
+        mode=mode_label,
+    )
+    _obs_emit_json(args.json_log, payload)
 
 
 if __name__ == "__main__":
