@@ -721,6 +721,18 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
     # 矛盾 record を生む drift。helper 入口で fail-loud 化、PR-AC exit_code
     # int contract / PR-AP v0_status defensive lint と同 level の strict
     # contract 層。
+    # PR-BA fix iter (Codex 06:08 review P2): emit_json side は PR-AC で
+    # exit_code int (bool reject 含む) contract を持つが、build_status side
+    # は `==0 / !=0` 値検査だけで型は noop だった。`exit_code=True` (bool は
+    # int subclass + True == 1) や `exit_code="1"` (`!= 0` true) が整合性
+    # check を通過して payload に入る contract 穴。emit_json と同型の
+    # `not isinstance(int) or isinstance(bool)` reject で payload 構築前に
+    # fail-loud 化。
+    if isinstance(exit_code, bool) or not isinstance(exit_code, int):
+        raise TypeError(
+            f"build_status: exit_code must be int (not bool), got "
+            f"{type(exit_code).__name__} ({exit_code!r})"
+        )
     if v1_status == "error" and exit_code == 0:
         raise ValueError(
             f"build_status: v1_status='error' requires exit_code != 0 "

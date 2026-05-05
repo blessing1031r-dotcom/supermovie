@@ -7124,6 +7124,28 @@ def test_observability_build_status_exit_code_consistency() -> None:
                 f"v0_status={v0!r} (error) + exit_code=0 must raise ValueError"
             )
 
+    # ===== reject: exit_code 型違反 (Codex 06:08 review P2 fix) =====
+    # bool / str / float / None / list / dict → 型値判定で payload 構築前に
+    # fail-loud (emit_json PR-AC int contract と同型、build_status 側でも閉じる)
+    bad_exit_code_types = [
+        True, False,                # bool は int subclass で == 0/!=0 通過するが reject
+        "0", "1", "3",              # str numeric は != 0 真で error+0 check 不発
+        0.0, 1.0, 3.5,              # float は == 0/!=0 通過、payload schema 違反
+        None, [], [3], {"v": 3},
+    ]
+    for bad_ec in bad_exit_code_types:
+        try:
+            build_status(script="x", v0_status="success", exit_code=bad_ec)
+        except TypeError as e:
+            assert "exit_code" in str(e) and "int" in str(e), (
+                f"TypeError msg should mention exit_code + int, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"non-int exit_code={bad_ec!r} ({type(bad_ec).__name__}) "
+                f"must raise TypeError"
+            )
+
     # ===== reject: ok/skipped/dry_run + exit_code != 0 (各 1 + 1 unknown) =====
     # representative: success (ok), api_key_skipped (skipped), dry_run (dry_run)
     ok_path_samples = [
