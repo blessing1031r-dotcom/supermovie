@@ -62,6 +62,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _observability import (  # noqa: E402
     build_status,
     emit_json as _obs_emit_json,
+    redact_error_message,
     resolve_run_context,
     safe_artifact_path,
 )
@@ -312,7 +313,7 @@ def cli() -> int:
         out_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         print(f"ERROR: out_dir mkdir failed: {e}", file=sys.stderr)
-        return _emit_early("out_dir_mkdir_error", 3, error=str(e))
+        return _emit_early("out_dir_mkdir_error", 3, error=redact_error_message(str(e)))
 
     # 環境チェック (Codex Phase 3-G review P1 #1 反映、render 失敗を環境問題として早期検知)
     for tool in ("npx", "ffprobe", "ffmpeg"):
@@ -345,7 +346,7 @@ def cli() -> int:
         original = VIDEO_CONFIG.read_text(encoding="utf-8")
     except OSError as e:
         print(f"ERROR: videoConfig.ts read failed: {e}", file=sys.stderr)
-        return _emit_early("video_config_read_error", 3, error=str(e))
+        return _emit_early("video_config_read_error", 3, error=redact_error_message(str(e)))
 
     results: list[dict] = []
     stills: list[Path] = []
@@ -360,8 +361,16 @@ def cli() -> int:
                 patched = patch_format(original, fmt)
             except ValueError as e:
                 print(f"ERROR: {e}", file=sys.stderr)
-                return _emit_early("usage_error_patch_format", 4, error=str(e))
-            VIDEO_CONFIG.write_text(patched, encoding="utf-8")
+                return _emit_early("usage_error_patch_format", 4,
+                                   error=redact_error_message(str(e)))
+            # PR-G: videoConfig.ts patch write failure (PermissionError 等) を tail emit。
+            # finally で original に restore された後、loop 終了 → 末尾 env_error path を経由して emit。
+            try:
+                VIDEO_CONFIG.write_text(patched, encoding="utf-8")
+            except OSError as e:
+                print(f"ERROR: videoConfig.ts patch write failed: {e}", file=sys.stderr)
+                env_error = "video_config_write_error"
+                break
             print(f"\n[smoke] format={fmt} に切替て still を出力します")
             for frame in frames:
                 png = out_dir / f"smoke_{fmt}_f{frame:04d}.png"
@@ -408,8 +417,14 @@ def cli() -> int:
                     f"actual={w}x{h}"
                 )
     finally:
-        VIDEO_CONFIG.write_text(original, encoding="utf-8")
-        print(f"\n[smoke] videoConfig.ts を原本に restore しました")
+        # PR-G: restore failure は env_error に積んで通常 emit path に流す
+        # (finally 内で raise すると emit 経路を素通りしてしまう)
+        try:
+            VIDEO_CONFIG.write_text(original, encoding="utf-8")
+            print(f"\n[smoke] videoConfig.ts を原本に restore しました")
+        except OSError as e:
+            print(f"ERROR: videoConfig.ts restore failed: {e}", file=sys.stderr)
+            env_error = env_error or "video_config_restore_error"
 
     grid_status = "skipped"
     grid_error: str | None = None
@@ -428,22 +443,27 @@ def cli() -> int:
             grid_error = str(e)
 
     summary_path = out_dir / "summary.json"
-    summary_path.write_text(
-        json.dumps(
-            {
-                "formats": formats,
-                "frames": frames,
-                "results": results,
-                "mismatched": mismatched,
-                "total": len(results),
-                "env_error": env_error,
-                "grid": {"status": grid_status, "error": grid_error},
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    # PR-G: summary.json write failure (full-disk / read-only mount 等) を tail emit。
+    try:
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "formats": formats,
+                    "frames": frames,
+                    "results": results,
+                    "mismatched": mismatched,
+                    "total": len(results),
+                    "env_error": env_error,
+                    "grid": {"status": grid_status, "error": grid_error},
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    except OSError as e:
+        print(f"ERROR: summary.json write failed: {e}", file=sys.stderr)
+        return _emit_early("summary_write_error", 3, error=redact_error_message(str(e)))
     print(f"\nsummary: {summary_path}")
     print(f"  total={len(results)}, mismatched={mismatched}, env_error={env_error}, grid={grid_status}")
 

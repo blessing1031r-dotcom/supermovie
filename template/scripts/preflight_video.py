@@ -303,6 +303,7 @@ def main():
     from _observability import (
         build_status,
         emit_json as _obs_emit_json,
+        redact_error_message,
         resolve_run_context,
         safe_artifact_path,
     )
@@ -409,7 +410,8 @@ def main():
                 cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError) as e:
                 print(f"ERROR: existing write-config parse failed: {e}", file=sys.stderr)
-                sys.exit(_emit("write_config_parse_error", 3, error=str(e)))
+                sys.exit(_emit("write_config_parse_error", 3,
+                               error=redact_error_message(str(e))))
         else:
             cfg = {}
         cfg.setdefault("source", {})
@@ -424,7 +426,8 @@ def main():
             cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError as e:
             print(f"ERROR: write-config write failed: {e}", file=sys.stderr)
-            sys.exit(_emit("write_config_write_error", 3, error=str(e)))
+            sys.exit(_emit("write_config_write_error", 3,
+                           error=redact_error_message(str(e))))
         print(f"\nwrote: {cfg_path}", file=sys.stderr)
 
     if unhandled:

@@ -12,6 +12,7 @@ Design:
 import hashlib
 import json
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -80,6 +81,9 @@ STATUS_MAP = {
     # visual_smoke early IO failure paths (PR-G error path tail audit)
     "out_dir_mkdir_error": ("error", "out-dir-mkdir-error"),
     "video_config_read_error": ("error", "video-config-read-error"),
+    "video_config_write_error": ("error", "env-failure"),
+    "video_config_restore_error": ("error", "env-failure"),
+    "summary_write_error": ("error", "summary-write-error"),
     "env_video_config_missing": ("error", "env-failure"),
     "usage_error_frames_invalid": ("error", "usage-error"),
     # preflight_video (PR-B、Codex 21:01 step 3 S3-3、category_override="preflight-source-meta")
@@ -133,6 +137,33 @@ def _lexical_redact(s, home):
     if s.startswith("/"):
         return f"<ABS>/{Path(s).name}"
     return s
+
+
+_ABS_PATH_RE = re.compile(r"(?<![A-Za-z0-9_])(/[A-Za-z0-9._/\-]+)")
+
+
+def redact_error_message(msg):
+    """Error message 文字列内の絶対 path token を `_lexical_redact` で安全化する。
+
+    PR-G review P1 #2 (Codex 23:25): error=str(e) で abs_path が tail JSON に raw 漏れする
+    contract 違反を防ぐため、regex で `/...` 風の token を抽出し `<HOME>` / `<TMP>` / `<ABS>`
+    placeholder に置換する。引用符 (`'/foo'` / `"/foo"`) や直前文字 (`:`、`=`) があっても
+    動作するよう、char-class で前後 boundary を判定する。
+
+    注: `/dev/null` のような short path や relative `./foo` は redact 対象外 (URL や device
+    pseudofile を破壊しないため)。長さ最低 2 component 以上を redact 対象にする。
+    """
+    if not isinstance(msg, str):
+        return msg
+    home = str(Path.home())
+
+    def _sub(m):
+        path = m.group(1)
+        # `/dev/null` 等の system pseudofile は短く、_lexical_redact で <ABS>/null に化けるが
+        # それで困らない。component 1 個 (= '/foo') は path 風文字列として redact する。
+        return _lexical_redact(path, home)
+
+    return _ABS_PATH_RE.sub(_sub, msg)
 
 
 def safe_artifact_path(path, *, project_root=None, repo_root=None, unsafe_keep_abs_path=False):
