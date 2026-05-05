@@ -8788,6 +8788,141 @@ def test_observability_path_policy_placeholder_set_docs_code_lint() -> None:
     )
 
 
+def test_observability_rate_env_var_convention_docs_code_lint() -> None:
+    """`docs/OBSERVABILITY.md §Rate Env Var Convention` ↔ caller の
+    `SUPERMOVIE_RATE_*` env name 双方向整合性 lint
+    (Codex 08:09 PR-BO verdict CB、PR-BD/BE/BF/BH/BI/BJ/BK/BL/BM/BN 同型を
+    Rate Env Var Convention に展開)。
+
+    docs §Rate Env Var Convention は cost rate env name の canonical pattern
+    を定義: v1 `SUPERMOVIE_RATE_<PROVIDER>_<DIRECTION>_USD_PER_MTOK` (例
+    `SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK`) + v0 alias
+    `SUPERMOVIE_RATE_INPUT_PER_MTOK` / `SUPERMOVIE_RATE_OUTPUT_PER_MTOK`
+    (Anthropic 専用 backward compat)。code 側 `generate_slide_plan.py` は
+    `_resolve_decimal()` で 4 env (Anthropic v1 input/output + v0 alias 2 件)
+    を参照。
+
+    docs と code が drift すると、(a) caller が docs 規約外 env name を使い
+    orchestrator が rate set できず estimate=null に fallback、(b) v0 alias
+    が docs 宣言される一方 caller 削除で backward compat 喪失、(c) 新 provider
+    追加で命名規約と矛盾、等。
+
+    本 lint:
+      1. docs §Rate Env Var Convention section に v1 canonical pattern
+         literal + v0 alias 2 件の docs presence assert
+      2. `generate_slide_plan.py` AST から `SUPERMOVIE_RATE_*` 形式 string
+         literal を抽出
+      3. 各 caller env name が v1 canonical pattern (regex match) または
+         v0 alias set (explicit literal match) のいずれかに該当する forward
+         direction caller→docs convention assert
+      4. docs v0 alias が caller で実際に使われていることを assert (backward
+         compat 維持)
+      5. caller の Anthropic v1 input/output 両方が存在することを assert
+         (asymmetric drift 防止)
+
+    PR-BD/BE/BF/BH/BI/BJ/BK/BL/BM/BN 同 level の docs/code 双方向 audit、本
+    lint は rate env naming convention という別 axis を fix。
+    """
+    import ast as _ast_re
+    import re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    md = obs_md.read_text(encoding="utf-8")
+
+    # `### Rate Env Var Convention` section 抽出
+    section_re = re.compile(
+        r"^### Rate Env Var Convention[^\n]*\n(?P<body>.*?)"
+        r"(?=^## |^### )",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = section_re.search(md)
+    assert m is not None, (
+        "`### Rate Env Var Convention` の section が docs に見つからない "
+        "(heading rename / 構造変更?)"
+    )
+    body = m.group("body")
+
+    # docs 側 canonical pattern presence
+    V1_CANONICAL_PATTERN_LITERAL = (
+        "SUPERMOVIE_RATE_<PROVIDER>_<DIRECTION>_USD_PER_MTOK"
+    )
+    assert V1_CANONICAL_PATTERN_LITERAL in body, (
+        f"docs §Rate Env Var Convention に v1 canonical pattern literal "
+        f"'{V1_CANONICAL_PATTERN_LITERAL}' が見つからない "
+        f"(canonical 命名規約の docs spec drift?)"
+    )
+
+    # docs 側 explicit v0 alias names
+    V0_ALIAS_NAMES = {
+        "SUPERMOVIE_RATE_INPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+    }
+    for alias in V0_ALIAS_NAMES:
+        assert alias in body, (
+            f"docs §Rate Env Var Convention に v0 alias '{alias}' が "
+            f"見つからない (backward compat alias の docs 削除?)"
+        )
+
+    # caller 側: generate_slide_plan.py AST から SUPERMOVIE_RATE_* 形式
+    # 完全一致 string literal を抽出
+    gsp_path = (
+        repo_root / "template" / "scripts" / "generate_slide_plan.py"
+    )
+    gsp_src = gsp_path.read_text(encoding="utf-8")
+    gsp_tree = _ast_re.parse(gsp_src, filename="generate_slide_plan.py")
+    env_name_re = re.compile(r"^SUPERMOVIE_RATE_[A-Z_]+$")
+    caller_envs: set[str] = set()
+    for node in _ast_re.walk(gsp_tree):
+        if (
+            isinstance(node, _ast_re.Constant)
+            and isinstance(node.value, str)
+            and env_name_re.match(node.value)
+        ):
+            caller_envs.add(node.value)
+    assert caller_envs, (
+        "generate_slide_plan.py AST から SUPERMOVIE_RATE_* env literal が "
+        "0 件 抽出 (caller 側 rate env 参照削除?)"
+    )
+
+    # forward direction: 各 caller env name は v1 canonical pattern または
+    # v0 alias set のいずれかに該当
+    V1_REGEX = re.compile(
+        r"^SUPERMOVIE_RATE_[A-Z]+_[A-Z]+_USD_PER_MTOK$"
+    )
+    for env in sorted(caller_envs):
+        is_v1 = bool(V1_REGEX.match(env))
+        is_v0_alias = env in V0_ALIAS_NAMES
+        assert is_v1 or is_v0_alias, (
+            f"caller env '{env}' が docs §Rate Env Var Convention の "
+            f"v1 canonical pattern '{V1_CANONICAL_PATTERN_LITERAL}' にも "
+            f"v0 alias set {sorted(V0_ALIAS_NAMES)} にも該当しない "
+            f"(命名規約違反 / docs spec drift?)"
+        )
+
+    # backward compat: v0 alias が caller で実際に使われていることを assert
+    missing_v0_in_caller = sorted(V0_ALIAS_NAMES - caller_envs)
+    assert not missing_v0_in_caller, (
+        f"docs §Rate Env Var Convention で backward compat alias として "
+        f"宣言された v0 env が caller で参照されていない: "
+        f"{missing_v0_in_caller}\n"
+        f"caller 側 rate alias 削除 / docs alias 削除し忘れ?"
+    )
+
+    # caller 側 Anthropic v1 pair (input + output) 両方存在
+    EXPECTED_ANTHROPIC_V1 = {
+        "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
+    }
+    missing_anthropic_v1 = sorted(EXPECTED_ANTHROPIC_V1 - caller_envs)
+    assert not missing_anthropic_v1, (
+        f"caller (generate_slide_plan.py) で Anthropic v1 canonical env が "
+        f"片方欠落: {missing_anthropic_v1}\n"
+        f"input/output rate の片方向 fallback 状態 (asymmetric drift)?"
+    )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -9958,6 +10093,7 @@ def main() -> int:
         test_observability_stdout_stderr_stream_contract_lint,
         test_observability_user_content_policy_docs_meta_key_lint,
         test_observability_path_policy_placeholder_set_docs_code_lint,
+        test_observability_rate_env_var_convention_docs_code_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
