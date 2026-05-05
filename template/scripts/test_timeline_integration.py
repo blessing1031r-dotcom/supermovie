@@ -3749,6 +3749,104 @@ def test_observability_build_cost_payload_nan_inf_defense() -> None:
     assert p_bad_type["rate_missing"] is True
 
 
+def test_observability_emit_json_exit_code_int_contract() -> None:
+    """`emit_json()` の `payload['exit_code']` int 限定 contract を lock-in
+    (Codex 03:01 PR-AC verdict AO、observability v1 schema drift 防止)。
+
+    `exit_code` は v1 schema の core 字段で、shell rc + downstream consumer
+    が int を前提にする。旧実装 `int(payload.get("exit_code", 0))` は:
+
+      - str "2" → 2 (silent coerce)
+      - float 1.5 → 1 (silent truncate)
+      - bool True → 1 (silent、bool は int subclass)
+      - str "abc" → uncaught ValueError
+      - None → uncaught TypeError
+
+    の weak coercion で schema drift を silent に通していた。新 contract は
+    int (bool 除く) のみ受理、それ以外は explicit TypeError で fail-loud、
+    payload 構築側の責務として固定する。missing key の場合は default 0 を
+    維持 (既存 helper 慣習)。
+    """
+    import io
+    from contextlib import redirect_stdout
+
+    from _observability import emit_json
+
+    # (1) 正常 int は通る (shell rc に伝搬)
+    for ec in (0, 2, 10, -1):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = emit_json(False, {"status": "ok", "exit_code": ec})
+        assert rc == ec, f"int exit_code={ec} must round-trip, got {rc}"
+
+    # (2) missing key は default 0 (既存 helper 慣習を保持)
+    rc_default = emit_json(False, {"status": "ok"})
+    assert rc_default == 0, f"missing exit_code must default to 0, got {rc_default}"
+
+    # (3) bool (int subclass) は明示 reject
+    for bad_bool in (True, False):
+        try:
+            emit_json(False, {"status": "ok", "exit_code": bad_bool})
+        except TypeError as e:
+            assert "exit_code" in str(e) and "int" in str(e), (
+                f"TypeError msg should mention exit_code + int, got {e!r}"
+            )
+        else:
+            raise AssertionError(f"bool exit_code={bad_bool} must raise TypeError")
+
+    # (4) str (numeric or non-numeric) は reject (silent coerce 防止)
+    for bad_str in ("2", "abc", "", "1.5", "10"):
+        try:
+            emit_json(False, {"status": "ok", "exit_code": bad_str})
+        except TypeError:
+            pass
+        else:
+            raise AssertionError(
+                f"str exit_code={bad_str!r} must raise TypeError"
+            )
+
+    # (5) float は reject (silent truncate 防止)
+    for bad_float in (1.5, 0.0, 2.0, -3.5):
+        try:
+            emit_json(False, {"status": "ok", "exit_code": bad_float})
+        except TypeError:
+            pass
+        else:
+            raise AssertionError(
+                f"float exit_code={bad_float} must raise TypeError"
+            )
+
+    # (6) None は reject (旧実装の uncaught TypeError → 明示 TypeError に統一)
+    try:
+        emit_json(False, {"status": "ok", "exit_code": None})
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("None exit_code must raise TypeError")
+
+    # (7) その他 (list / dict / object) も reject
+    for bad_other in ([], [1], {}, object()):
+        try:
+            emit_json(False, {"status": "ok", "exit_code": bad_other})
+        except TypeError:
+            pass
+        else:
+            raise AssertionError(
+                f"non-int exit_code={bad_other!r} must raise TypeError"
+            )
+
+    # (8) reject 経路で stdout に何も書かれていない (type check は print より前)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        try:
+            emit_json(True, {"status": "error", "exit_code": "2"})
+        except TypeError:
+            pass
+    assert buf.getvalue() == "", (
+        f"emit_json must reject before printing, got stdout={buf.getvalue()!r}"
+    )
+
+
 def test_observability_resolve_run_context_uses_env() -> None:
     """env (SUPERMOVIE_RUN_ID / PARENT_RUN_ID / STEP_ID) 設定値をそのまま採用する。"""
     import os as _os
@@ -5339,6 +5437,7 @@ def main() -> int:
         test_observability_emit_json_disabled_no_print,
         test_observability_emit_json_format_lint,
         test_observability_emit_json_stderr_clean,
+        test_observability_emit_json_exit_code_int_contract,
         test_observability_build_cost_payload_nan_inf_defense,
         # PR-E (distributed tracing run_id active emission): 7 件
         test_observability_resolve_run_context_uses_env,

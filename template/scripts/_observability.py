@@ -520,10 +520,25 @@ def emit_json(enabled, payload):
     Returns exit_code from payload for chained `return emit_json(...)` pattern.
     print() is used (not sys.stdout.write) to keep newline + flush behavior identical
     to existing v0 emit sites.
+
+    PR-AC (Codex 03:01 verdict AO) defense: `payload["exit_code"]` は v1 schema
+    の core 字段で int 限定 contract。旧実装 `int(payload.get("exit_code", 0))`
+    は str "2" / float 1.5 / bool True を silent coerce、None / "abc" で
+    uncaught TypeError/ValueError を投げる weak 動作で、schema drift の
+    silent 通過 + caller の責務曖昧化を起こしていた。新実装は missing 時の
+    default 0 はそのまま、type mismatch (bool / str / float / None / その他) を
+    explicit TypeError で fail-loud、payload 構築側の責務として固定する。
     """
+    exit_code = payload.get("exit_code", 0)
+    # bool は int subclass なので isinstance(v, int) を通り抜けるため先に reject
+    if isinstance(exit_code, bool) or not isinstance(exit_code, int):
+        raise TypeError(
+            f"emit_json: payload['exit_code'] must be int (not bool), "
+            f"got {type(exit_code).__name__} ({exit_code!r})"
+        )
     if enabled:
         print(json.dumps(payload, ensure_ascii=False))
-    return int(payload.get("exit_code", 0))
+    return exit_code
 
 
 class TraceContextError(ValueError):
