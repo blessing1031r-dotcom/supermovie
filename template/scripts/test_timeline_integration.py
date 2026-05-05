@@ -2716,42 +2716,51 @@ def test_observability_status_map_lint() -> None:
         )
 
     # (4) duplicate key 検出: dict literal は silent overwrite なので
-    # _observability.py を AST parse して dict literal の key node を集計
+    # _observability.py を AST parse して dict literal の key node を集計。
+    # Codex 02:05 PR-T review P2 fix: first-match break だと後続の同名
+    # assign を見落とすので、module 全体から STATUS_MAP assignment を
+    # 全列挙し「ちょうど 1 件」を assert してから lint 実行 (Python
+    # runtime は最後の binding を使うので、複数 assign は contract
+    # ambiguity として lint レイヤーで reject する)。
     obs_path = SCRIPTS / "_observability.py"
     tree = ast.parse(obs_path.read_text(encoding="utf-8"))
-    found = False
-    for node in ast.walk(tree):
-        if not (isinstance(node, ast.Assign) and len(node.targets) == 1):
-            continue
-        target = node.targets[0]
-        if not (isinstance(target, ast.Name) and target.id == "STATUS_MAP"):
-            continue
-        assert isinstance(node.value, ast.Dict), (
-            "STATUS_MAP must be a dict literal (lint 前提)"
+    status_map_assigns = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "STATUS_MAP"
+    ]
+    assert len(status_map_assigns) == 1, (
+        f"STATUS_MAP must have exactly one module-level assignment, "
+        f"found {len(status_map_assigns)} at lines "
+        f"{[n.lineno for n in status_map_assigns]}"
+    )
+    assign_node = status_map_assigns[0]
+    assert isinstance(assign_node.value, ast.Dict), (
+        "STATUS_MAP must be a dict literal (lint 前提)"
+    )
+    literal_keys: list[str] = []
+    for key_node in assign_node.value.keys:
+        assert isinstance(key_node, ast.Constant) and isinstance(
+            key_node.value, str
+        ), (
+            f"STATUS_MAP key must be a literal str, "
+            f"got {ast.dump(key_node) if key_node else 'None (dict-unpack)'}"
         )
-        literal_keys: list[str] = []
-        for key_node in node.value.keys:
-            assert isinstance(key_node, ast.Constant) and isinstance(
-                key_node.value, str
-            ), (
-                f"STATUS_MAP key must be a literal str, "
-                f"got {ast.dump(key_node) if key_node else 'None (dict-unpack)'}"
-            )
-            literal_keys.append(key_node.value)
-        duplicates = sorted({k for k in literal_keys if literal_keys.count(k) > 1})
-        assert not duplicates, (
-            f"STATUS_MAP has duplicate keys (dict literal silent overwrite): "
-            f"{duplicates}"
-        )
-        # AST literal key 数 = runtime dict key 数 でもあるべき
-        # (overwrite が起きていれば dict は短くなる)
-        assert len(literal_keys) == len(STATUS_MAP), (
-            f"STATUS_MAP literal has {len(literal_keys)} keys but dict has "
-            f"{len(STATUS_MAP)} (silent overwrite suspected)"
-        )
-        found = True
-        break
-    assert found, "STATUS_MAP assignment not found in _observability.py"
+        literal_keys.append(key_node.value)
+    duplicates = sorted({k for k in literal_keys if literal_keys.count(k) > 1})
+    assert not duplicates, (
+        f"STATUS_MAP has duplicate keys (dict literal silent overwrite): "
+        f"{duplicates}"
+    )
+    # AST literal key 数 = runtime dict key 数 でもあるべき
+    # (overwrite が起きていれば dict は短くなる)
+    assert len(literal_keys) == len(STATUS_MAP), (
+        f"STATUS_MAP literal has {len(literal_keys)} keys but dict has "
+        f"{len(STATUS_MAP)} (silent overwrite suspected)"
+    )
 
 
 def test_observability_safe_artifact_path_redacts() -> None:
