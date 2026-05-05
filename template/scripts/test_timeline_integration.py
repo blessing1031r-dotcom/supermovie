@@ -3947,6 +3947,93 @@ def test_observability_build_status_redaction_rules_strict() -> None:
             )
 
 
+def test_observability_build_status_reserved_key_collision() -> None:
+    """`build_status()` が **extras 経由の reserved key 同名 override を全て
+    filter する invariant を全 reserved key に対して lock-in
+    (Codex 03:14 PR-AE verdict AS、observability v1 contract drift 防止)。
+
+    PR-W (`test_observability_build_status_top_level_field_order` case 5) で
+    `status` 1 件のみ被覆していたが、build_status の `reserved =
+    set(payload.keys())` ガードの効果は他 reserved key にも及ぶべき contract。
+
+    signature kwargs (script / v0_status / exit_code / counts / artifacts /
+    cost / redaction_rules / duration_ms / category_override / run_id /
+    parent_run_id / step_id) は Python の routing で **extras に流れない
+    ため、本 test の対象は **extras に流せる non-signature reserved key:
+      - schema_version
+      - status
+      - ok
+      - category
+      - redaction
+
+    の 5 件全て。各 key を単独で extras に injection した場合 + 5 件まとめて
+    injection した場合に reserved 値が勝ち、injected 値が payload に出ないこと
+    を assert。injection されなかった unrelated extras key (foo / model 等) は
+    通常通り passthrough されることも併せて確認。
+    """
+    from _observability import build_status
+
+    non_sig_reserved = ["schema_version", "status", "ok", "category", "redaction"]
+
+    # (1) 各 reserved key を単独 extras injection、reserved 値が勝つ
+    for key in non_sig_reserved:
+        injected = {key: f"INJECTED_{key}"}
+        p = build_status(script="x", v0_status="success", exit_code=0,
+                         **injected)
+        assert p[key] != f"INJECTED_{key}", (
+            f"extras key {key!r} leaked into payload: {p[key]!r}"
+        )
+        # reserved 値が helper の正規 value で残る
+        if key == "schema_version":
+            assert p[key] == 1
+        elif key == "status":
+            assert p[key] == "ok"
+        elif key == "ok":
+            assert p[key] is True
+        elif key == "category":
+            assert p[key] is None  # success → ("ok", None)
+        elif key == "redaction":
+            assert isinstance(p[key], dict)
+            assert p[key]["version"] == 1
+            assert p[key]["applied_rules"] == []
+
+    # (2) 5 件まとめて injection、全 reserved 値が勝つ
+    all_inject = {k: f"INJECTED_{k}" for k in non_sig_reserved}
+    p_all = build_status(script="x", v0_status="success", exit_code=0,
+                         **all_inject)
+    for key in non_sig_reserved:
+        assert p_all[key] != f"INJECTED_{key}", (
+            f"all-inject case: extras key {key!r} leaked: {p_all[key]!r}"
+        )
+    # injected key は payload に出ない (extras filter 効いている)
+    for key in non_sig_reserved:
+        assert key in p_all, f"reserved key {key!r} missing from payload"
+
+    # (3) injection されなかった unrelated extras (foo / model 等) は passthrough
+    p_extra = build_status(script="x", v0_status="success", exit_code=0,
+                           **{**all_inject, "foo": "bar", "model": "claude-3"})
+    assert p_extra.get("foo") == "bar", (
+        f"unrelated extras key 'foo' must pass through, got {p_extra.get('foo')!r}"
+    )
+    assert p_extra.get("model") == "claude-3", (
+        f"unrelated extras key 'model' must pass through, "
+        f"got {p_extra.get('model')!r}"
+    )
+    # reserved key は injected 値ではない
+    for key in non_sig_reserved:
+        assert p_extra[key] != f"INJECTED_{key}"
+
+    # (4) 既存 PR-W test 5 を逆方向から validate: payload key の最終順序で
+    # injected reserved 値が登場しない
+    keys_with_inject = list(p_all.keys())
+    for key in non_sig_reserved:
+        idx = keys_with_inject.index(key)
+        # reserved key 位置は injected 値ではなく helper 構築の原 value
+        assert p_all[key] != f"INJECTED_{key}", (
+            f"position {idx} key {key!r} leaked"
+        )
+
+
 def test_observability_resolve_run_context_uses_env() -> None:
     """env (SUPERMOVIE_RUN_ID / PARENT_RUN_ID / STEP_ID) 設定値をそのまま採用する。"""
     import os as _os
@@ -5539,6 +5626,7 @@ def main() -> int:
         test_observability_emit_json_stderr_clean,
         test_observability_emit_json_exit_code_int_contract,
         test_observability_build_status_redaction_rules_strict,
+        test_observability_build_status_reserved_key_collision,
         test_observability_build_cost_payload_nan_inf_defense,
         # PR-E (distributed tracing run_id active emission): 7 件
         test_observability_resolve_run_context_uses_env,
