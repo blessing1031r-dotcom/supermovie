@@ -20,6 +20,21 @@ from pathlib import Path
 SCHEMA_VERSION = 1
 REDACTION_VERSION = 1
 
+# PR-BB (Codex 06:11 verdict BO) artifact kind enum。
+# docs/OBSERVABILITY.md §Common Fields の `kind: json|wav|ts|png|...` を
+# canonical set として固定。既存 caller (build_slide_data:460 / build_telop_data:516 /
+# compare_telop_split:230,238 ts、preflight_video:343 / visual_smoke:494 json、
+# visual_smoke:503 png) の現行 kind を全 cover、将来 audio/video/binary 追加時は
+# 本 set を更新して単一 source of truth で運用する。
+ARTIFACT_KIND_ENUM = frozenset({
+    "ts",     # TypeScript / data file (telopData.ts / slideData.ts / cutData.ts 等)
+    "json",   # JSON config / report (project-config.json / summary.json 等)
+    "wav",    # audio waveform (narration.wav 等)
+    "png",    # image still / thumbnail (visual smoke frame, generated infographic)
+    "mp3",    # audio compressed (BGM 等、将来用)
+    "mp4",    # video render (out/video.mp4 等、将来用)
+})
+
 # Trace context (run_id active emission, PR-E、Codex 22:40 next priority verdict)。
 # `SUPERMOVIE_RUN_ID` 未設定時は uuid4().hex (32 char) を auto-generate、parent / step は env のみ
 # (None default、関係性情報なので auto-generate しない)。
@@ -685,6 +700,46 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
                 raise TypeError(
                     f"build_status: artifacts[{i}] must be dict, got "
                     f"{type(item).__name__} ({item!r})"
+                )
+            # PR-BB (Codex 06:11 verdict BO) defense: artifacts[i].kind は
+            # downstream consumer (release dashboard / asset audit / artifact
+            # bucket aggregator) が file format で集計する root key で、
+            # docs/OBSERVABILITY.md §Common Fields は `kind: json|wav|ts|png|...`
+            # と enum-style で例示している。旧実装は dict 内 key 存在 / 値型を
+            # 検査せず、artifact={"path": "x.ts"} (kind 欠落) や {"kind": ""} /
+            # {"kind": "TYPESCRIPT"} (UPPERCASE) / {"kind": 5} (int) を silent
+            # payload 通過、aggregator key drift を起こす drift。本 contract で
+            # path / kind の必須性 + 値型 + enum membership を fail-loud 化、
+            # 既存 caller (build_slide_data:460 / build_telop_data:516 / compare_telop_split:230,238 ts、
+            # preflight_video:343 / visual_smoke:494 json、visual_smoke:503 png)
+            # の現行 kind を全 cover、将来追加 (mp3/mp4 等) は本 enum を拡張する
+            # 形でこの invariant ごと register。PR-AK artifacts list-of-dict /
+            # PR-AN STATUS_MAP category format invariant と同 level。
+            if "path" not in item:
+                raise ValueError(
+                    f"build_status: artifacts[{i}] missing required 'path' "
+                    f"key, got {item!r}"
+                )
+            if not isinstance(item["path"], str) or not item["path"]:
+                raise TypeError(
+                    f"build_status: artifacts[{i}].path must be non-empty "
+                    f"str, got {type(item['path']).__name__} "
+                    f"({item['path']!r})"
+                )
+            if "kind" not in item:
+                raise ValueError(
+                    f"build_status: artifacts[{i}] missing required 'kind' "
+                    f"key, got {item!r}"
+                )
+            if not isinstance(item["kind"], str):
+                raise TypeError(
+                    f"build_status: artifacts[{i}].kind must be str, got "
+                    f"{type(item['kind']).__name__} ({item['kind']!r})"
+                )
+            if item["kind"] not in ARTIFACT_KIND_ENUM:
+                raise ValueError(
+                    f"build_status: artifacts[{i}].kind must be one of "
+                    f"{sorted(ARTIFACT_KIND_ENUM)}, got {item['kind']!r}"
                 )
     v1_status, v1_category = map_status(v0_status)
     # PR-AT (Codex 04:56 verdict BE) defense: category_override は

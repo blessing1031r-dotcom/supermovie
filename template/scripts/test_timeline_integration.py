@@ -4509,9 +4509,11 @@ def test_observability_build_status_counts_artifacts_strict() -> None:
                        artifacts=None)
     assert pa1["artifacts"] == []
 
-    # (2b) 通常 list-of-dict → そのまま
-    arts = [{"path": "x.json", "kind": "output"},
-            {"path": "y.json", "kind": "report"}]
+    # (2b) 通常 list-of-dict → そのまま (PR-BB で kind が ARTIFACT_KIND_ENUM
+    # 制約化されたため、固有 caller-used kind に変更: 旧 "output"/"report" →
+    # "json"/"ts" の現行 enum 値)
+    arts = [{"path": "x.json", "kind": "json"},
+            {"path": "y.ts", "kind": "ts"}]
     pa2 = build_status(script="x", v0_status="success", exit_code=0,
                        artifacts=arts)
     assert pa2["artifacts"] == arts
@@ -4542,11 +4544,16 @@ def test_observability_build_status_counts_artifacts_strict() -> None:
                 f"non-list artifacts={bad_arts!r} must raise TypeError"
             )
 
-    # (2f) list 内 non-dict entry reject (混在も含む)
+    # (2f) list 内 non-dict entry reject (混在も含む)。PR-BB で artifact dict
+    # 内 path/kind 必須化されたため、non-dict entry は list 内 head に置いて
+    # 「list 内に非 dict entry」の dict-shape contract が先発火するように
+    # 並べ替える (旧 test は path-only dict を valid 想定だったが、PR-BB で
+    # それは valid から外れるので head が非 dict のケースで判定)。
     bad_artifact_lists = [
         ["str_only"],
-        [{"path": "ok.json"}, "str_in_middle", {"path": "ok2.json"}],
-        [{"a": 1}, 5],
+        ["str_in_middle", {"path": "ok.json", "kind": "json"},
+         {"path": "ok2.json", "kind": "json"}],
+        [5, {"path": "ok.json", "kind": "json"}],
         [None],
         [[]],
     ]
@@ -7176,6 +7183,148 @@ def test_observability_build_status_exit_code_consistency() -> None:
                 )
 
 
+def test_observability_build_status_artifact_kind_enum_contract() -> None:
+    """`build_status()` の artifacts[i].kind 文字列 enum contract lock-in
+    (Codex 06:11 PR-BB verdict BO、observability v1 artifact aggregator drift 防止)。
+
+    docs/OBSERVABILITY.md §Common Fields は `kind: json|wav|ts|png|...` を
+    enum-style で例示しており、downstream consumer (release dashboard /
+    asset audit / artifact bucket aggregator) が file format で集計する root
+    key として扱う。旧実装は dict 内 key 存在 / 値型を検査せず、
+    `{"path": "x.ts"}` (kind 欠落) や `{"kind": ""}` / `{"kind": "TYPESCRIPT"}`
+    (UPPERCASE) / `{"kind": 5}` (int) を silent payload 通過、aggregator key
+    drift を起こす。
+
+    新 contract:
+      - `path` key 必須 (ValueError on missing)、値は非空 str (TypeError)
+      - `kind` key 必須 (ValueError on missing)、値は str (TypeError)
+      - `kind` ∈ ARTIFACT_KIND_ENUM = {ts, json, wav, png, mp3, mp4} (ValueError
+        on unknown literal)
+
+    既存 caller (build_slide_data:460 / build_telop_data:516 /
+    compare_telop_split:230,238 ts、preflight_video:343 / visual_smoke:494
+    json、visual_smoke:503 png) は全 cover、将来 audio/video/binary 追加時は
+    本 enum を更新する単一 source of truth で運用。
+
+    既存 PR-AK artifacts list-of-dict / PR-AN STATUS_MAP category format
+    invariant と同 level の strict contract 層。
+    """
+    from _observability import (
+        ARTIFACT_KIND_ENUM,
+        build_status,
+    )
+
+    # ===== ARTIFACT_KIND_ENUM 自体の sanity =====
+    assert isinstance(ARTIFACT_KIND_ENUM, frozenset), (
+        f"ARTIFACT_KIND_ENUM must be frozenset, got "
+        f"{type(ARTIFACT_KIND_ENUM).__name__}"
+    )
+    # 既存 caller-used kind が全部 enum に入っていること
+    caller_used_kinds = {"ts", "json", "png"}  # 5 caller の現行使用
+    assert caller_used_kinds <= ARTIFACT_KIND_ENUM, (
+        f"caller-used kinds {caller_used_kinds!r} must be subset of "
+        f"ARTIFACT_KIND_ENUM {sorted(ARTIFACT_KIND_ENUM)}"
+    )
+
+    # ===== accept: enum 全 entry =====
+    for kind in sorted(ARTIFACT_KIND_ENUM):
+        p = build_status(
+            script="x", v0_status="success", exit_code=0,
+            artifacts=[{"path": f"sample.{kind}", "kind": kind}],
+        )
+        assert p["artifacts"][0]["kind"] == kind
+
+    # ===== accept: 複数 artifact 各 valid kind =====
+    multi = [
+        {"path": "a.ts", "kind": "ts"},
+        {"path": "b.json", "kind": "json"},
+        {"path": "c.png", "kind": "png"},
+    ]
+    p_multi = build_status(
+        script="x", v0_status="success", exit_code=0,
+        artifacts=multi,
+    )
+    assert p_multi["artifacts"] == multi
+
+    # ===== reject: kind 欠落 =====
+    try:
+        build_status(
+            script="x", v0_status="success", exit_code=0,
+            artifacts=[{"path": "x.ts"}],
+        )
+    except ValueError as e:
+        assert "kind" in str(e) and "missing" in str(e), (
+            f"ValueError msg should mention kind + missing, got {e!r}"
+        )
+    else:
+        raise AssertionError("artifact missing kind must raise ValueError")
+
+    # ===== reject: path 欠落 =====
+    try:
+        build_status(
+            script="x", v0_status="success", exit_code=0,
+            artifacts=[{"kind": "ts"}],
+        )
+    except ValueError as e:
+        assert "path" in str(e) and "missing" in str(e), (
+            f"ValueError msg should mention path + missing, got {e!r}"
+        )
+    else:
+        raise AssertionError("artifact missing path must raise ValueError")
+
+    # ===== reject: kind 値型違反 (非 str) =====
+    for bad_kind in (None, 5, 1.5, True, False, [], {"k": "v"}, ()):
+        try:
+            build_status(
+                script="x", v0_status="success", exit_code=0,
+                artifacts=[{"path": "x.ts", "kind": bad_kind}],
+            )
+        except TypeError as e:
+            assert "kind" in str(e) and "str" in str(e), (
+                f"TypeError msg should mention kind + str, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"non-str kind={bad_kind!r} must raise TypeError"
+            )
+
+    # ===== reject: kind str だが enum 外 =====
+    bad_unknown_kinds = [
+        "", "TS", "TypeScript", "txt", "yaml", "binary",
+        "JSON", "Json", " ts", "ts ", "ts/2", "kind",
+    ]
+    for bad_kind in bad_unknown_kinds:
+        try:
+            build_status(
+                script="x", v0_status="success", exit_code=0,
+                artifacts=[{"path": "x.unknown", "kind": bad_kind}],
+            )
+        except ValueError as e:
+            assert "kind" in str(e) and "one of" in str(e), (
+                f"ValueError msg should mention kind + one of, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"unknown kind={bad_kind!r} must raise ValueError"
+            )
+
+    # ===== reject: path 値型違反 / 空文字 =====
+    for bad_path in (None, 5, 1.5, True, [], "", {}):
+        try:
+            build_status(
+                script="x", v0_status="success", exit_code=0,
+                artifacts=[{"path": bad_path, "kind": "ts"}],
+            )
+        except TypeError as e:
+            assert "path" in str(e), (
+                f"TypeError msg should mention path, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"bad path={bad_path!r} must raise TypeError"
+            )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -8340,6 +8489,7 @@ def main() -> int:
         test_voicevox_narration_v1_schema_emit_conformance,
         test_observability_status_map_caller_usage_lint,
         test_observability_build_status_exit_code_consistency,
+        test_observability_build_status_artifact_kind_enum_contract,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
