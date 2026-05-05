@@ -11,6 +11,7 @@ Design:
 """
 import hashlib
 import json
+import math
 import os
 import re
 import uuid
@@ -303,21 +304,47 @@ def redact_provider_body(body, *, unsafe_dump=False, max_preview=80):
     return {"kind": "summary", "type": type(body).__name__}
 
 
+def _coerce_finite_or_none(v):
+    """Return v if it's a finite real number, else None。
+
+    PR-AA (Codex 02:46 verdict AM) defense: NaN / Inf / -Inf / 非数値型を
+    None に正規化することで cost payload に non-finite を漏らさず、
+    json.dumps 既定の non-standard `NaN` / `Infinity` token 出力 +
+    json.dumps(allow_nan=False) 突発 ValueError を回避する。None 入力は
+    そのまま None 通過 (rate 未設定時の通常経路を壊さない)。
+    """
+    if v is None:
+        return None
+    try:
+        if isinstance(v, bool):
+            # bool は int subclass なので isfinite True、ただし currency 数値
+            # としては不適切 → None 扱い
+            return None
+        if math.isfinite(v):
+            return v
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
 def compute_rate_missing(estimate):
     """Cost rate_missing discriminator helper (PR-O、Codex 01:12)。
 
-    `estimated_cost_usd_upper_bound is None ⇔ rate_missing=true` の判定式を
-    一箇所に集約。caller (generate_slide_plan の dry-run legacy JSON / v1 tail /
-    cost_guard_aborted) で同式を重複していた分散を削減、`docs/OBSERVABILITY.md`
-    §Cost JSON Shape の `rate_missing` discriminator 算出ルールの single source of truth。
+    `estimate is None ⇔ rate_missing=true` の判定式を一箇所に集約 (PR-O)。
+    PR-AA (Codex 02:46 verdict AM) 拡張: NaN / Inf も rate_missing 扱いに
+    する。caller の rate guard (generate_slide_plan argparse type=...) を
+    すり抜けて非 finite が helper まで届いた場合に、json output / downstream
+    consumer の double-counting / NaN 算術伝播 を防ぐ defense-in-depth layer。
 
     Args:
-      estimate: float (rate 設定済) | None (rate 未設定で estimate 算出不能)
+      estimate: float (rate 設定済 finite) | None | NaN | Inf | -Inf
 
     Returns:
-      bool: True iff estimate is None (rate_missing).
+      bool: True iff estimate is None or non-finite (rate_missing).
     """
-    return estimate is None
+    if estimate is None:
+        return True
+    return _coerce_finite_or_none(estimate) is None
 
 
 def build_cost_payload(estimate, rate_input, rate_output, *,
@@ -331,9 +358,16 @@ def build_cost_payload(estimate, rate_input, rate_output, *,
     本 helper で nested form を emission に追加、downstream parser が nested cost.* で
     consume できるよう migrate (top-level extras は backward compat で残す)。
 
+    PR-AA (Codex 02:46 verdict AM) defense: estimate / rate_input / rate_output に
+    NaN / Inf / -Inf / 非数値が混入した場合、None に正規化して payload に出す。
+    結果として `rate_missing=True` も維持され、`json.dumps` が non-standard token
+    (`NaN` / `Infinity`) を出力する経路を完全 closure。CLI / env 側の rate guard
+    (math.isfinite + ValueError reject) が efficient だが、helper を独立 caller
+    から呼ぶ場合や CLI guard をすり抜ける将来 path への defense-in-depth。
+
     Args:
-      estimate: float | None。rate 未設定時は None、cost.estimate にそのまま load。
-      rate_input / rate_output: float | None。MTok 単価。
+      estimate: float | None。rate 未設定時は None。NaN / Inf は None 正規化。
+      rate_input / rate_output: float | None。MTok 単価。NaN / Inf は None 正規化。
       currency: str default "USD"。
       tokens_input / tokens_output: int | None。実 API 呼び出し前は None。
       rate_source: str。env var convention の placeholder。
@@ -342,6 +376,9 @@ def build_cost_payload(estimate, rate_input, rate_output, *,
       dict: nested cost object per Cost JSON Shape contract。`rate_missing` は
       `compute_rate_missing(estimate)` で算出 (single source of truth)。
     """
+    estimate = _coerce_finite_or_none(estimate)
+    rate_input = _coerce_finite_or_none(rate_input)
+    rate_output = _coerce_finite_or_none(rate_output)
     return {
         "currency": currency,
         "estimate": estimate,

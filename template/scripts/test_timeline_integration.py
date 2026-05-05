@@ -3584,6 +3584,97 @@ def test_observability_emit_json_stderr_clean() -> None:
             )
 
 
+def test_observability_build_cost_payload_nan_inf_defense() -> None:
+    """`build_cost_payload()` が NaN / Inf / -Inf rate を None 正規化し、
+    `rate_missing=True` 維持 + JSON pollution (`NaN` / `Infinity` token)
+    を防ぐ contract lock-in (Codex 02:46 PR-AA verdict AM)。
+
+    CLI / env 経路は `math.isfinite` + ValueError reject で early guard
+    済み (`generate_slide_plan.py` argparse type)、ただし helper を独立
+    caller から呼ぶ場合や CLI guard をすり抜ける将来 path への
+    defense-in-depth layer。
+
+    `compute_rate_missing(estimate)` は PR-O で `estimate is None` 判定の
+    single source of truth、PR-AA で NaN / Inf も rate_missing=True に
+    拡張。`build_cost_payload` 内で estimate / rate_input / rate_output を
+    `_coerce_finite_or_none` 経由で正規化、payload に non-finite を
+    入れないことで `json.dumps(allow_nan=False)` でも fail しない契約。
+    """
+    import json as _json
+
+    from _observability import build_cost_payload, compute_rate_missing
+
+    nan = float("nan")
+    inf = float("inf")
+    ninf = float("-inf")
+
+    # (1) estimate=NaN / Inf / -Inf → estimate normalized to None +
+    # rate_missing=True、JSON strict (allow_nan=False) でも fail しない
+    for bad_estimate in (nan, inf, ninf):
+        p = build_cost_payload(bad_estimate, 1.5, 3.0)
+        assert p["estimate"] is None, (
+            f"non-finite estimate {bad_estimate!r} must be normalized to None, "
+            f"got {p['estimate']!r}"
+        )
+        assert p["rate_missing"] is True, (
+            f"non-finite estimate must mark rate_missing=True, got {p}"
+        )
+        _json.dumps(p, allow_nan=False)  # raises ValueError if non-finite leaked
+
+    # (2) rate_input=NaN → rate_input normalized to None
+    p_ri = build_cost_payload(0.001, nan, 3.0)
+    assert p_ri["rate_input_usd_per_mtok"] is None, (
+        f"non-finite rate_input must be normalized to None, got "
+        f"{p_ri['rate_input_usd_per_mtok']!r}"
+    )
+    # estimate は finite なので rate_missing は False のまま
+    assert p_ri["rate_missing"] is False, (
+        f"finite estimate + non-finite rate_input: rate_missing should track "
+        f"estimate (False), got {p_ri['rate_missing']}"
+    )
+    _json.dumps(p_ri, allow_nan=False)
+
+    # (3) rate_output=Inf → rate_output normalized to None
+    p_ro = build_cost_payload(0.001, 1.5, inf)
+    assert p_ro["rate_output_usd_per_mtok"] is None, (
+        f"non-finite rate_output must be normalized to None, got "
+        f"{p_ro['rate_output_usd_per_mtok']!r}"
+    )
+    _json.dumps(p_ro, allow_nan=False)
+
+    # (4) 全 finite で通常経路は壊れていない (regression guard)
+    p_ok = build_cost_payload(0.001, 1.5, 3.0)
+    assert p_ok["estimate"] == 0.001
+    assert p_ok["rate_input_usd_per_mtok"] == 1.5
+    assert p_ok["rate_output_usd_per_mtok"] == 3.0
+    assert p_ok["rate_missing"] is False
+    _json.dumps(p_ok, allow_nan=False)
+
+    # (5) 全 None で通常経路 (rate 未設定 path) は壊れていない
+    p_none = build_cost_payload(None, None, None)
+    assert p_none["estimate"] is None
+    assert p_none["rate_input_usd_per_mtok"] is None
+    assert p_none["rate_output_usd_per_mtok"] is None
+    assert p_none["rate_missing"] is True
+
+    # (6) compute_rate_missing 直接呼び出しでも NaN / Inf を rate_missing=True
+    assert compute_rate_missing(nan) is True
+    assert compute_rate_missing(inf) is True
+    assert compute_rate_missing(ninf) is True
+    assert compute_rate_missing(None) is True
+    assert compute_rate_missing(0.001) is False
+    # boundary: 0 は finite なので rate_missing=False (estimate=0 は技術的に有効)
+    assert compute_rate_missing(0) is False, (
+        "estimate=0 (zero cost) is finite; rate_missing must be False"
+    )
+
+    # (7) 非数値型 (str) も None 正規化されて rate_missing=True
+    # (caller 側で type 違いを通した場合の defense)
+    p_bad_type = build_cost_payload("not_a_number", 1.5, 3.0)
+    assert p_bad_type["estimate"] is None
+    assert p_bad_type["rate_missing"] is True
+
+
 def test_observability_resolve_run_context_uses_env() -> None:
     """env (SUPERMOVIE_RUN_ID / PARENT_RUN_ID / STEP_ID) 設定値をそのまま採用する。"""
     import os as _os
@@ -5173,6 +5264,7 @@ def main() -> int:
         test_observability_emit_json_disabled_no_print,
         test_observability_emit_json_format_lint,
         test_observability_emit_json_stderr_clean,
+        test_observability_build_cost_payload_nan_inf_defense,
         # PR-E (distributed tracing run_id active emission): 7 件
         test_observability_resolve_run_context_uses_env,
         test_observability_resolve_run_context_generates_when_missing,
