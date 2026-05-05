@@ -8065,13 +8065,28 @@ def test_observability_trace_context_docs_code_lint() -> None:
         f"(missing_in_code={missing_in_code}, extra_in_code={extra_in_code})"
     )
 
-    # cap 値整合性: docs `MAX_TRACE_CONTEXT_VALUE_LEN = 128` 文言と code 値
+    # cap 値整合性: docs `MAX_TRACE_CONTEXT_VALUE_LEN = 128` 文言と code 値。
+    # Codex 07:08 review P2 fix: 旧実装は md 全体 search で migration 履歴 row
+    # の `MAX_TRACE_CONTEXT_VALUE_LEN = 128` 文字列に match していた。canonical
+    # な Trace Context section cap 行が消えても履歴文字列で silent pass する
+    # drift。抽出範囲を `## Trace Context Convention` heading から次 `## ` 直前
+    # までに限定して、canonical cap 行が消失したら fail-loud に。
+    trace_section_re = re.compile(
+        r"^## Trace Context Convention[^\n]*\n(?P<body>.*?)(?=^## )",
+        re.MULTILINE | re.DOTALL,
+    )
+    trace_m = trace_section_re.search(md)
+    assert trace_m is not None, (
+        "`## Trace Context Convention` section heading が docs に見つからない"
+    )
+    trace_body = trace_m.group("body")
     cap_match = re.search(
-        r"`MAX_TRACE_CONTEXT_VALUE_LEN\s*=\s*(\d+)`", md
+        r"`MAX_TRACE_CONTEXT_VALUE_LEN\s*=\s*(\d+)`", trace_body
     )
     assert cap_match is not None, (
-        "docs に `MAX_TRACE_CONTEXT_VALUE_LEN = N` 表記が見つからない "
-        "(cap 仕様の docs 変更?)"
+        "docs §Trace Context Convention 内に "
+        "`MAX_TRACE_CONTEXT_VALUE_LEN = N` の canonical cap 行が見つからない "
+        "(cap 仕様の docs 変更 / 行削除?)"
     )
     docs_cap = int(cap_match.group(1))
     assert docs_cap == MAX_TRACE_CONTEXT_VALUE_LEN, (
@@ -8099,10 +8114,17 @@ def test_observability_trace_context_docs_code_lint() -> None:
             (line for line in table.splitlines() if env in line), None,
         )
         assert row is not None, f"docs から {env} の行が消えた"
-        assert "auto-generate しない" in row or "null" in row, (
-            f"docs §env precedence で {env} 行に "
-            f"'auto-generate しない' / 'null' fallback 仕様が残っているはず: "
+        # Codex 07:08 review P2 fix: 旧 OR 判定は片側だけ消えても他方残存で
+        # silent pass、auto-generate 禁止文言だけ消える drift を見逃した。
+        # AND で両方の spec word 残存を必須化。
+        assert "auto-generate しない" in row, (
+            f"docs §env precedence で {env} 行から 'auto-generate しない' "
+            f"spec が消えた (auto-generate 禁止仕様が runtime と drift): "
             f"{row!r}"
+        )
+        assert "null" in row, (
+            f"docs §env precedence で {env} 行から 'null' fallback spec が "
+            f"消えた (未設定時 None 返却仕様が runtime と drift): {row!r}"
         )
 
 
