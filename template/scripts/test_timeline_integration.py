@@ -7835,6 +7835,119 @@ def test_observability_build_cost_payload_currency_tokens_value_contract() -> No
             )
 
 
+def test_observability_script_coverage_matrix_docs_code_lint() -> None:
+    """`docs/OBSERVABILITY.md §Script Coverage Matrix` ↔ code 7 v1-migrated
+    caller set の双方向整合性 lint
+    (Codex 06:51 PR-BH verdict BX、PR-BD/BE/BF docs/code 双方向同型を
+    Script Coverage Matrix に展開)。
+
+    docs §Script Coverage Matrix は v1 migration 対象 7 script を明記、
+    `_observability.py` (helper) と `timeline.py` (library 性質で対象外) を
+    明示的に区別する。code 側は PR-AZ STATUS_MAP caller usage lint の
+    `caller_scripts` list と PR-AW/AX/AY caller conformance test 群が同じ
+    7 script set を canonical source として使う。
+
+    docs と code が drift すると:
+      - 新 script が追加された時、片側だけ追記して migration 半端
+      - script が改名された時、片側だけ修正して 7 set 不一致
+      - timeline.py 等の対象外 script が誤って migration 対象に分類される
+
+    本 lint は docs §Script Coverage Matrix から `*.py` backtick name を
+    抽出し、`_observability.py` と `timeline.py` を明示的に exclude
+    (helper / 対象外として section 内に登場するが migration 対象外)、
+    残った 7 script set を code canonical 7 set と双方向 set diff で
+    完全一致 assert。
+
+    PR-BD §Common Fields key / PR-BE §Cost JSON Shape key / PR-BF §Status
+    Naming value と同 level の docs/code 双方向 audit、本 lint は v1 schema
+    coverage 対象 script set という別 axis を fix。
+    """
+    import re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    assert obs_md.is_file(), (
+        f"docs/OBSERVABILITY.md must exist at {obs_md}"
+    )
+    md = obs_md.read_text(encoding="utf-8")
+
+    # `### Script Coverage Matrix` heading 直後 ～ 次の `^## ` または
+    # `^### ` の直前まで section を抽出
+    section_re = re.compile(
+        r"^### Script Coverage Matrix[^\n]*\n\s*\n(?P<body>.*?)(?=^## |^### )",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = section_re.search(md)
+    assert m is not None, (
+        "`### Script Coverage Matrix` の section が docs に見つからない "
+        "(heading rename / 構造変更?)"
+    )
+    body = m.group("body")
+
+    # backtick *.py name を抽出
+    all_py_names = re.findall(r"`([\w/]+\.py)`", body)
+    assert all_py_names, (
+        "Script Coverage Matrix から *.py name が 0 件 抽出 (backtick / 形式変更?)"
+    )
+
+    # docs 内で helper / 対象外と明示される script を exclude
+    # - `_observability.py`: helper module (migration 対象ではなく helper 提供側)
+    # - `timeline.py`: library 性質で migration 対象外と docs 自身が明記
+    EXCLUDED = {"_observability.py", "timeline.py"}
+    docs_v1_set = {name for name in all_py_names if name not in EXCLUDED}
+    assert docs_v1_set, (
+        "exclude 後 docs v1 script set が空 (helper/library 以外の script "
+        "が listing されていない可能性)"
+    )
+
+    # code canonical: 7 v1 caller (PR-AZ caller usage lint と同 set)
+    code_v1_set = {
+        "build_slide_data.py",
+        "build_telop_data.py",
+        "preflight_video.py",
+        "compare_telop_split.py",
+        "visual_smoke.py",
+        "generate_slide_plan.py",
+        "voicevox_narration.py",
+    }
+    assert len(code_v1_set) == 7, (
+        f"code canonical v1 set must be exactly 7 scripts, got {code_v1_set}"
+    )
+
+    # 双方向 set diff
+    missing_in_code = sorted(docs_v1_set - code_v1_set)
+    extra_in_code = sorted(code_v1_set - docs_v1_set)
+    assert not missing_in_code, (
+        f"docs §Script Coverage Matrix に列挙された v1 script が code "
+        f"canonical set に存在しない: {missing_in_code}\n"
+        f"docs に新 script 追記後 code canonical / caller_scripts 更新漏れ?"
+    )
+    assert not extra_in_code, (
+        f"code canonical v1 set に存在するが docs §Script Coverage Matrix "
+        f"に未掲載: {extra_in_code}\n"
+        f"v1 migration 完了 script の docs 追記漏れ?"
+    )
+
+    # 集合一致 (2 重 check)
+    assert docs_v1_set == code_v1_set, (
+        f"docs Script Coverage Matrix != code v1 set "
+        f"(missing_in_code={missing_in_code}, extra_in_code={extra_in_code})"
+    )
+
+    # docs に書かれた "**7 script**" 数値も整合 (assertion 補強、count typo 検出)
+    seven_match = re.search(r"\*\*(\d+)\s*script\*\*", body)
+    assert seven_match is not None, (
+        "Script Coverage Matrix の '**N script**' bold marker が見つからない "
+        "(docs 表現変更?)"
+    )
+    docs_claimed_count = int(seven_match.group(1))
+    assert docs_claimed_count == len(docs_v1_set), (
+        f"docs claims **{docs_claimed_count} script** but enumerates "
+        f"{len(docs_v1_set)} v1 scripts: {sorted(docs_v1_set)}"
+    )
+
+
 def test_observability_docs_migration_steps_numbering() -> None:
     """`docs/OBSERVABILITY.md §Migration steps` の step 番号 contract lint
     (Codex 05:11 PR-AV verdict BC、observability migration 履歴 docs drift 防止)。
@@ -9005,6 +9118,7 @@ def main() -> int:
         test_observability_cost_json_shape_docs_payload_key_lint,
         test_observability_status_naming_docs_status_map_value_lint,
         test_observability_build_cost_payload_currency_tokens_value_contract,
+        test_observability_script_coverage_matrix_docs_code_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
