@@ -218,7 +218,7 @@ artifact `path` field は repo root or project root からの **相対 path** �
 | 1 | `template/scripts/_observability.py` helper 新規追加 (status mapping + redaction rule + safe_artifact_path 実装) | PR #3 (987c3d0) |
 | 2 | `generate_slide_plan.py` / `voicevox_narration.py` を helper 経由 refactor、abs_path 漏れ + chunk text redaction 適用 | PR #3 (987c3d0) |
 | 3 | 残 5 script (`compare_telop_split.py` / `visual_smoke.py` (PR-A) / `preflight_video.py` (PR-B) / `build_slide_data.py` / `build_telop_data.py` (PR-C)) を v1 化。`timeline.py` は library 性質で対象外 (Codex 21:01 step 3 S3-2) | PR-A (4) / PR-B (5) / PR-C (6) |
-| 4 | `test_timeline_integration.py` に redaction + status v1 schema regression test 9 件追加 (sensitive class 4 種の json tail raw 漏れ防止、build_status duration_ms / category_override、provider body stderr default redact 等) | PR #3 + PR-A/B/C |
+| 4 | `test_timeline_integration.py` に redaction + status v1 schema regression test 9 件追加 (abs_path / user_content / provider_response_body の raw 漏れ防止、build_status duration_ms / category_override、provider body stderr default redact 等。`secret` class の last-4 mask 専用 test は現状未実装、契約のみ doc 保持) | PR #3 + PR-A/B/C |
 | 5 | rate env v0 → v1 alias 実装 (Anthropic 限定後方互換) | PR-D (本 PR) |
 
 ## Test Requirements

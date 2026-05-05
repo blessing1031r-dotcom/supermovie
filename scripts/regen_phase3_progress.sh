@@ -21,7 +21,7 @@
 #     「git log BASE..source の実 count」の差が 0 or 1 なら OK、それ以上で fail
 #
 # 制約:
-#   - 現 branch が roku/phase3j-timeline (or 後続) であること前提
+#   - 現 branch を `git rev-parse --abbrev-ref HEAD` で動的取得、Phase 3-J 系 + 後続 PR (obs-* / 他) 対応
 #   - 手動編集 section (Branch chain / Phase 別 deliverable / Codex review 履歴 /
 #     未着手 / 残候補) は touch しない
 set -euo pipefail
@@ -81,8 +81,10 @@ COMMITS_FILE=$(mktemp)
 git log "${BASE_BRANCH}..${SOURCE_REF}" --oneline > "$COMMITS_FILE"
 COMMIT_COUNT="$ACTUAL_COUNT"
 NOW=$(date +%Y-%m-%d_%H:%M)
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
-python3 - "$PROGRESS_MD" "$COMMITS_FILE" "$COMMIT_COUNT" "$NOW" "$SOURCE_REF" <<'EOF'
+python3 - "$PROGRESS_MD" "$COMMITS_FILE" "$COMMIT_COUNT" "$NOW" "$SOURCE_REF" "$CURRENT_BRANCH" <<'EOF'
+import re
 import sys
 from pathlib import Path
 
@@ -91,11 +93,19 @@ commits_path = Path(sys.argv[2])
 count = sys.argv[3]
 now = sys.argv[4]
 source_ref = sys.argv[5]
+current_branch = sys.argv[6]
 
 content = progress_path.read_text(encoding="utf-8")
 commits = commits_path.read_text(encoding="utf-8").rstrip("\n")
 
-new_section = f"""## 全 commit count (roku/phase3j-timeline branch、最新 {count} 件)
+# Update HEAD label in branch chain (└─ <branch> (HEAD))
+content = re.sub(
+    r"└─ [^\s(]+ \(HEAD\)",
+    f"└─ {current_branch} (HEAD)",
+    content,
+)
+
+new_section = f"""## 全 commit count ({current_branch} branch、最新 {count} 件)
 
 ```
 {commits}
@@ -108,7 +118,6 @@ docs commit を作る前の HEAD を反映する設計 (off-by-one は intrinsic
 
 """
 
-import re
 pattern = re.compile(r"## 全 commit count.*?(?=^## )", re.DOTALL | re.MULTILINE)
 if not pattern.search(content):
     pattern = re.compile(r"## 全 commit count.*\Z", re.DOTALL)
