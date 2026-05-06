@@ -16067,6 +16067,46 @@ def test_telop_template_components_subtitle_data_contract_lint() -> None:
     )
 
 
+def test_telop_template_components_canonical_imports_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    telop_dirs = ("メインテロップ", "強調テロップ", "ネガティブテロップ")
+    checked = 0
+    errors: list[str] = []
+    for dir_name in telop_dirs:
+        dir_path = template_root / "src" / dir_name
+        if not dir_path.is_dir():
+            errors.append(f"template/src/{dir_name}: directory not found")
+            continue
+        for tsx_file in sorted(dir_path.glob("*.tsx")):
+            checked += 1
+            rel = tsx_file.relative_to(template_root)
+            raw = tsx_file.read_text(encoding="utf-8")
+            text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+            text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+            if not re.search(r"""import\s+React\s+from\s*['"]react['"]\s*;""", text):
+                errors.append(f"{rel}: missing React default import from react")
+            remotion_import = re.search(
+                r"""import\s*\{(?P<body>[^}]*)\}\s*from\s*['"]remotion['"]""",
+                text,
+                re.DOTALL,
+            )
+            if remotion_import is None:
+                errors.append(f"{rel}: missing named import from remotion")
+                continue
+            body = remotion_import.group("body")
+            for sym in ("AbsoluteFill", "useCurrentFrame", "interpolate", "Easing"):
+                if not re.search(rf"\b{sym}\b", body):
+                    errors.append(f"{rel}: {sym} not imported from remotion")
+    if checked != 30:
+        errors.append(f"expected 30 telop template components, checked {checked}")
+    assert errors == [], (
+        "telop template component canonical import contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_sequence_components_are_data_driven_from_local_arrays() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -18157,6 +18197,7 @@ def main() -> int:
         test_telop_template_registry_type_surface_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
+        test_telop_template_components_canonical_imports_contract_lint,
         # PR-CO (sequence components are data-driven from local arrays lint): 1 件
         test_sequence_components_are_data_driven_from_local_arrays,
         # PR-CP (TelopPlayer bridges telopData to registry templates lint): 1 件
