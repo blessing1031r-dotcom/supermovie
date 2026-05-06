@@ -17896,6 +17896,129 @@ def test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema
     )
 
 
+def test_supermovie_transcript_fix_output_schema_docs_match_claude_transcript_contract_lint() -> None:
+    """PR-JL: supermovie-transcript-fix output docs must match CLAUDE transcript contract."""
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    transcript_fix_skill_path = repo_root / "skills" / "supermovie-transcript-fix" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    assert transcript_fix_skill_path.is_file(), "skills/supermovie-transcript-fix/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+
+    skill_text = transcript_fix_skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    fixed_schema_match = re.search(
+        r"\*\*transcript_fixed\.json\*\*[^\n]*\n```json\n([\s\S]*?)\n```",
+        skill_text,
+    )
+    corrections_schema_match = re.search(
+        r"\*\*transcript_corrections\.json\*\*[^\n]*\n```json\n([\s\S]*?)\n```",
+        skill_text,
+    )
+    claude_schema_match = re.search(
+        r"### transcript\.json / transcript_fixed\.json\s*```json\n([\s\S]*?)\n```",
+        claude_text,
+    )
+    assert fixed_schema_match is not None, "supermovie-transcript-fix transcript_fixed.json schema block not found"
+    assert corrections_schema_match is not None, "supermovie-transcript-fix transcript_corrections.json schema block not found"
+    assert claude_schema_match is not None, "CLAUDE.md transcript.json / transcript_fixed.json schema block not found"
+
+    fixed_schema = json.loads(fixed_schema_match.group(1))
+    corrections_schema = json.loads(corrections_schema_match.group(1))
+    claude_schema = json.loads(claude_schema_match.group(1))
+    expected_common_top_keys = ["engine", "model", "language", "duration_ms", "text", "words", "segments"]
+    expected_fixed_top_keys = expected_common_top_keys + ["fix_meta"]
+    expected_word_keys = ["text", "start", "end", "confidence"]
+    expected_segment_keys = ["text", "start", "end"]
+    expected_fix_meta_keys = [
+        "original_file",
+        "total_corrections",
+        "dict_corrections",
+        "llm_corrections",
+        "fillers_removed",
+        "fillers_kept",
+    ]
+    errors: list[str] = []
+
+    if list(fixed_schema.keys()) != expected_fixed_top_keys:
+        errors.append(
+            f"supermovie-transcript-fix transcript_fixed.json top-level keys drift: "
+            f"expected {expected_fixed_top_keys}, got {list(fixed_schema.keys())}"
+        )
+    if [key for key in fixed_schema if key != "fix_meta"] != expected_common_top_keys:
+        errors.append("transcript_fixed.json common keys must match CLAUDE transcript schema before fix_meta")
+    if list(claude_schema.keys()) != expected_common_top_keys:
+        errors.append(
+            f"CLAUDE.md transcript schema top-level keys drift: "
+            f"expected {expected_common_top_keys}, got {list(claude_schema.keys())}"
+        )
+    if not fixed_schema.get("words") or list(fixed_schema["words"][0].keys()) != expected_word_keys:
+        got = list(fixed_schema.get("words", [{}])[0].keys()) if fixed_schema.get("words") else []
+        errors.append(f"transcript_fixed.json words[] keys drift: expected {expected_word_keys}, got {got}")
+    if not fixed_schema.get("segments") or list(fixed_schema["segments"][0].keys()) != expected_segment_keys:
+        got = list(fixed_schema.get("segments", [{}])[0].keys()) if fixed_schema.get("segments") else []
+        errors.append(f"transcript_fixed.json segments[] keys drift: expected {expected_segment_keys}, got {got}")
+    if list(fixed_schema.get("fix_meta", {}).keys()) != expected_fix_meta_keys:
+        errors.append(
+            f"transcript_fixed.json fix_meta keys drift: "
+            f"expected {expected_fix_meta_keys}, got {list(fixed_schema.get('fix_meta', {}).keys())}"
+        )
+    if fixed_schema.get("fix_meta", {}).get("original_file") != "transcript.json":
+        errors.append("transcript_fixed.json fix_meta.original_file must remain transcript.json")
+    if "fix_meta" in claude_schema:
+        errors.append("CLAUDE.md shared transcript schema must keep fix_meta outside the common transcript block")
+
+    expected_correction_keys = ["index", "original", "corrected", "phase", "match"]
+    expected_filler_removed_keys = ["index", "text", "start", "end"]
+    expected_filler_kept_keys = ["index", "text", "reason"]
+    if not corrections_schema.get("corrections") or list(corrections_schema["corrections"][0].keys()) != expected_correction_keys:
+        got = list(corrections_schema.get("corrections", [{}])[0].keys()) if corrections_schema.get("corrections") else []
+        errors.append(f"transcript_corrections.json corrections[] keys drift: expected {expected_correction_keys}, got {got}")
+    if not corrections_schema.get("fillers_removed") or list(corrections_schema["fillers_removed"][0].keys()) != expected_filler_removed_keys:
+        got = (
+            list(corrections_schema.get("fillers_removed", [{}])[0].keys())
+            if corrections_schema.get("fillers_removed")
+            else []
+        )
+        errors.append(f"transcript_corrections.json fillers_removed[] keys drift: expected {expected_filler_removed_keys}, got {got}")
+    if not corrections_schema.get("fillers_kept") or list(corrections_schema["fillers_kept"][0].keys()) != expected_filler_kept_keys:
+        got = list(corrections_schema.get("fillers_kept", [{}])[0].keys()) if corrections_schema.get("fillers_kept") else []
+        errors.append(f"transcript_corrections.json fillers_kept[] keys drift: expected {expected_filler_kept_keys}, got {got}")
+
+    required_skill_snippets = {
+        "transcript prerequisite": "- [ ] `transcript.json` が存在し `words` 配列がある",
+        "typo replace": '"replace": {',
+        "typo fillers remove": '"remove": ["えーと", "あのー", "えー", "うーん", "そのー", "ええと"]',
+        "typo fillers keep": '"keep_in_context": ["まあ", "なんか"]',
+        "typo preserve": '"preserve": ["AI", "ChatGPT", "Claude", "Remotion", "YouTube"]',
+        "llm corrections output": '"corrections": [',
+        "fixed output file": "**transcript_fixed.json**",
+        "corrections output file": "**transcript_corrections.json**",
+        "malformed typo handling": "| typo_dict.json のJSON構文エラー |",
+    }
+    required_claude_snippets = {
+        "fixed has fix_meta": "- transcript_fixed.json は追加で `fix_meta` を持つ",
+        "raw transcript path": "| 文字起こし生データ | `<PROJECT>/transcript.json` |",
+        "fixed transcript path": "| 文字起こし修正済み | `<PROJECT>/transcript_fixed.json` |",
+        "corrections path": "| 修正履歴 | `<PROJECT>/transcript_corrections.json` |",
+        "typo dict path": "| 誤字辞書 | `<PROJECT>/typo_dict.json` |",
+        "canonical fixed name": "| `transcript_fixed.json` | transcript_corrected.json |",
+    }
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-transcript-fix docs missing {name}: {snippet}")
+    for name, snippet in required_claude_snippets.items():
+        if snippet not in claude_text:
+            errors.append(f"CLAUDE.md transcript-fix contract docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-transcript-fix output docs / CLAUDE.md transcript contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -23418,6 +23541,8 @@ def main() -> int:
         test_supermovie_subtitles_kpi_docs_match_compare_telop_split_contract_lint,
         # PR-JK (supermovie-transcribe output schema docs stay synced with CLAUDE transcript schema): 1 件
         test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema_lint,
+        # PR-JL (supermovie-transcript-fix output docs stay synced with CLAUDE transcript contract): 1 件
+        test_supermovie_transcript_fix_output_schema_docs_match_claude_transcript_contract_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
