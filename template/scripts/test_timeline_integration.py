@@ -12612,6 +12612,71 @@ def test_skill_embedded_workflow_matches_claude_pipeline_lint() -> None:
     )
 
 
+def test_readme_workflow_order_matches_claude_pipeline_lint() -> None:
+    """PR-AC: README.md command table order must match CLAUDE.md canonical pipeline order.
+    (1) Extract canonical pipeline order from CLAUDE.md ## 正規ワークフロー block.
+    (2) Extract /supermovie-* commands from README.md command table rows (| column | /cmd | ...).
+    (3) For each adjacent pair of canonical pipeline steps that both appear in the README table,
+        verify the earlier canonical step appears before the later one in the table.
+    Non-pipeline skills (e.g. telop-creator, skill-creator) are allowed anywhere.
+    """
+    import re
+
+    repo_root = Path(__file__).parents[2]
+
+    # (1) Canonical pipeline order from CLAUDE.md ## 正規ワークフロー
+    claude_md_text = (repo_root / "CLAUDE.md").read_text(encoding="utf-8")
+    workflow_m = re.search(
+        r"## 正規ワークフロー[^\n]*\n+```[^\n]*\n(.*?)```",
+        claude_md_text,
+        re.DOTALL,
+    )
+    assert workflow_m, "CLAUDE.md: ## 正規ワークフロー code block not found"
+    canonical_steps_raw = re.findall(r"/(supermovie-[\w-]+)", workflow_m.group(1))
+    seen: set[str] = set()
+    canonical_steps: list[str] = []
+    for s in canonical_steps_raw:
+        if s not in seen:
+            canonical_steps.append(s)
+            seen.add(s)
+    canonical_index = {step: i for i, step in enumerate(canonical_steps)}
+
+    # (2) Extract commands from README table rows containing /supermovie-
+    readme_text = (repo_root / "README.md").read_text(encoding="utf-8")
+    table_lines = [
+        line for line in readme_text.splitlines()
+        if line.strip().startswith("|") and "/supermovie-" in line
+    ]
+    readme_table_steps: list[str] = []
+    for line in table_lines:
+        m = re.search(r"/(supermovie-[\w-]+)", line)
+        if m:
+            readme_table_steps.append(m.group(1))
+
+    assert readme_table_steps, "README.md: no /supermovie-* commands found in table"
+
+    # (3) Verify relative order of canonical pipeline steps in the README table
+    readme_pipeline_steps = [s for s in readme_table_steps if s in canonical_index]
+    assert readme_pipeline_steps, "README.md: no canonical pipeline steps found in table"
+
+    errors: list[str] = []
+    for i in range(len(readme_pipeline_steps) - 1):
+        a = readme_pipeline_steps[i]
+        b = readme_pipeline_steps[i + 1]
+        if canonical_index[a] > canonical_index[b]:
+            errors.append(
+                f"README table has '{a}' (canonical pos {canonical_index[a]}) "
+                f"before '{b}' (canonical pos {canonical_index[b]}) "
+                f"— violates CLAUDE.md pipeline order"
+            )
+
+    assert not errors, (
+        f"README command table order diverges from canonical pipeline "
+        f"({len(errors)} inversion(s)):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12802,6 +12867,8 @@ def main() -> int:
         test_readme_install_url_matches_plugin_repository_lint,
         # PR-AB (skill embedded workflow matches CLAUDE.md pipeline order lint): 1 件
         test_skill_embedded_workflow_matches_claude_pipeline_lint,
+        # PR-AC (README command table workflow order matches CLAUDE.md pipeline lint): 1 件
+        test_readme_workflow_order_matches_claude_pipeline_lint,
     ]
     failed = []
     for t in tests:
