@@ -6,6 +6,7 @@ description: |
   「動画プロジェクト作成」「supermovie init」「新しい動画を編集」と言われたときに使用。
 argument-hint: <動画ファイルパス> [プロジェクト名]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
+effort: high
 ---
 
 # SuperMovie Init — 動画編集プロジェクト自動生成

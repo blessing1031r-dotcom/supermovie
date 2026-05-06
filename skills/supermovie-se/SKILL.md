@@ -7,6 +7,7 @@ description: |
   「SE配置」「効果音つけて」「supermovie se」と言われたときに使用。
 argument-hint: [プロジェクトパス]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
+effort: medium
 ---
 
 # SuperMovie SE — 効果音自動配置

@@ -12942,6 +12942,58 @@ def test_skill_frontmatter_allowed_tools_allowlist_lint() -> None:
     )
 
 
+def test_skill_frontmatter_effort_field_lint() -> None:
+    """PR-AH: every skills/*/SKILL.md frontmatter must have an 'effort' field with a
+    valid value from {high, medium, low}. Only the YAML frontmatter block is inspected.
+    """
+    import re
+
+    VALID_EFFORT = {"high", "medium", "low"}
+
+    repo_root = Path(__file__).parents[2]
+    skills_dir = repo_root / "skills"
+    errors: list[str] = []
+
+    for skill_path in sorted(skills_dir.iterdir()):
+        if not skill_path.is_dir():
+            continue
+        skill_md_path = skill_path / "SKILL.md"
+        if not skill_md_path.exists():
+            continue
+        content = skill_md_path.read_text(encoding="utf-8")
+
+        # Extract YAML frontmatter block only
+        fm_m = re.match(r"^---\s*$\n(.*?)^---\s*$", content, re.MULTILINE | re.DOTALL)
+        if not fm_m:
+            continue  # PR-AF already catches missing frontmatter
+        fm_block = fm_m.group(1)
+
+        effort_matches = re.findall(r"^effort:\s+(\S+)", fm_block, re.MULTILINE)
+        if not effort_matches:
+            errors.append(
+                f"{skill_path.name}/SKILL.md: frontmatter missing 'effort' field"
+            )
+            continue
+
+        if len(effort_matches) > 1:
+            errors.append(
+                f"{skill_path.name}/SKILL.md: frontmatter has duplicate 'effort' key "
+                f"({len(effort_matches)} occurrences: {effort_matches!r})"
+            )
+
+        value = effort_matches[0].strip()
+        if value not in VALID_EFFORT:
+            errors.append(
+                f"{skill_path.name}/SKILL.md: frontmatter 'effort' has invalid value "
+                f"{value!r} (must be one of {sorted(VALID_EFFORT)!r})"
+            )
+
+    assert not errors, (
+        f"SKILL.md frontmatter effort field violations ({len(errors)} error(s)):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13142,6 +13194,8 @@ def main() -> int:
         test_skill_frontmatter_required_fields_lint,
         # PR-AG (skill frontmatter allowed-tools allowlist lint): 1 件
         test_skill_frontmatter_allowed_tools_allowlist_lint,
+        # PR-AH (skill frontmatter effort field required + valid enum lint): 1 件
+        test_skill_frontmatter_effort_field_lint,
     ]
     failed = []
     for t in tests:
