@@ -95,9 +95,10 @@ Principal skill architect として、SuperMovieエコシステムに
 name: supermovie-<name>
 description: |
   <3行の説明>
-  <トリガーキーワード>
-argument-hint: <引数ヒント>
-allowed-tools: <必要なツール>
+  「<トリガーキーワード>」と言われたときに使用。
+argument-hint: <必須引数> [任意引数]
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
+effort: medium
 ---
 
 # SuperMovie <Name> — <日本語タイトル>
@@ -125,7 +126,7 @@ allowed-tools: <必要なツール>
 
 | # | チェック項目 | 基準 |
 |---|------------|------|
-| 1 | YAML frontmatter | name, description, allowed-tools が全てある |
+| 1 | YAML frontmatter | name, description, argument-hint, allowed-tools, effort が canonical order で全てある |
 | 2 | ロール定義 | 1行で専門性が伝わる |
 | 3 | ワークフロー図 | ASCII図で全体像が一目で分かる |
 | 4 | 前提条件 | チェックリスト形式で漏れなし |
@@ -145,9 +146,16 @@ allowed-tools: <必要なツール>
 ## Phase 4: ファイル配置
 
 ```bash
-mkdir -p .claude/skills/supermovie-<name>
+mkdir -p skills/supermovie-<name>
 # SKILL.md を書き出し
 ```
+
+`.claude-plugin/plugin.json` の `skills: "./skills/"` が discovery root なので、
+配置先は repo root の `skills/supermovie-<name>/SKILL.md` に固定する。
+
+追加で同期する surface:
+- `README.md` のコマンド表に `/supermovie-<name>` を追加
+- contract lint を追加した場合は `docs/OBSERVABILITY.md` に行を追加
 
 ---
 
@@ -156,6 +164,7 @@ mkdir -p .claude/skills/supermovie-<name>
 スキルが正しく認識されたか確認:
 - `/supermovie-<name>` でオートコンプリートに表示される
 - description のキーワードで自動トリガーされる
+- `python3 template/scripts/test_timeline_integration.py` が pass する
 
 ---
 
