@@ -15783,6 +15783,48 @@ def test_telop_template_registry_lookup_helpers_contract_lint() -> None:
     )
 
 
+def test_telop_template_components_subtitle_data_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    telop_dirs = ("メインテロップ", "強調テロップ", "ネガティブテロップ")
+    checked = 0
+    errors: list[str] = []
+    for dir_name in telop_dirs:
+        dir_path = template_root / "src" / dir_name
+        if not dir_path.is_dir():
+            errors.append(f"template/src/{dir_name}: directory not found")
+            continue
+        for tsx_file in sorted(dir_path.glob("*.tsx")):
+            checked += 1
+            raw = tsx_file.read_text(encoding="utf-8")
+            text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+            text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+            rel = f"template/src/{dir_name}/{tsx_file.name}"
+            if not re.search(
+                r"interface\s+\w+Props\s*\{[\s\S]*?\bsubtitleData\s*:\s*SubtitleData\s*;[\s\S]*?\}",
+                text,
+            ):
+                errors.append(f"{rel}: missing Props interface with required subtitleData: SubtitleData")
+            if not re.search(r"export\s+const\s+\w+\s*:\s*React\.FC\s*<\s*\w+Props\s*>\s*=", text):
+                errors.append(f"{rel}: missing exported React.FC<Props> component")
+            if not re.search(
+                r"subtitleData\.subtitles\.find\s*\(\s*\(?\s*sub\s*\)?\s*=>[\s\S]*?"
+                r"frame\s*>=\s*sub\.startFrame[\s\S]*?frame\s*<=\s*sub\.endFrame",
+                text,
+            ):
+                errors.append(f"{rel}: missing active subtitle lookup by subtitleData frame range")
+            if not re.search(r"if\s*\(\s*!\s*currentSubtitle\s*\)\s*\{\s*return\s+null\s*;?\s*\}", text, re.DOTALL):
+                errors.append(f"{rel}: missing null fallback when currentSubtitle is absent")
+            if not re.search(r"currentSubtitle\.lines\.map\s*\(", text):
+                errors.append(f"{rel}: missing currentSubtitle.lines.map(...) render")
+    if checked != 30:
+        errors.append(f"telop template component count changed: expected 30, got {checked}")
+    assert errors == [], (
+        "telop template component subtitleData contract drift:\n" + "\n".join(errors)
+    )
+
+
 def test_sequence_components_are_data_driven_from_local_arrays() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17408,6 +17450,7 @@ def main() -> int:
         test_telop_template_registry_file_coverage_lint,
         test_telop_template_registry_metadata_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
+        test_telop_template_components_subtitle_data_contract_lint,
         # PR-CO (sequence components are data-driven from local arrays lint): 1 件
         test_sequence_components_are_data_driven_from_local_arrays,
         # PR-CP (TelopPlayer bridges telopData to registry templates lint): 1 件
