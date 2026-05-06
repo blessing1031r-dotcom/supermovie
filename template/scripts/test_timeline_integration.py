@@ -14910,6 +14910,63 @@ def test_vitest_react_test_discovery_contract_lint() -> None:
     )
 
 
+def test_vitest_react_test_files_match_include_contract_lint() -> None:
+    """PR-GF: React/Vitest TS test files must stay discoverable by vitest.config.ts include.
+
+    Vitest uses include=['src/**/*.test.{ts,tsx}']; catch future .spec.* / misplaced
+    test files that look like React tests but would be skipped by npm run test:react.
+    """
+    import re
+
+    template_root = Path(__file__).parents[1]
+    config_path = template_root / "vitest.config.ts"
+    assert config_path.is_file(), "template/vitest.config.ts not found"
+    raw_config = config_path.read_text(encoding="utf-8")
+    config_text = "\n".join(
+        line for line in raw_config.splitlines()
+        if not line.lstrip().startswith("//")
+    )
+
+    expected_include = "src/**/*.test.{ts,tsx}"
+    if not re.search(
+        r"\binclude\s*:\s*\[\s*['\"]src/\*\*/\*\.test\.\{ts,tsx\}['\"]\s*\]",
+        config_text,
+    ):
+        raise AssertionError(
+            "vitest.config.ts: expected include=['src/**/*.test.{ts,tsx}'] before "
+            "checking React test file inventory"
+        )
+
+    test_like_suffix = re.compile(r"\.(?:test|spec)\.(?:ts|tsx|js|jsx)$")
+    include_match = re.compile(r"src/.+\.test\.(?:ts|tsx)$")
+    ignored_dirs = {"node_modules", "dist", "build", "out", ".git"}
+
+    candidates = []
+    for path in template_root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel_parts = path.relative_to(template_root).parts
+        if any(part in ignored_dirs for part in rel_parts):
+            continue
+        rel = path.relative_to(template_root).as_posix()
+        if test_like_suffix.search(rel):
+            candidates.append(rel)
+
+    candidates = sorted(candidates)
+    missed = [rel for rel in candidates if not include_match.fullmatch(rel)]
+    discovered = [rel for rel in candidates if include_match.fullmatch(rel)]
+
+    errors: list[str] = []
+    if missed:
+        errors.append(f"test-like files not matched by {expected_include}: {missed}")
+    if not discovered:
+        errors.append(f"no React/Vitest test files discovered by {expected_include}")
+
+    assert errors == [], (
+        "template Vitest React test file inventory contract drift:\n" + "\n".join(errors)
+    )
+
+
 def test_vitest_setup_jest_dom_import_contract_lint() -> None:
     import json
     import re
@@ -18824,6 +18881,8 @@ def main() -> int:
         test_vitest_setup_files_resolve_lint,
         # PR-GB (Vitest React discovery config + npm script lint): 1 件
         test_vitest_react_test_discovery_contract_lint,
+        # PR-GF (Vitest React test files match include glob): 1 件
+        test_vitest_react_test_files_match_include_contract_lint,
         # PR-GD (Vitest setup imports jest-dom/vitest and dependency exists): 1 件
         test_vitest_setup_jest_dom_import_contract_lint,
         test_eslint_config_no_explicit_any_contract_lint,
