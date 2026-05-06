@@ -15299,6 +15299,59 @@ def test_telop_char_by_char_text_contract_lint() -> None:
     )
 
 
+def test_telop_svg_text_defs_filter_gradient_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    telop_file = template_root / "src" / "テロップテンプレート" / "Telop.tsx"
+    assert telop_file.is_file(), "template/src/テロップテンプレート/Telop.tsx not found"
+    raw = telop_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    branch_start = text.find("const strokeGradientId")
+    if branch_start < 0:
+        errors.append("Telop.tsx: missing SVG text branch after background.enabled branch")
+        branch = ""
+    else:
+        branch = text[branch_start:]
+    for pattern, desc in [
+        (r"const\s+fillGradientId\s*=\s*`fill-gradient-\$\{segment\.id\}`\s*;", "fillGradientId uses segment.id"),
+        (r"const\s+filterId\s*=\s*`shadow-filter-\$\{segment\.id\}`\s*;", "filterId uses segment.id"),
+        (r"const\s+svgWidth\s*=\s*width\s*;", "svgWidth uses video width"),
+        (r"const\s+lineHeight\s*=\s*font\.size\s*\*\s*1\.3\s*;", "lineHeight derives from font.size"),
+        (
+            r"const\s+svgHeight\s*=\s*font\.size\s*\*\s*2\s*\+\s*\(textLines\.length\s*-\s*1\)\s*\*\s*lineHeight\s*;",
+            "svgHeight accounts for font size and text line count",
+        ),
+        (
+            r"const\s+baseY\s*=\s*svgHeight\s*/\s*2\s*-\s*\(\(textLines\.length\s*-\s*1\)\s*\*\s*lineHeight\)\s*/\s*2\s*\+\s*font\.size\s*\*\s*0\.35\s*;",
+            "baseY vertically centers multi-line text",
+        ),
+        (
+            r"const\s+strokeGradient\s*=\s*textStroke\.gradient\s*\|\|\s*\{\s*start:\s*['\"]#ffffff['\"]\s*,\s*end:\s*['\"]#ffffff['\"]\s*,\s*\}\s*;",
+            "strokeGradient falls back to white gradient",
+        ),
+        (r"const\s+fillGradient\s*=\s*font\.fillGradient\s*;", "fillGradient from font"),
+        (r"const\s+hasFillGradient\s*=\s*fillGradient\?\.enabled\s*;", "hasFillGradient optional access"),
+        (r"const\s+textOpacity\s*=\s*font\.opacity\s*\?\?\s*1\s*;", "textOpacity defaults to 1"),
+        (r"width=\{svgWidth\}[\s\S]*?height=\{svgHeight\}", "svg uses svgWidth/svgHeight"),
+        (r"overflow:\s*['\"]visible['\"][\s\S]*?display:\s*['\"]block['\"][\s\S]*?opacity:\s*textOpacity", "svg style keeps visible overflow and textOpacity"),
+        (r"<defs>[\s\S]*?<linearGradient\s+id=\{strokeGradientId\}[\s\S]*?x1=['\"]0%['\"][\s\S]*?x2=['\"]100%['\"][\s\S]*?<stop\s+offset=['\"]0%['\"]\s+stopColor=\{strokeGradient\.start\}\s*/>[\s\S]*?<stop\s+offset=['\"]100%['\"]\s+stopColor=\{strokeGradient\.end\}\s*/>", "defs include stroke gradient stops"),
+        (r"\{hasFillGradient\s*&&\s*\([\s\S]*?<linearGradient\s+id=\{fillGradientId\}[\s\S]*?<stop\s+offset=['\"]0%['\"]\s+stopColor=\{fillGradient\.start\}\s*/>[\s\S]*?<stop\s+offset=['\"]100%['\"]\s+stopColor=\{fillGradient\.end\}\s*/>[\s\S]*?</linearGradient>[\s\S]*?\)\}", "defs conditionally include fill gradient stops"),
+        (r"<filter\s+id=\{filterId\}\s+x=['\"]-50%['\"]\s+y=['\"]-50%['\"]\s+width=['\"]200%['\"]\s+height=['\"]200%['\"]>[\s\S]*?<feDropShadow[\s\S]*?dx=\{textShadow\.offsetX\}[\s\S]*?dy=\{textShadow\.offsetY\}[\s\S]*?stdDeviation=\{textShadow\.blur\s*/\s*2\}[\s\S]*?floodColor=['\"]black['\"][\s\S]*?floodOpacity=['\"]0\.85['\"]", "defs include text shadow filter"),
+        (r"<text[\s\S]*?x=['\"]50%['\"][\s\S]*?y=\{baseY\}[\s\S]*?textAnchor=['\"]middle['\"][\s\S]*?fill=['\"]none['\"][\s\S]*?stroke=\{`url\(#\$\{strokeGradientId\}\)`\}[\s\S]*?strokeWidth=\{textStroke\.width\}[\s\S]*?strokeLinejoin=['\"]round['\"][\s\S]*?strokeLinecap=['\"]round['\"][\s\S]*?filter=\{`url\(#\$\{filterId\}\)`\}", "stroke text uses gradient stroke and shadow filter"),
+        (r"fontSize:\s*font\.size[\s\S]*?fontWeight:\s*font\.weight[\s\S]*?fontFamily:\s*font\.family[\s\S]*?fontStyle:\s*font\.style[\s\S]*?letterSpacing:\s*font\.letterSpacing", "text nodes use font style fields"),
+        (r"textLines\.map\s*\(\s*\(\s*line\s*,\s*index\s*\)\s*=>\s*\([\s\S]*?<tspan\s+key=\{index\}\s+x=['\"]50%['\"]\s+dy=\{index\s*===\s*0\s*\?\s*0\s*:\s*lineHeight\}>[\s\S]*?\{line\}[\s\S]*?</tspan>", "textLines render as centered tspans with lineHeight dy"),
+        (r"<text[\s\S]*?fill=\{hasFillGradient\s*\?\s*`url\(#\$\{fillGradientId\}\)`\s*:\s*font\.color\}", "fill text uses fill gradient when enabled, otherwise font.color"),
+    ]:
+        if not re.search(pattern, branch, re.DOTALL):
+            errors.append(f"Telop.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/テロップテンプレート/Telop.tsx SVG text defs/filter/gradient contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_file_coverage_lint() -> None:
     """PR-CM: Every .tsx file in メインテロップ/強調テロップ/ネガティブテロップ dirs must be imported by telopTemplateRegistry.tsx.
     Guards against new/renamed telop templates existing on disk but unreachable from TelopPlayer registry.
@@ -16638,6 +16691,7 @@ def main() -> int:
         test_telop_legacy_animation_selection_contract_lint,
         test_telop_render_timing_and_slide_transform_contract_lint,
         test_telop_char_by_char_text_contract_lint,
+        test_telop_svg_text_defs_filter_gradient_contract_lint,
         test_telop_template_registry_file_coverage_lint,
         test_telop_template_registry_metadata_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
