@@ -17691,6 +17691,57 @@ def test_claude_title_data_schema_matches_title_segment_contract_lint() -> None:
     )
 
 
+def test_claude_insert_image_schema_matches_image_segment_contract_lint() -> None:
+    """PR-IG: CLAUDE.md insertImageData schema must match ImageSegment."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    claude_path = repo_root / "CLAUDE.md"
+    image_types_path = template_root / "src" / "InsertImage" / "types.ts"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert image_types_path.is_file(), "template/src/InsertImage/types.ts not found"
+
+    def image_segment_fields(type_text: str, source: str) -> list[tuple[str, str, str]]:
+        match = re.search(r"\b(?:export\s+)?interface\s+ImageSegment\s*\{([\s\S]*?)\}", type_text)
+        assert match is not None, f"{source}: ImageSegment interface block not found"
+        return [
+            (name, optional, typ.strip())
+            for name, optional, typ in re.findall(r"^\s*(\w+)(\?)?\s*:\s*([^;]+);", match.group(1), re.MULTILINE)
+        ]
+
+    claude_text = claude_path.read_text(encoding="utf-8")
+    section_match = re.search(
+        r"### insertImageData\.ts（ImageSegment型）\s*```typescript\s*([\s\S]*?)```",
+        claude_text,
+    )
+    assert section_match is not None, "CLAUDE.md insertImageData.ts ImageSegment schema code block not found"
+
+    actual_fields = image_segment_fields(section_match.group(1), "CLAUDE.md")
+    implementation_fields = image_segment_fields(
+        image_types_path.read_text(encoding="utf-8"),
+        "template/src/InsertImage/types.ts",
+    )
+    expected_fields = [
+        ("id", "", "number"),
+        ("startFrame", "", "number"),
+        ("endFrame", "", "number"),
+        ("file", "", "string"),
+        ("type", "", "'photo' | 'infographic' | 'overlay'"),
+        ("scale", "?", "number"),
+    ]
+    errors: list[str] = []
+    if implementation_fields != expected_fields:
+        errors.append(f"InsertImage/types.ts ImageSegment implementation drift: expected {expected_fields}, got {implementation_fields}")
+    if actual_fields != implementation_fields:
+        errors.append(f"CLAUDE.md ImageSegment schema drift: expected {implementation_fields}, got {actual_fields}")
+
+    assert errors == [], (
+        "CLAUDE.md insertImageData ImageSegment schema / implementation contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
     """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
     import re
@@ -21149,6 +21200,8 @@ def main() -> int:
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
         test_claude_title_data_schema_matches_title_segment_contract_lint,
+        # PR-IG (CLAUDE.md insertImageData ImageSegment schema stays synced with implementation): 1 件
+        test_claude_insert_image_schema_matches_image_segment_contract_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件

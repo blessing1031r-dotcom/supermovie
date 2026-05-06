@@ -599,6 +599,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 298 | `skills/supermovie-se/SKILL.md` の `seData.ts` output sample / validation table が `template/src/SoundEffects/SEPlayer.ts` の `SoundEffect` fields と `template/src/SoundEffects/seData.ts` の typed export contract に同期することを lint (`test_supermovie_se_output_schema_docs_match_sound_effect_contract_lint`、Codex 推奨 PR-ID)。supermovie-se の output docs と SE schema の drift を保護 | PR-ID |
 | 299 | `CLAUDE.md` の `seData.ts（SoundEffect型）` schema code block が `template/src/SoundEffects/SEPlayer.ts` の `SoundEffect` field order / optional marker / type と同期することを lint (`test_claude_se_data_schema_matches_sound_effect_contract_lint`、Codex 推奨 PR-IE)。全スキル共通 SE schema と実装型の drift を保護 | PR-IE |
 | 300 | `CLAUDE.md` の `titleData.ts（TitleSegment型）` schema code block が `template/src/Title/Title.tsx` の `TitleSegment` field order / type と同期することを lint (`test_claude_title_data_schema_matches_title_segment_contract_lint`、Codex 推奨 PR-IF)。全スキル共通 title schema と実装型の drift を保護 | PR-IF |
+| 301 | `CLAUDE.md` の `insertImageData.ts（ImageSegment型）` schema code block が `template/src/InsertImage/types.ts` の `ImageSegment` field order / optional marker / union type と同期することを lint (`test_claude_insert_image_schema_matches_image_segment_contract_lint`、Codex 推奨 PR-IG)。全スキル共通 insert image schema と実装型の drift を保護 | PR-IG |
 
 ## Test Requirements
 
