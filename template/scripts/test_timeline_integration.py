@@ -16065,6 +16065,58 @@ def test_slide_style_defaults_and_alignment_contract_lint() -> None:
     )
 
 
+def test_slide_content_render_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    slide_file = template_root / "src" / "Slides" / "Slide.tsx"
+    assert slide_file.is_file(), "template/src/Slides/Slide.tsx not found"
+    raw = slide_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    checks = [
+        (r"\bconst\s+duration\s*=\s*segment\.endFrame\s*-\s*segment\.startFrame\s*;", "duration from segment frame range"),
+        (
+            r"const\s+opacity\s*=\s*interpolate\s*\(\s*frame\s*,\s*\[\s*0\s*,\s*12\s*,\s*duration\s*-\s*12\s*,\s*duration\s*\]\s*,\s*\[\s*0\s*,\s*1\s*,\s*1\s*,\s*0\s*\]\s*,\s*\{\s*extrapolateLeft:\s*['\"]clamp['\"]\s*,\s*extrapolateRight:\s*['\"]clamp['\"]\s*\}\s*,?\s*\)",
+            "opacity fade envelope",
+        ),
+        (r"<AbsoluteFill\b", "AbsoluteFill wrapper"),
+        (r"\bbackgroundColor:\s*bg\b", "backgroundColor uses bg"),
+        (r"\bopacity\s*,", "wrapper opacity binding"),
+        (r"\bdisplay:\s*['\"]flex['\"]", "flex wrapper"),
+        (r"\balignItems:\s*['\"]center['\"]", "vertical centering"),
+        (r"\bjustifyContent:\s*justify\b", "justify from alignment"),
+        (r"\bpadding:\s*['\"]8% 6%['\"]", "safe area padding"),
+        (r"\bboxSizing:\s*['\"]border-box['\"]", "border-box sizing"),
+        (r"<div\s+style=\{\{\s*color:\s*fg\s*,\s*textAlign\s*,\s*maxWidth:\s*['\"]90%['\"]\s*\}\}", "text container style"),
+        (r"<h1\b", "title h1"),
+        (r"\bfontSize:\s*96\b", "title fontSize 96"),
+        (r"\bfontWeight:\s*800\b", "title fontWeight 800"),
+        (r"\blineHeight:\s*1\.2\b", "title lineHeight 1.2"),
+        (r"\bmargin:\s*0\b", "title margin reset"),
+        (r"\bletterSpacing:\s*['\"]0\.02em['\"]", "title letter spacing"),
+        (r"\{\s*segment\.title\s*\}", "segment.title render"),
+        (r"\{\s*segment\.subtitle\s*&&\s*\(", "subtitle conditional render"),
+        (r"<p\s+style=\{\{\s*fontSize:\s*44\s*,\s*opacity:\s*0\.8\s*,\s*marginTop:\s*24\s*\}\}>\s*\{segment\.subtitle\}\s*</p>", "subtitle paragraph style"),
+        (r"\{\s*segment\.bullets\s*&&\s*segment\.bullets\.length\s*>\s*0\s*&&\s*\(", "bullets conditional render"),
+        (r"\bmarginTop:\s*48\b", "bullet list marginTop"),
+        (r"\bfontSize:\s*52\b", "bullet fontSize 52"),
+        (r"\blineHeight:\s*1\.5\b", "bullet lineHeight 1.5"),
+        (r"segment\.bullets\.map\s*\(\s*\(\s*b\s*,\s*i\s*\)\s*=>", "bullet map callback"),
+        (r"<li\b[\s\S]*?key=\{i\}", "bullet li key"),
+        (r"\bfontWeight:\s*b\.emphasis\s*\?\s*700\s*:\s*500\b", "bullet emphasis fontWeight"),
+        (r"\bmarginBottom:\s*12\b", "bullet marginBottom"),
+        (r"\{\s*b\.text\s*\}", "bullet text render"),
+    ]
+    for pattern, desc in checks:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"Slide.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/Slides/Slide.tsx content render contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_title_uses_sequence_local_frame_without_startframe_offset_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17223,6 +17275,7 @@ def main() -> int:
         test_bgm_props_default_volume_contract_lint,
         test_slide_uses_sequence_local_frame_without_startframe_offset,
         test_slide_style_defaults_and_alignment_contract_lint,
+        test_slide_content_render_contract_lint,
         test_title_uses_sequence_local_frame_without_startframe_offset_lint,
         test_title_visual_style_contract_lint,
         test_slide_segment_schema_contract_lint,
