@@ -16114,6 +16114,87 @@ def test_telop_template_components_subtitle_type_surface_contract_lint() -> None
     )
 
 
+def test_telop_template_components_fade_scale_animation_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    telop_dirs = ("メインテロップ", "強調テロップ", "ネガティブテロップ")
+    required_patterns = [
+        (
+            r"const\s+duration\s*=\s*currentSubtitle\.endFrame\s*-\s*currentSubtitle\.startFrame\s*;",
+            "duration from currentSubtitle frame bounds",
+        ),
+        (
+            r"const\s+maxFadeDuration\s*=\s*Math\.floor\s*\(\s*duration\s*/\s*3\s*\)\s*;",
+            "maxFadeDuration = Math.floor(duration / 3)",
+        ),
+        (
+            r"const\s+fadeInDuration\s*=\s*Math\.min\s*\(\s*3\s*,\s*maxFadeDuration\s*\)\s*;",
+            "fadeInDuration capped at 3 frames",
+        ),
+        (
+            r"const\s+fadeOutDuration\s*=\s*Math\.min\s*\(\s*3\s*,\s*maxFadeDuration\s*\)\s*;",
+            "fadeOutDuration capped at 3 frames",
+        ),
+        (r"let\s+opacity\s*=\s*1\s*;", "default opacity = 1"),
+        (
+            r"if\s*\(\s*duration\s*>\s*6\s*\)\s*\{[\s\S]*?"
+            r"const\s+fadeInEnd\s*=\s*currentSubtitle\.startFrame\s*\+\s*fadeInDuration\s*;[\s\S]*?"
+            r"const\s+fadeOutStart\s*=\s*currentSubtitle\.endFrame\s*-\s*fadeOutDuration\s*;",
+            "duration > 6 fade window with start/end bounds",
+        ),
+        (
+            r"opacity\s*=\s*interpolate\s*\(\s*frame\s*,\s*"
+            r"\[\s*currentSubtitle\.startFrame\s*,\s*fadeInEnd\s*,\s*fadeOutStart\s*,\s*currentSubtitle\.endFrame\s*\]\s*,\s*"
+            r"\[\s*0\s*,\s*1\s*,\s*1\s*,\s*0\s*\]\s*,\s*"
+            r"\{\s*extrapolateLeft\s*:\s*['\"]clamp['\"]\s*,\s*extrapolateRight\s*:\s*['\"]clamp['\"]\s*\}",
+            "long subtitle opacity fade-in/hold/fade-out clamp",
+        ),
+        (
+            r"const\s+midPoint\s*=\s*\(\s*currentSubtitle\.startFrame\s*\+\s*currentSubtitle\.endFrame\s*\)\s*/\s*2\s*;[\s\S]*?"
+            r"opacity\s*=\s*interpolate\s*\(\s*frame\s*,\s*"
+            r"\[\s*currentSubtitle\.startFrame\s*,\s*midPoint\s*,\s*currentSubtitle\.endFrame\s*\]\s*,\s*"
+            r"\[\s*0\s*,\s*1\s*,\s*0\s*\]\s*,\s*"
+            r"\{\s*extrapolateLeft\s*:\s*['\"]clamp['\"]\s*,\s*extrapolateRight\s*:\s*['\"]clamp['\"]\s*\}",
+            "short subtitle midpoint opacity fallback",
+        ),
+        (
+            r"const\s+scale\s*=\s*fadeInDuration\s*>\s*0\s*\?\s*interpolate\s*\(\s*frame\s*,\s*"
+            r"\[\s*currentSubtitle\.startFrame\s*,\s*currentSubtitle\.startFrame\s*\+\s*fadeInDuration\s*\]\s*,\s*"
+            r"\[\s*0\.95\s*,\s*1\s*\]\s*,\s*"
+            r"\{\s*extrapolateLeft\s*:\s*['\"]clamp['\"]\s*,\s*extrapolateRight\s*:\s*['\"]clamp['\"]\s*,\s*"
+            r"easing\s*:\s*Easing\.out\s*\(\s*Easing\.cubic\s*\)\s*\}\s*\)\s*:\s*1\s*;",
+            "scale interpolate with cubic out easing and fallback 1",
+        ),
+        (
+            r"transform\s*:\s*`\s*scale\(\$\{scale\}\)\s*`\s*,",
+            "style transform uses computed scale",
+        ),
+    ]
+    checked = 0
+    errors: list[str] = []
+    for dir_name in telop_dirs:
+        dir_path = template_root / "src" / dir_name
+        if not dir_path.is_dir():
+            errors.append(f"template/src/{dir_name}: directory not found")
+            continue
+        for tsx_file in sorted(dir_path.glob("*.tsx")):
+            checked += 1
+            rel = tsx_file.relative_to(template_root)
+            raw = tsx_file.read_text(encoding="utf-8")
+            text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+            text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+            for pattern, desc in required_patterns:
+                if not re.search(pattern, text, re.DOTALL):
+                    errors.append(f"{rel}: missing {desc}")
+    if checked != 30:
+        errors.append(f"telop template component count changed: expected 30, got {checked}")
+    assert errors == [], (
+        "telop template component fade/scale animation contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_components_canonical_imports_contract_lint() -> None:
     import re
 
@@ -18245,6 +18326,7 @@ def main() -> int:
         test_telop_template_registry_lookup_helpers_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
         test_telop_template_components_subtitle_type_surface_contract_lint,
+        test_telop_template_components_fade_scale_animation_contract_lint,
         test_telop_template_components_canonical_imports_contract_lint,
         # PR-CO (sequence components are data-driven from local arrays lint): 1 件
         test_sequence_components_are_data_driven_from_local_arrays,
