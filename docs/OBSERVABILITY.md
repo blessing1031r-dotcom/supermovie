@@ -555,6 +555,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 254 | `template/src/Narration/useNarrationMode*.test.tsx` 各 file が `renderHook` を `@testing-library/react` から import し、deprecated `@testing-library/react-hooks` を使わず、`template/package.json` の devDependency に `@testing-library/react` を持つことを lint (`test_vitest_use_narration_mode_tests_render_hook_import_contract_lint`、Codex 推奨 PR-GL)。useNarrationMode React hook tests の renderHook import/package surface contract を保護 | PR-GL |
 | 255 | `template/src/Narration/useNarrationMode*.test.tsx` 各 file が実使用する `describe` / `it` / `expect` / `vi` / `beforeEach` / `afterEach` を `vitest` から明示 import することを lint (`test_vitest_use_narration_mode_tests_vitest_import_surface_lint`、Codex 推奨 PR-GM)。useNarrationMode React tests の Vitest API import surface contract を保護 | PR-GM |
 | 256 | `template/src/MainVideo.tsx` が `export const MainVideo: React.FC = () => {` の named export surface を保ち、default export に切り替わらないことを lint (`test_main_video_named_export_contract_lint`、Codex 推奨 PR-GN)。Root.tsx の named import と Remotion component 接続 contract を保護 | PR-GN |
+| 257 | `template/src/index.ts` が export を持たない side-effect only entrypoint のまま、`registerRoot(...)` を 1 回だけ呼ぶことを lint (`test_entrypoint_side_effect_only_no_exports_contract_lint`、Codex 推奨 PR-GO)。Remotion entrypoint が module API surface 化する drift と二重 root 登録を保護 | PR-GO |
 
 ## Test Requirements
 
