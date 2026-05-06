@@ -16968,6 +16968,36 @@ def test_title_segment_schema_and_title_data_typed_export_contract_lint() -> Non
     )
 
 
+def test_title_data_placeholder_empty_array_and_toframe_export_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    title_data_file = template_root / "src" / "Title" / "titleData.ts"
+    assert title_data_file.is_file(), "template/src/Title/titleData.ts not found"
+    raw = title_data_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    if not re.search(
+        r"""import\s+type\s*\{[^}]*\bTitleSegment\b[^}]*\}\s*from\s*['"]\.\/Title['"]""",
+        text,
+    ):
+        errors.append("titleData.ts: missing type import of TitleSegment from './Title'")
+    if not re.search(r"""import\s*\{[^}]*\bFPS\b[^}]*\}\s*from\s*['"]\.\.\/videoConfig['"]""", text):
+        errors.append("titleData.ts: missing FPS import from '../videoConfig'")
+    if not re.search(
+        r"\bexport\s+const\s+toFrame\s*=\s*\(\s*seconds\s*:\s*number\s*\)\s*=>\s*Math\.round\s*\(\s*seconds\s*\*\s*FPS\s*\)\s*;",
+        text,
+    ):
+        errors.append("titleData.ts: missing exported toFrame(seconds: number) => Math.round(seconds * FPS)")
+    if not re.search(r"\bexport\s+const\s+titleData\s*:\s*TitleSegment\[\s*\]\s*=\s*\[\s*\]\s*;", text, re.DOTALL):
+        errors.append("titleData.ts: titleData template must be an empty typed array after comments are stripped")
+    assert errors == [], (
+        "template/src/Title/titleData.ts placeholder / toFrame export contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_slide_data_exports_typed_empty_array_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17645,6 +17675,7 @@ def main() -> int:
         test_telop_styles_animation_exports_motion_contract_lint,
         test_telop_styles_template_exports_and_config_helpers_lint,
         test_title_segment_schema_and_title_data_typed_export_contract_lint,
+        test_title_data_placeholder_empty_array_and_toframe_export_contract_lint,
         test_slide_data_exports_typed_empty_array_lint,
         test_insert_image_data_typed_export_and_toframe_fps_contract_lint,
         test_slide_sequence_wraps_slide_segments_in_sequence_frame_ranges_lint,
