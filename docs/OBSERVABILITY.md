@@ -502,6 +502,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 201 | `template/src/Title/Title.tsx` が opacity fade envelope、spring config、translateX range、gradient badge background/padding、title typography (`Noto Sans JP`/shadow/skew/nowrap)、`segment.text` render を保つことを lint (`test_title_visual_style_contract_lint`、Codex 推奨 PR-EK)。Title visual style contract を保護 | PR-EK |
 | 202 | `template/src/InsertImage/InsertImage.tsx` が overlay/default branch の `staticFile(\`images/${segment.file}\`)`、overlay backdrop/flex centering/max 80% contain、default full-size image、infographic contain/photo cover、`segment.scale ?? 1` scale fallback を保つことを lint (`test_insert_image_render_variant_style_contract_lint`、Codex 推奨 PR-EL)。InsertImage type 別 render style contract を保護 | PR-EL |
 | 203 | `template/src/Slides/Slide.tsx` が opacity fade envelope、AbsoluteFill wrapper、title `h1` typography、subtitle conditional paragraph、bullets conditional map、bullet emphasis fontWeight/text render を保つことを lint (`test_slide_content_render_contract_lint`、Codex 推奨 PR-EM)。Slide content render contract を保護 | PR-EM |
+| 204 | `template/src/Slides` / `Title` / `InsertImage` / `Narration` の barrel `index` が MainVideo や外部 skill から使う named exports (`SlideSequence`/`TitleSequence`/`InsertImage`/`ImageSequence`/`NarrationAudioWithMode`/mode helpers/types 等) を保つことを lint (`test_template_component_barrel_exports_contract_lint`、Codex 推奨 PR-EN)。template component barrel export surface を保護 | PR-EN |
 
 ## Test Requirements
 
