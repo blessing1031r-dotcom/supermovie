@@ -13131,6 +13131,56 @@ def test_claude_data_schema_sections_lint() -> None:
     )
 
 
+def test_claude_filepath_table_data_files_lint() -> None:
+    """PR-AK: CLAUDE.md ## ファイルパス規約 table must contain the canonical path for
+    each required data file. Checks that the <PROJECT>/<relative_path> backtick entry
+    is present for telopData.ts, titleData.ts, insertImageData.ts, cutData.ts, seData.ts.
+    Prevents canonical path renames from drifting silently.
+    """
+    import re
+
+    REQUIRED_PATHS: list[tuple[str, str]] = [
+        ("cutData.ts", "src/cutData.ts"),
+        ("insertImageData.ts", "src/InsertImage/insertImageData.ts"),
+        ("telopData.ts", "src/テロップテンプレート/telopData.ts"),
+        ("titleData.ts", "src/Title/titleData.ts"),
+        ("seData.ts", "src/SoundEffects/seData.ts"),
+    ]
+
+    repo_root = Path(__file__).parents[2]
+    claude_md = (repo_root / "CLAUDE.md").read_text(encoding="utf-8")
+
+    # Anchor to ## ファイルパス規約 section (up to next ## heading)
+    filepath_section_m = re.search(
+        r"^##\s+ファイルパス規約[^\n]*\n(.*?)(?=^##\s|\Z)",
+        claude_md,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert filepath_section_m, "CLAUDE.md: '## ファイルパス規約' section not found"
+    section_body = filepath_section_m.group(1)
+
+    # Collect backtick values from table rows only (lines starting with |)
+    table_row_values: set[str] = set()
+    for line in section_body.splitlines():
+        if line.strip().startswith("|"):
+            table_row_values.update(re.findall(r"`([^`]+)`", line))
+
+    errors: list[str] = []
+    for filename, canonical_path in REQUIRED_PATHS:
+        # Require the full <PROJECT>/canonical_path form in a table row
+        full_path = f"<PROJECT>/{canonical_path}"
+        if full_path not in table_row_values:
+            errors.append(
+                f"CLAUDE.md ファイルパス規約: missing table row entry "
+                f"'`{full_path}`' for {filename}"
+            )
+
+    assert not errors, (
+        f"CLAUDE.md filepath table violations ({len(errors)} error(s)):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13337,6 +13387,8 @@ def main() -> int:
         test_plugin_json_required_fields_lint,
         # PR-AJ (CLAUDE.md data schema section coverage lint): 1 件
         test_claude_data_schema_sections_lint,
+        # PR-AK (CLAUDE.md filepath table data files canonical path lint): 1 件
+        test_claude_filepath_table_data_files_lint,
     ]
     failed = []
     for t in tests:
