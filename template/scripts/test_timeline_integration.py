@@ -17816,6 +17816,78 @@ def test_supermovie_subtitles_budoux_docs_match_build_telop_cli_lint() -> None:
     )
 
 
+def test_supermovie_subtitles_llm_plan_docs_mark_unimplemented_lint() -> None:
+    """PR-LC: subtitles LLM optional plan docs must stay marked future/unimplemented."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    subtitles_skill_path = repo_root / "skills" / "supermovie-subtitles" / "SKILL.md"
+    build_telop_path = template_root / "scripts" / "build_telop_data.py"
+    obs_path = repo_root / "docs" / "OBSERVABILITY.md"
+    for path in (subtitles_skill_path, build_telop_path, obs_path):
+        assert path.is_file(), f"{path.relative_to(repo_root)} not found"
+
+    skill_text = subtitles_skill_path.read_text(encoding="utf-8")
+    build_text = build_telop_path.read_text(encoding="utf-8")
+    obs_text = obs_path.read_text(encoding="utf-8")
+    phase2_match = re.search(
+        r"## Phase 2: 意味分割 \(BudouX deterministic \+ LLM optional plan\)[\s\S]*?"
+        r"## Phase 3: BudouX改行処理",
+        skill_text,
+    )
+    assert phase2_match is not None, "supermovie-subtitles Phase 2 docs not found"
+    phase2_text = phase2_match.group(0)
+
+    errors: list[str] = []
+    required_doc_snippets = {
+        "budoux first": "BudouX first、LLM は optional な補正レイヤー",
+        "future optional": "LLM 経路は将来オプション化",
+        "telop plan future": "起動時の `telop_plan.json` を script が validate",
+        "invalid fallback": "invalid なら BudouX に戻す設計",
+        "unimplemented": "(現時点未実装)",
+        "default command": "`python3 <PROJECT>/scripts/build_telop_data.py`",
+    }
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in phase2_text:
+            errors.append(f"supermovie-subtitles LLM plan boundary docs missing {name}: {snippet}")
+
+    forbidden_code_snippets = {
+        "telop_plan runtime load": "telop_plan.json",
+        "plan cli option": "--plan",
+        "anthropic dependency": "ANTHROPIC_API_KEY",
+        "llm api naming": "Anthropic",
+    }
+    for name, snippet in forbidden_code_snippets.items():
+        if snippet in build_text:
+            errors.append(f"build_telop_data.py unexpectedly implements {name}: {snippet}")
+
+    required_code_snippets = {
+        "baseline only plan-adjacent cli": 'ap.add_argument("--baseline", action="store_true"',
+        "default budoux": "phrases_list = call_budoux([s[\"text\"] for s in segments])",
+        "budoux fallback": "WARN: BudouX 失敗 → legacy fallback",
+        "mode label": 'mode_label = "baseline" if args.baseline else "BudouX"',
+    }
+    for name, snippet in required_code_snippets.items():
+        if snippet not in build_text:
+            errors.append(f"build_telop_data.py missing current non-LLM path {name}: {snippet}")
+
+    required_obs_snippets = {
+        "step": "| 375 | `skills/supermovie-subtitles/SKILL.md` の Phase 2 LLM optional plan docs",
+        "test name": "test_supermovie_subtitles_llm_plan_docs_mark_unimplemented_lint",
+        "pr code": "PR-LC",
+        "unimplemented": "現時点未実装",
+    }
+    for name, snippet in required_obs_snippets.items():
+        if snippet not in obs_text:
+            errors.append(f"OBSERVABILITY step 375 missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-subtitles LLM optional plan implementation-boundary drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_subtitles_budoux_helper_and_dependency_contract_lint() -> None:
     """PR-JJ: BudouX helper CLI and package dependency must match subtitles docs."""
     import json
@@ -27290,6 +27362,8 @@ def main() -> int:
         test_supermovie_subtitles_template_id_mapping_matches_registry_lint,
         # PR-JG (supermovie-subtitles BudouX docs stay synced with build_telop_data CLI): 1 件
         test_supermovie_subtitles_budoux_docs_match_build_telop_cli_lint,
+        # PR-LC (supermovie-subtitles LLM optional plan stays marked unimplemented): 1 件
+        test_supermovie_subtitles_llm_plan_docs_mark_unimplemented_lint,
         # PR-JJ (BudouX helper CLI and package dependency stay synced with subtitles docs): 1 件
         test_supermovie_subtitles_budoux_helper_and_dependency_contract_lint,
         # PR-JH (supermovie-subtitles linebreak docs stay synced with insert_linebreak): 1 件
