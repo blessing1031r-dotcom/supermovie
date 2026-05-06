@@ -15721,6 +15721,58 @@ def test_narration_audio_with_mode_is_pure_mode_prop_renderer() -> None:
     )
 
 
+def test_narration_audio_none_and_default_volume_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    narration_file = template_root / "src" / "Narration" / "NarrationAudio.tsx"
+    assert narration_file.is_file(), "template/src/Narration/NarrationAudio.tsx not found"
+    raw = narration_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+
+    def component_body(name: str) -> str:
+        start = re.search(rf"export\s+const\s+{name}\b", text)
+        if not start:
+            errors.append(f"NarrationAudio.tsx: {name} component not found")
+            return ""
+        rest = text[start.start():]
+        next_export = re.search(r"\nexport\s+const\s+", rest[len("export"):])
+        return rest[:len("export") + next_export.start() + 1] if next_export else rest
+
+    with_mode_body = component_body("NarrationAudioWithMode")
+    wrapper_body = component_body("NarrationAudio")
+
+    for pattern, desc in [
+        (r"interface\s+NarrationAudioProps\s*\{[\s\S]*?volume\??:\s*number\s*;[\s\S]*?\}", "NarrationAudioProps optional volume"),
+        (r"interface\s+NarrationAudioWithModeProps\s*\{[\s\S]*?volume\??:\s*number\s*;[\s\S]*?mode:\s*NarrationMode\s*;[\s\S]*?\}", "NarrationAudioWithModeProps optional volume plus mode"),
+    ]:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"NarrationAudio.tsx: missing {desc}")
+
+    for body, name in [
+        (with_mode_body, "NarrationAudioWithMode"),
+        (wrapper_body, "NarrationAudio"),
+    ]:
+        for pattern, desc in [
+            (r"volume\s*=\s*1\.0", "default volume = 1.0"),
+            (r"if\s*\(\s*mode\.kind\s*===\s*['\"]chunks['\"]\s*\)", "chunks branch"),
+            (r"if\s*\(\s*mode\.kind\s*===\s*['\"]legacy['\"]\s*\)", "legacy branch"),
+            (r"return\s+null\s*;", "none fallback returns null"),
+        ]:
+            if not re.search(pattern, body, re.DOTALL):
+                errors.append(f"NarrationAudio.tsx: {name} missing {desc}")
+    if not re.search(r"const\s+mode\s*=\s*useNarrationMode\s*\(\s*\)\s*;", wrapper_body):
+        errors.append("NarrationAudio.tsx: NarrationAudio wrapper must call useNarrationMode()")
+    if len(re.findall(r"return\s+null\s*;", text)) < 2:
+        errors.append("NarrationAudio.tsx: both NarrationAudioWithMode and NarrationAudio must keep none fallback return null")
+
+    assert errors == [], (
+        "template/src/Narration/NarrationAudio.tsx none/default-volume contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_entrypoint_registers_remotion_root() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -16878,6 +16930,7 @@ def main() -> int:
         test_narration_watch_uses_mode_constants_and_data_files,
         # PR-CR (NarrationAudioWithMode is pure mode-prop renderer, no internal hook call lint): 1 件
         test_narration_audio_with_mode_is_pure_mode_prop_renderer,
+        test_narration_audio_none_and_default_volume_contract_lint,
         # PR-CS (index.ts imports RemotionRoot and calls registerRoot lint): 1 件
         test_entrypoint_registers_remotion_root,
         # PR-CT (BGM.tsx uses BGM_FILE constant for both presence check and audio src lint): 1 件
