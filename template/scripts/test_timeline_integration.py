@@ -14959,6 +14959,37 @@ def test_main_video_layer_order_contract_lint() -> None:
     )
 
 
+def test_main_video_base_video_fit_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    main_video = template_root / "src" / "MainVideo.tsx"
+    assert main_video.is_file(), "template/src/MainVideo.tsx not found"
+    raw = main_video.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    if not re.search(r"<AbsoluteFill\b[^>]*\bstyle=\{\{\s*backgroundColor:\s*['\"]black['\"]\s*\}\}", text, re.DOTALL):
+        errors.append("MainVideo.tsx: root <AbsoluteFill> must keep black background")
+    video_match = re.search(r"<Video\b.*?\/>", text, re.DOTALL)
+    if not video_match:
+        errors.append("MainVideo.tsx: self-closing base <Video ... /> not found")
+    else:
+        video = video_match.group(0)
+        for pattern, desc in [
+            (r"src=\{\s*staticFile\s*\(\s*VIDEO_FILE\s*\)\s*\}", "src={staticFile(VIDEO_FILE)}"),
+            (r"volume=\{\s*\(\s*\)\s*=>\s*baseVolume\s*\}", "volume={() => baseVolume}"),
+            (r"style=\{\{", "style={{...}}"),
+            (r"width:\s*['\"]100%['\"]", "width: '100%'"),
+            (r"height:\s*['\"]100%['\"]", "height: '100%'"),
+            (r"objectFit:\s*['\"]contain['\"]", "objectFit: 'contain'"),
+        ]:
+            if not re.search(pattern, video, re.DOTALL):
+                errors.append(f"MainVideo.tsx: base <Video> must keep {desc}")
+    assert errors == [], (
+        "template/src/MainVideo.tsx base video fit contract drift:\n" + "\n".join(errors)
+    )
+
+
 def test_main_video_narration_mode_ssot_contract_lint() -> None:
     """PR-CK: MainVideo.tsx must call useNarrationMode(), derive baseVolume from narrationMode.kind,
     bind volume={() => baseVolume} on the base Video, and pass mode={narrationMode} to NarrationAudioWithMode.
@@ -16310,6 +16341,7 @@ def main() -> int:
         test_main_video_staticfile_uses_video_file_lint,
         test_main_video_required_layers_contract_lint,
         test_main_video_layer_order_contract_lint,
+        test_main_video_base_video_fit_contract_lint,
         test_main_video_narration_mode_ssot_contract_lint,
         test_text_overlay_telop_config_ssot_contract_lint,
         test_telop_template_registry_file_coverage_lint,
