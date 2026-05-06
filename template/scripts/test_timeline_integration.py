@@ -13705,6 +13705,37 @@ def test_plugin_json_top_level_keyset_lint() -> None:
     assert errors == [], "plugin.json top-level key-set lint failed:\n" + "\n".join(errors)
 
 
+def test_plugin_json_keywords_canonical_tokens_lint() -> None:
+    """PR-AW: every keyword in plugin.json must match ^[a-z0-9]+(?:-[a-z0-9]+)*$
+    (lowercase kebab-case, no spaces, no uppercase, no underscores, no leading/trailing hyphens).
+    """
+    import json
+    import re
+
+    KEYWORD_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+    repo_root = Path(__file__).parents[2]
+    manifest_path = repo_root / ".claude-plugin" / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    keywords = manifest.get("keywords", [])
+    errors: list[str] = []
+
+    if not isinstance(keywords, list):
+        assert False, f"plugin.json 'keywords' must be a list, got {type(keywords).__name__!r}"
+
+    for i, kw in enumerate(keywords):
+        if not isinstance(kw, str):
+            errors.append(f"plugin.json 'keywords[{i}]' must be a string, got {kw!r}")
+        elif not KEYWORD_RE.fullmatch(kw):
+            errors.append(
+                f"plugin.json 'keywords[{i}]' {kw!r} does not match canonical format "
+                f"(lowercase kebab-case: ^[a-z0-9]+(?:-[a-z0-9]+)*$)"
+            )
+
+    assert errors == [], "plugin.json keywords canonical format lint failed:\n" + "\n".join(errors)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13935,6 +13966,8 @@ def main() -> int:
         test_skill_md_h1_title_consistency_lint,
         # PR-AV (plugin.json top-level key-set exact match lint): 1 件
         test_plugin_json_top_level_keyset_lint,
+        # PR-AW (plugin.json keywords canonical kebab-case format lint): 1 件
+        test_plugin_json_keywords_canonical_tokens_lint,
     ]
     failed = []
     for t in tests:
