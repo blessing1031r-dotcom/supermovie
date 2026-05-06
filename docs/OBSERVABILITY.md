@@ -530,6 +530,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 229 | `template/src/InsertImage/InsertImage.tsx` が `useCurrentFrame` / `interpolate` / `Img` / `staticFile` を `remotion` から、`ImageSegment` 型を `./types` から import することを lint (`test_insert_image_canonical_imports_contract_lint`、Codex 推奨 PR-FM)。InsertImage import contract を保護 | PR-FM |
 | 230 | `template/src/テロップテンプレート/Telop.tsx` が Remotion helper、Telop 型、`TELOP_CONFIG`、legacy template / animation config を canonical module から import することを lint (`test_telop_canonical_imports_contract_lint`、Codex 推奨 PR-FN)。Telop import contract を保護 | PR-FN |
 | 231 | `template/src/テロップテンプレート/TelopPlayer.tsx` が React `useMemo`、Remotion helper、legacy `Telop`、`telopData`、registry 値/型、`TelopSegment` 型を canonical module から import することを lint (`test_telop_player_canonical_imports_contract_lint`、Codex 推奨 PR-FO)。TelopPlayer import contract を保護 | PR-FO |
+| 232 | `template/src/テロップテンプレート/telopTemplateRegistry.tsx` が type-only React import、`SubtitleItem` / `SubtitleData` / `TelopComponent` / `TelopTemplateEntry` の exported surface、`telopTemplateRegistry` の `as const satisfies Record<string, TelopTemplateEntry>` を保つことを lint (`test_telop_template_registry_type_surface_contract_lint`、Codex 推奨 PR-FP)。Telop registry type surface contract を保護 | PR-FP |
 
 ## Test Requirements
 
