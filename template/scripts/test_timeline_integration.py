@@ -20134,7 +20134,7 @@ def test_remotion_codex_plugin_integration_plan_docs_contract_lint() -> None:
         "advisory": "official Remotion guidance is advisory",
         "schemas stay source": "SuperMovie data schemas, file paths, Japanese editing runbooks, and tests remain the source of truth",
         "thin migration": "Codex skill migration should be thin and behavior-preserving",
-        "load official skill condition": "load the official `remotion-best-practices` skill only when changing Remotion code",
+        "load official skill condition": "official `remotion-best-practices` skill only when changing Remotion code",
         "docs only spike": "only as a local/fork docs-and-lint branch",
         "do not replace skills": "Do not replace SuperMovie skills.",
         "no upstream PR": "Do not create upstream PRs.",
@@ -20182,8 +20182,10 @@ def test_remotion_bridge_note_in_remotion_facing_skills_lint() -> None:
     required_note_snippets = {
         "heading": "## Remotion Bridge Note",
         "scope line": "Remotion の `.tsx` component / Composition / Sequence / Audio / `staticFile` /",
-        "condition line": "animation / media timing を変更・新規設計する場合だけ、official Remotion",
-        "official skill line": "Codex plugin の `remotion-best-practices` を参照する。",
+        "condition line": "animation / media timing を変更・新規設計する場合は、まず",
+        "bridge command line": "`/supermovie-remotion-bridge` を開く。",
+        "bridge decision line": "bridge skill の判定で必要な場合だけ、official Remotion Codex plugin の",
+        "official skill line": "`remotion-best-practices` を参照する。",
         "source of truth line 1": "SuperMovie の schema、file path、Japanese workflow、Python lint gate はこの",
         "source of truth line 2": "repo を source of truth とする。",
     }
@@ -20202,8 +20204,9 @@ def test_remotion_bridge_note_in_remotion_facing_skills_lint() -> None:
     plan_text = plan_path.read_text(encoding="utf-8")
     plan_required = {
         "bridge task": "Add a bridge note to Remotion-facing SuperMovie skills",
+        "bridge skill": "`/supermovie-remotion-bridge` first; the bridge decision may load the",
         "official skill": "official `remotion-best-practices` skill",
-        "load condition": "only when changing Remotion code or designing new Remotion components",
+        "load condition": "official `remotion-best-practices` skill only when changing Remotion code",
         "source of truth": "SuperMovie skills rather than moving them into the official Remotion skill",
     }
     for name, snippet in plan_required.items():
@@ -20223,6 +20226,75 @@ def test_remotion_bridge_note_in_remotion_facing_skills_lint() -> None:
 
     assert errors == [], (
         "Remotion bridge note / official plugin integration docs drift:\n"
+        + "\n".join(errors)
+    )
+
+
+def test_remotion_facing_skills_route_through_bridge_skill_lint() -> None:
+    """PR-LA: Remotion-facing skills must route official guidance through bridge skill."""
+
+    repo_root = Path(__file__).parents[2]
+    plan_path = repo_root / "docs" / "REMOTION_CODEX_PLUGIN_INTEGRATION.md"
+    obs_path = repo_root / "docs" / "OBSERVABILITY.md"
+    assert plan_path.is_file(), "docs/REMOTION_CODEX_PLUGIN_INTEGRATION.md not found"
+    assert obs_path.is_file(), "docs/OBSERVABILITY.md not found"
+
+    remotion_facing_skills = [
+        "skills/supermovie-init/SKILL.md",
+        "skills/supermovie-subtitles/SKILL.md",
+        "skills/supermovie-slides/SKILL.md",
+        "skills/supermovie-image-gen/SKILL.md",
+        "skills/supermovie-se/SKILL.md",
+        "skills/supermovie-narration/SKILL.md",
+        "skills/supermovie-telop-creator/SKILL.md",
+    ]
+    required_note_snippets = {
+        "bridge command": "`/supermovie-remotion-bridge` を開く。",
+        "bridge decision": "bridge skill の判定で必要な場合だけ、official Remotion Codex plugin の",
+        "official skill": "`remotion-best-practices` を参照する。",
+        "source of truth": "repo を source of truth とする。",
+    }
+    forbidden_note_snippets = {
+        "direct official route": "animation / media timing を変更・新規設計する場合だけ、official Remotion",
+    }
+    errors: list[str] = []
+
+    for rel in remotion_facing_skills:
+        path = repo_root / rel
+        if not path.is_file():
+            errors.append(f"{rel} not found")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for name, snippet in required_note_snippets.items():
+            if snippet not in text:
+                errors.append(f"{rel} missing bridge-routed note {name}: {snippet}")
+        for name, snippet in forbidden_note_snippets.items():
+            if snippet in text:
+                errors.append(f"{rel} still uses {name}: {snippet}")
+
+    plan_text = plan_path.read_text(encoding="utf-8")
+    required_plan_snippets = {
+        "bridge first": "`/supermovie-remotion-bridge` first; the bridge decision may load the",
+        "official conditional": "official `remotion-best-practices` skill only when changing Remotion code",
+        "advisory": "official Remotion guidance is advisory",
+    }
+    for name, snippet in required_plan_snippets.items():
+        if snippet not in plan_text:
+            errors.append(f"integration plan missing bridge-routed {name}: {snippet}")
+
+    obs_text = obs_path.read_text(encoding="utf-8")
+    required_obs_snippets = {
+        "step": "| 373 | Remotion-facing SuperMovie skills",
+        "test name": "test_remotion_facing_skills_route_through_bridge_skill_lint",
+        "pr code": "PR-LA",
+        "bridge command": "`/supermovie-remotion-bridge`",
+    }
+    for name, snippet in required_obs_snippets.items():
+        if snippet not in obs_text:
+            errors.append(f"OBSERVABILITY step 373 missing {name}: {snippet}")
+
+    assert errors == [], (
+        "Remotion-facing skill bridge-router docs drift:\n"
         + "\n".join(errors)
     )
 
@@ -27193,6 +27265,8 @@ def main() -> int:
         test_supermovie_remotion_bridge_skill_docs_contract_lint,
         # PR-KZ (supermovie-skill-creator scaffold follows plugin skill contracts): 1 件
         test_supermovie_skill_creator_scaffold_docs_match_plugin_skill_lint,
+        # PR-LA (Remotion-facing skills route official guidance through bridge skill): 1 件
+        test_remotion_facing_skills_route_through_bridge_skill_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件

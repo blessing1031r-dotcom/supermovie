@@ -73,7 +73,10 @@ Codex skill migration should be thin and behavior-preserving:
 - Keep each SuperMovie phase as a Codex skill entrypoint so users can still run
   init, transcribe, transcript fix, cut, subtitles, slides, narration,
   image-gen, SE, telop creator, and skill creator independently.
-- Add a bridge note to Remotion-facing SuperMovie skills that says: load the official `remotion-best-practices` skill only when changing Remotion code or designing new Remotion components.
+- Add a bridge note to Remotion-facing SuperMovie skills that says: open
+  `/supermovie-remotion-bridge` first; the bridge decision may load the
+  official `remotion-best-practices` skill only when changing Remotion code or
+  designing new Remotion components.
 - Keep pipeline orchestration, schema validation, and generated file contracts
   in SuperMovie skills rather than moving them into the official Remotion skill.
 - Use official Remotion rule files as references for implementation review, not
