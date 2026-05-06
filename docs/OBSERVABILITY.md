@@ -570,6 +570,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 269 | `template/src/SoundEffects/SEPlayer.ts` の public export surface が `SoundEffect` に限定され、default export / re-export を持たないことを lint (`test_seplayer_public_export_surface_contract_lint`、Codex 推奨 PR-HA)。SEPlayer module の API surface creep を保護 | PR-HA |
 | 270 | `template/src/SoundEffects/seData.ts` の public export surface が `seData` に限定され、default export / re-export を持たないことを lint (`test_se_data_public_export_surface_contract_lint`、Codex 推奨 PR-HB)。SE data module の API surface creep を保護 | PR-HB |
 | 271 | `template/src/Slides/SlideSequence.tsx` の public export surface が `SlideSequence` に限定され、default export / re-export を持たないことを lint (`test_slide_sequence_public_export_surface_contract_lint`、Codex 推奨 PR-HC)。SlideSequence module の API surface creep を保護 | PR-HC |
+| 272 | `template/src/Slides/Slide.tsx` の public export surface が `Slide` に限定され、default export / re-export を持たないことを lint (`test_slide_public_export_surface_contract_lint`、Codex 推奨 PR-HD)。Slide module の API surface creep を保護 | PR-HD |
 
 ## Test Requirements
 

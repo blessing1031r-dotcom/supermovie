@@ -18188,6 +18188,35 @@ def test_slide_content_render_contract_lint() -> None:
     )
 
 
+def test_slide_public_export_surface_contract_lint() -> None:
+    """PR-HD: Slide module must export only the Slide component."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    slide_file = template_root / "src" / "Slides" / "Slide.tsx"
+    assert slide_file.is_file(), "template/src/Slides/Slide.tsx not found"
+    raw = slide_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/Slides/Slide.tsx must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*\{""", text, re.MULTILINE), (
+        "template/src/Slides/Slide.tsx must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    assert exported == {"Slide"}, (
+        "template/src/Slides/Slide.tsx public export surface drift: "
+        f"expected ['Slide'], got {sorted(exported)}"
+    )
+
+
 def test_title_canonical_imports_contract_lint() -> None:
     import re
 
@@ -19954,6 +19983,8 @@ def main() -> int:
         test_slide_uses_sequence_local_frame_without_startframe_offset,
         test_slide_style_defaults_and_alignment_contract_lint,
         test_slide_content_render_contract_lint,
+        # PR-HD (Slide module exports only the Slide component): 1 件
+        test_slide_public_export_surface_contract_lint,
         test_title_canonical_imports_contract_lint,
         test_title_uses_sequence_local_frame_without_startframe_offset_lint,
         test_title_visual_style_contract_lint,
