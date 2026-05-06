@@ -15015,6 +15015,65 @@ def test_vitest_use_narration_mode_tests_mock_remotion_before_sut_import_lint() 
     )
 
 
+def test_vitest_use_narration_mode_tests_remotion_mock_api_surface_lint() -> None:
+    """PR-GK: useNarrationMode React tests must mock the Remotion APIs used by the SUT.
+
+    useNarrationMode/mode depend on watchStaticFile and getStaticFiles; every remotion mock
+    in the hook test files must expose both so tests cannot silently fall through to real APIs.
+    """
+    import re
+
+    template_root = Path(__file__).parents[1]
+    test_dir = template_root / "src" / "Narration"
+    target_files = sorted(test_dir.glob("useNarrationMode*.test.tsx"))
+    assert target_files, "template/src/Narration/useNarrationMode*.test.tsx files not found"
+
+    errors: list[str] = []
+    mock_pattern = re.compile(r"""\bvi\.mock\s*\(\s*['"]remotion['"]""")
+
+    for path in target_files:
+        raw = path.read_text(encoding="utf-8")
+        text = "\n".join(
+            line for line in raw.splitlines()
+            if not line.lstrip().startswith("//")
+        )
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+        rel = path.relative_to(template_root).as_posix()
+
+        mock_match = mock_pattern.search(text)
+        if not mock_match:
+            errors.append(f"{rel}: missing vi.mock('remotion', ...) declaration")
+            continue
+
+        rest = text[mock_match.start():]
+        next_mock = re.search(r"""\n\s*vi\.mock\s*\(""", rest[len("vi.mock"):])
+        remotion_block = (
+            rest[:len("vi.mock") + next_mock.start()]
+            if next_mock
+            else rest
+        )
+        return_matches = list(re.finditer(r"\breturn\s*\{", remotion_block))
+        if not return_matches:
+            errors.append(f"{rel}: remotion mock must return an object")
+            continue
+        body = remotion_block[return_matches[-1].end():]
+        missing = [
+            symbol
+            for symbol, pattern in {
+                "watchStaticFile": r"\bwatchStaticFile\b",
+                "getStaticFiles": r"\bgetStaticFiles\s*:",
+            }.items()
+            if not re.search(pattern, body)
+        ]
+        if missing:
+            errors.append(f"{rel}: remotion mock return object missing {missing}")
+
+    assert errors == [], (
+        "template useNarrationMode React test remotion mock API surface contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_vitest_use_narration_mode_tests_mock_narration_data_before_sut_import_lint() -> None:
     """PR-GJ: useNarrationMode React tests must mock narrationData before importing the SUT.
 
@@ -19056,6 +19115,8 @@ def main() -> int:
         test_vitest_react_test_files_match_include_contract_lint,
         # PR-GH (useNarrationMode React tests mock remotion before SUT import): 1 件
         test_vitest_use_narration_mode_tests_mock_remotion_before_sut_import_lint,
+        # PR-GK (useNarrationMode React tests remotion mock exposes required APIs): 1 件
+        test_vitest_use_narration_mode_tests_remotion_mock_api_surface_lint,
         # PR-GJ (useNarrationMode React tests mock narrationData before SUT import): 1 件
         test_vitest_use_narration_mode_tests_mock_narration_data_before_sut_import_lint,
         # PR-GI (useNarrationMode React tests reset mode cache before each test): 1 件
