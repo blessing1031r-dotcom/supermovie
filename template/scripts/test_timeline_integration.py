@@ -14852,6 +14852,35 @@ def test_root_composition_uses_video_config_lint() -> None:
     )
 
 
+def test_root_composition_uses_main_video_component_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    root_tsx = template_root / "src" / "Root.tsx"
+    assert root_tsx.is_file(), "template/src/Root.tsx not found"
+    raw = root_tsx.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    if not re.search(r"""import\s*\{\s*Composition\s*\}\s*from\s*['"]remotion['"]""", text):
+        errors.append("Root.tsx: missing named Composition import from remotion")
+    if not re.search(r"""import\s*\{\s*MainVideo\s*\}\s*from\s*['"]\.\/MainVideo['"]""", text):
+        errors.append("Root.tsx: missing named MainVideo import from ./MainVideo")
+    if not re.search(r"\bexport\s+const\s+RemotionRoot\s*:\s*React\.FC\s*=", text):
+        errors.append("Root.tsx: RemotionRoot must remain the exported React.FC")
+    composition_match = re.search(r"<Composition\b.*?\/>", text, re.DOTALL)
+    if not composition_match:
+        errors.append("Root.tsx: self-closing <Composition ... /> not found")
+    else:
+        composition = composition_match.group(0)
+        if not re.search(r"""\bid\s*=\s*['"]MainVideo['"]""", composition):
+            errors.append('Root.tsx <Composition>: id must remain "MainVideo"')
+        if not re.search(r"\bcomponent\s*=\s*\{\s*MainVideo\s*\}", composition):
+            errors.append("Root.tsx <Composition>: component must remain {MainVideo}")
+    assert errors == [], (
+        "template/src/Root.tsx MainVideo composition contract drift:\n" + "\n".join(errors)
+    )
+
+
 def test_main_video_staticfile_uses_video_file_lint() -> None:
     """PR-CI: MainVideo.tsx must import VIDEO_FILE from ./videoConfig and use staticFile(VIDEO_FILE).
     Tightens the existing import-only lint; verifies the base video source actually flows through SSoT.
@@ -16338,6 +16367,7 @@ def main() -> int:
         test_sm_claude_entrypoint_executable_lint,
         test_template_css_entrypoint_side_effects_lint,
         test_root_composition_uses_video_config_lint,
+        test_root_composition_uses_main_video_component_lint,
         test_main_video_staticfile_uses_video_file_lint,
         test_main_video_required_layers_contract_lint,
         test_main_video_layer_order_contract_lint,
