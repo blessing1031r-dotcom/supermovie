@@ -18234,6 +18234,75 @@ def test_supermovie_narration_cleanup_docs_match_stale_reset_contract_lint() -> 
     )
 
 
+def test_supermovie_narration_vad_docs_match_cut_aware_failfast_contract_lint() -> None:
+    """PR-JB: supermovie-narration VAD docs must match cut-aware fail-fast behavior."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-narration" / "SKILL.md"
+    voicevox_path = template_root / "scripts" / "voicevox_narration.py"
+    assert skill_path.is_file(), "skills/supermovie-narration/SKILL.md not found"
+    assert voicevox_path.is_file(), "template/scripts/voicevox_narration.py not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    voicevox_text = voicevox_path.read_text(encoding="utf-8")
+    phase3i_match = re.search(r"\*\*Phase 3-I transcript timing alignment\*\*[\s\S]*?FPS は", skill_text)
+    error_row_match = re.search(
+        r"\|\s*vad_result\.json 部分破損 \(VadSchemaError / OSError / JSONDecodeError\)\s*\|\s*([^|]+?)\s*\|",
+        skill_text,
+    )
+    main_pos = voicevox_text.find("def main():")
+    assert phase3i_match is not None, "supermovie-narration Phase 3-I docs not found"
+    assert error_row_match is not None, "supermovie-narration vad_result.json error row not found"
+    assert main_pos != -1, "voicevox_narration.py main() not found"
+    docs_text = "\n".join([phase3i_match.group(0), error_row_match.group(1)])
+    main_text = voicevox_text[main_pos:]
+
+    required_doc_snippets = {
+        "vad source": "`vad_result.json` がある時は cut-aware mapping",
+        "mapping helper": "`ms_to_playback_frame` と同型関数を内蔵",
+        "cut fallback warning": "cut で除外された ms 範囲 → 累積 frame fallback + WARN",
+        "vad error types": "VadSchemaError / OSError / JSONDecodeError",
+        "fail fast timing": "synthesis 前に fail-fast",
+        "stale legacy reason": "stale legacy が legacy mode へ流れる事故防止",
+        "vad exit": "exit 8",
+    }
+    required_code_snippets = {
+        "VadSchemaError import": "VadSchemaError,",
+        "load_cut_segments import": "load_cut_segments,",
+        "ms_to_playback_frame import": "ms_to_playback_frame,",
+        "project wrapper": "def project_load_cut_segments(fps: int) -> list[dict]:",
+        "fail fast true": "return load_cut_segments(PROJ, fps, fail_fast=True)",
+        "mapping call": "mapped = ms_to_playback_frame(source_start_ms, fps, cut_segments)",
+        "cut fallback warning": "cut 範囲外",
+        "cut aware metadata": '"cut_aware": bool(cut_segments)',
+        "main load call": "cut_segments = project_load_cut_segments(fps)",
+        "vad exception tuple": "except (VadSchemaError, OSError, json.JSONDecodeError) as e:",
+        "vad status": 'return emit_json("vad_invalid", 8, error=str(e))',
+        "cut-aware stdout": "cut-aware mapping:",
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in docs_text and snippet not in skill_text:
+            errors.append(f"supermovie-narration VAD docs missing {name}: {snippet}")
+    for name, snippet in required_code_snippets.items():
+        if snippet not in voicevox_text:
+            errors.append(f"voicevox_narration.py missing {name}: {snippet}")
+
+    vad_pos = main_text.find("cut_segments = project_load_cut_segments(fps)")
+    mkdir_pos = main_text.find("NARRATION_DIR.mkdir(parents=True, exist_ok=True)")
+    synth_pos = main_text.find("wav_bytes = synthesize(text, args.speaker)")
+    if vad_pos == -1 or mkdir_pos == -1 or synth_pos == -1 or not vad_pos < mkdir_pos < synth_pos:
+        errors.append("voicevox_narration.py must validate VAD before mkdir and synthesis")
+
+    assert errors == [], (
+        "supermovie-narration VAD docs / cut-aware fail-fast contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -22593,6 +22662,8 @@ def main() -> int:
         test_supermovie_narration_synthesis_docs_match_voicevox_api_contract_lint,
         # PR-JA (supermovie-narration cleanup docs stay synced with stale reset behavior): 1 件
         test_supermovie_narration_cleanup_docs_match_stale_reset_contract_lint,
+        # PR-JB (supermovie-narration VAD docs stay synced with cut-aware fail-fast behavior): 1 件
+        test_supermovie_narration_vad_docs_match_cut_aware_failfast_contract_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
