@@ -15388,6 +15388,24 @@ def test_main_video_narration_mode_ssot_contract_lint() -> None:
     )
 
 
+def test_main_video_base_volume_none_branch_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    main_video = template_root / "src" / "MainVideo.tsx"
+    assert main_video.is_file(), "template/src/MainVideo.tsx not found"
+    raw = main_video.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert re.search(
+        r"\bconst\s+baseVolume\s*=\s*narrationMode\.kind\s*===\s*['\"]none['\"]\s*\?\s*1\.0\s*:\s*0\s*;",
+        text,
+    ), (
+        "template/src/MainVideo.tsx baseVolume contract drift: "
+        "baseVolume must be 1.0 only when narrationMode.kind === 'none', otherwise 0"
+    )
+
+
 def test_text_overlay_telop_config_ssot_contract_lint() -> None:
     """PR-CL: Telop.tsx and Title.tsx must import TELOP_CONFIG from videoConfig and use its fields.
     Guards against hardcoded overlay layout values bypassing the TELOP_CONFIG SSoT.
@@ -17784,6 +17802,7 @@ def main() -> int:
         test_main_video_layer_order_contract_lint,
         test_main_video_base_video_fit_contract_lint,
         test_main_video_narration_mode_ssot_contract_lint,
+        test_main_video_base_volume_none_branch_contract_lint,
         test_text_overlay_telop_config_ssot_contract_lint,
         test_telop_legacy_template_selection_contract_lint,
         test_telop_legacy_animation_selection_contract_lint,

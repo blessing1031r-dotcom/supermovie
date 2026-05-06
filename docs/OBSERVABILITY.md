@@ -521,6 +521,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 220 | `template/src/index.ts` が `registerRoot` を `remotion` から named import することを lint (`test_entrypoint_imports_register_root_from_remotion_lint`、Codex 推奨 PR-FD)。Remotion entrypoint import contract を保護 | PR-FD |
 | 221 | `template/src/MainVideo.tsx` が `AbsoluteFill` / `Video` / `staticFile` を `remotion` から named import することを lint (`test_main_video_imports_remotion_primitives_lint`、Codex 推奨 PR-FE)。MainVideo Remotion primitive import contract を保護 | PR-FE |
 | 222 | `template/src/MainVideo.tsx` が主要 layer/helper (`TelopPlayer` / `SESequence` / `BGM` / `ImageSequence` / `TitleSequence` / `SlideSequence` / `NarrationAudioWithMode` / `useNarrationMode` / `VIDEO_FILE`) を canonical path から named import することを lint (`test_main_video_canonical_layer_import_paths_lint`、Codex 推奨 PR-FF)。MainVideo layer import path contract を保護 | PR-FF |
+| 223 | `template/src/MainVideo.tsx` が `const baseVolume = narrationMode.kind === 'none' ? 1.0 : 0;` を保つことを lint (`test_main_video_base_volume_none_branch_contract_lint`、Codex 推奨 PR-FG)。MainVideo base video volume branch contract を保護 | PR-FG |
 
 ## Test Requirements
 
