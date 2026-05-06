@@ -13934,6 +13934,30 @@ def test_markdown_fence_balanced_lint() -> None:
     assert errors == [], "Markdown fence balance lint failed:\n" + "\n".join(errors)
 
 
+def test_skill_directory_name_canonical_slug_lint() -> None:
+    """PR-BC: Every directory under skills/ must be a lowercase supermovie-prefixed
+    kebab-case slug matching ^supermovie-[a-z0-9]+(?:-[a-z0-9]+)*$ with no
+    case-folded duplicates.
+    """
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    names = [p.name for p in sorted((repo_root / "skills").iterdir()) if p.is_dir()]
+    pat = re.compile(r"^supermovie-[a-z0-9]+(?:-[a-z0-9]+)*$")
+    bad = [n for n in names if not pat.fullmatch(n)]
+    folded: dict[str, str] = {}
+    dup: list[str] = []
+    for n in names:
+        key = n.casefold()
+        if key in folded:
+            dup.append(n)
+        else:
+            folded[key] = n
+    assert bad == [] and dup == [], (
+        f"Skill directory slug lint failed: bad={bad}, casefold_duplicates={dup}"
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -14176,6 +14200,8 @@ def main() -> int:
         test_skill_md_body_single_h1_lint,
         # PR-BB (markdown fence balanced lint: README/CLAUDE.md/OBSERVABILITY.md/SKILL.md): 1 件
         test_markdown_fence_balanced_lint,
+        # PR-BC (skill directory name canonical slug lint): 1 件
+        test_skill_directory_name_canonical_slug_lint,
     ]
     failed = []
     for t in tests:
