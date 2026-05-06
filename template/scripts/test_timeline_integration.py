@@ -12528,6 +12528,86 @@ def test_readme_install_url_matches_plugin_repository_lint() -> None:
     )
 
 
+def test_skill_embedded_workflow_matches_claude_pipeline_lint() -> None:
+    """PR-AB: skills/*/SKILL.md embedded workflow blocks must not skip pipeline steps.
+    (1) Extract canonical pipeline order from CLAUDE.md workflow block.
+    (2) For each skill SKILL.md code block with 4+ known steps, if both
+        'supermovie-subtitles' and 'supermovie-image-gen' appear,
+        'supermovie-slides' and 'supermovie-narration' must also appear.
+    (3) The relative order of known steps must match canonical order.
+    """
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    claude_md_path = repo_root / "CLAUDE.md"
+    assert claude_md_path.exists(), "CLAUDE.md not found at repo root"
+    claude_md_text = claude_md_path.read_text()
+
+    # (1) Extract canonical pipeline step order from the first code block in CLAUDE.md
+    first_block_m = re.search(r"```[^\n]*\n(.*?)```", claude_md_text, re.DOTALL)
+    assert first_block_m, "CLAUDE.md: no code block found for canonical pipeline"
+    canonical_steps_raw = re.findall(r"/(supermovie-[\w-]+)", first_block_m.group(1))
+    # deduplicate while preserving order
+    seen: set[str] = set()
+    canonical_steps: list[str] = []
+    for s in canonical_steps_raw:
+        if s not in seen:
+            canonical_steps.append(s)
+            seen.add(s)
+    canonical_index = {step: i for i, step in enumerate(canonical_steps)}
+
+    assert "supermovie-subtitles" in canonical_index, "CLAUDE.md: supermovie-subtitles missing from canonical pipeline"
+    assert "supermovie-slides" in canonical_index, "CLAUDE.md: supermovie-slides missing from canonical pipeline"
+    assert "supermovie-narration" in canonical_index, "CLAUDE.md: supermovie-narration missing from canonical pipeline"
+    assert "supermovie-image-gen" in canonical_index, "CLAUDE.md: supermovie-image-gen missing from canonical pipeline"
+
+    skills_dir = repo_root / "skills"
+    errors: list[str] = []
+
+    for skill_path in sorted(skills_dir.iterdir()):
+        if not skill_path.is_dir():
+            continue
+        skill_md_path = skill_path / "SKILL.md"
+        if not skill_md_path.exists():
+            continue
+        content = skill_md_path.read_text()
+        code_blocks = re.findall(r"```[^\n]*\n(.*?)```", content, re.DOTALL)
+
+        for block in code_blocks:
+            steps_in_block = re.findall(r"/(supermovie-[\w-]+)", block)
+            known_steps = [s for s in steps_in_block if s in canonical_index]
+            if len(known_steps) < 4:
+                continue
+
+            # (2) subtitles + image-gen both present → slides + narration must also appear
+            if (
+                "supermovie-subtitles" in known_steps
+                and "supermovie-image-gen" in known_steps
+            ):
+                for required in ("supermovie-slides", "supermovie-narration"):
+                    if required not in known_steps:
+                        errors.append(
+                            f"{skill_path.name}/SKILL.md: workflow block contains "
+                            f"'subtitles' and 'image-gen' but is missing '{required}'"
+                        )
+
+            # (3) relative order must match canonical
+            indices = [canonical_index[s] for s in known_steps]
+            for i in range(len(indices) - 1):
+                if indices[i] > indices[i + 1]:
+                    errors.append(
+                        f"{skill_path.name}/SKILL.md: workflow block has "
+                        f"'{known_steps[i]}' (pos {indices[i]}) before "
+                        f"'{known_steps[i + 1]}' (pos {indices[i + 1]}) "
+                        f"— violates canonical order"
+                    )
+
+    assert not errors, (
+        f"Skill embedded workflow drift detected ({len(errors)} error(s)):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12716,6 +12796,8 @@ def main() -> int:
         test_package_lock_root_dependency_drift_lint,
         # PR-AA (README install URL matches plugin.json repository lint): 1 件
         test_readme_install_url_matches_plugin_repository_lint,
+        # PR-AB (skill embedded workflow matches CLAUDE.md pipeline order lint): 1 件
+        test_skill_embedded_workflow_matches_claude_pipeline_lint,
     ]
     failed = []
     for t in tests:

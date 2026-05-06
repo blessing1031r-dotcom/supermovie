@@ -276,6 +276,10 @@ Phase 5 と同じ理由で skill 内では実行せず、Roku が手動で `npx 
     ↓ cutData.ts
 /supermovie-subtitles         ← テロップ＆タイトル生成
     ↓ telopData.ts + titleData.ts
+/supermovie-slides            ← スライド生成
+    ↓ slideData.ts
+/supermovie-narration         ← ナレーション生成
+    ↓ narration.wav
 /supermovie-image-gen         ← 画像生成 + 配置データ
     ↓ insertImageData.ts
 /supermovie-se                ← SE自動配置

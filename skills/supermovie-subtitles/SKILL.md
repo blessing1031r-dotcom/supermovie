@@ -531,6 +531,10 @@ export const telopData: TelopSegment[] = [
     ↓ transcript_fixed.json
 /supermovie-subtitles         ← ★ここ: テロップ＆タイトル生成
     ↓ telopData.ts + titleData.ts
+/supermovie-slides            ← スライド生成
+    ↓ slideData.ts
+/supermovie-narration         ← ナレーション生成
+    ↓ narration.wav
 /supermovie-image-gen         ← 画像生成 + 配置データ
     ↓
 /supermovie-se                ← SE自動配置
