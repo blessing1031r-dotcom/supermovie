@@ -18268,6 +18268,91 @@ def test_timeline_transcript_segment_validation_docs_match_schema_contract_lint(
     )
 
 
+def test_supermovie_slides_render_output_docs_match_build_slide_data_lint() -> None:
+    """PR-JP: supermovie-slides output docs must match build_slide_data render/write contract."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    slides_skill_path = repo_root / "skills" / "supermovie-slides" / "SKILL.md"
+    build_slide_path = template_root / "scripts" / "build_slide_data.py"
+    slide_data_path = template_root / "src" / "Slides" / "slideData.ts"
+    assert slides_skill_path.is_file(), "skills/supermovie-slides/SKILL.md not found"
+    assert build_slide_path.is_file(), "template/scripts/build_slide_data.py not found"
+    assert slide_data_path.is_file(), "template/src/Slides/slideData.ts not found"
+
+    skill_text = slides_skill_path.read_text(encoding="utf-8")
+    build_text = build_slide_path.read_text(encoding="utf-8")
+    slide_data_text = slide_data_path.read_text(encoding="utf-8")
+    render_match = re.search(
+        r"def render_slide_data_ts\(slides: list\[dict\]\) -> str:[\s\S]*?\n\nPLAN_VERSION =",
+        build_text,
+    )
+    assert render_match is not None, "build_slide_data.py render_slide_data_ts block not found"
+    render_text = render_match.group(0)
+
+    errors: list[str] = []
+    required_render_snippets = {
+        "typed import": "import type { SlideSegment } from './types';",
+        "generated comment": "// 自動生成: scripts/build_slide_data.py",
+        "generated count comment": "slides を transcript_fixed.json から生成",
+        "typed export": "export const slideData: SlideSegment[] = [",
+        "id field": "id: {s['id']}",
+        "start frame field": "startFrame: {s['startFrame']}",
+        "end frame field": "endFrame: {s['endFrame']}",
+        "title json dump": "title: {json.dumps(s['title'], ensure_ascii=False)}",
+        "subtitle optional": 'if s.get("subtitle"):',
+        "bullets optional": 'if s.get("bullets"):',
+        "align optional": 'if s.get("align"):',
+        "background optional": 'if s.get("backgroundColor"):',
+        "video layer optional": 'if s.get("videoLayer"):',
+        "array close": 'lines.append("];")',
+    }
+    required_write_snippets = {
+        "output path": 'out_path = PROJ / "src" / "Slides" / "slideData.ts"',
+        "backup path": 'backup = PROJ / "src" / "Slides" / "slideData.backup.ts"',
+        "backup guard": "if out_path.exists() and not backup.exists():",
+        "backup write": 'backup.write_text(out_path.read_text(encoding="utf-8"), encoding="utf-8")',
+        "render call": "ts = render_slide_data_ts(slides)",
+        "output write": 'out_path.write_text(ts, encoding="utf-8")',
+        "human heading": 'print(f"=== slideData.ts 生成 (mode={mode_label}) ===")',
+        "output slides stdout": 'print(f"output slides: {len(slides)}")',
+        "artifact path": 'safe_artifact_path(out_path, project_root=PROJ',
+    }
+    required_skill_snippets = {
+        "skill description output": "src/Slides/slideData.ts に書き出すスキル。",
+        "phase output": "- 出力先: `<PROJECT>/src/Slides/slideData.ts`",
+        "backup docs": "- 既存 `slideData.ts` を `slideData.backup.ts` として退避",
+        "command default": "python3 <PROJECT>/scripts/build_slide_data.py",
+        "command mode": "python3 <PROJECT>/scripts/build_slide_data.py --mode topic",
+        "completion heading": "✅ slideData.ts 生成完了",
+        "completion output": "📝 出力 slides: <K> 個",
+        "completion save path": "📄 保存先: src/Slides/slideData.ts",
+        "pipeline output": "↓ slideData.ts → SlideSequence layer",
+    }
+    required_placeholder_snippets = {
+        "placeholder typed import": "import type { SlideSegment } from './types';",
+        "placeholder typed export": "export const slideData: SlideSegment[] = [",
+    }
+    for name, snippet in required_render_snippets.items():
+        if snippet not in render_text:
+            errors.append(f"build_slide_data.py render output missing {name}: {snippet}")
+    for name, snippet in required_write_snippets.items():
+        if snippet not in build_text:
+            errors.append(f"build_slide_data.py write flow missing {name}: {snippet}")
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-slides output docs missing {name}: {snippet}")
+    for name, snippet in required_placeholder_snippets.items():
+        if snippet not in slide_data_text:
+            errors.append(f"template slideData.ts placeholder missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-slides output docs / build_slide_data.py render-write contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -23798,6 +23883,8 @@ def main() -> int:
         test_supermovie_cut_timeline_helper_docs_match_vad_mapping_contract_lint,
         # PR-JO (timeline.py transcript segment validation stays synced with transcript schema docs): 1 件
         test_timeline_transcript_segment_validation_docs_match_schema_contract_lint,
+        # PR-JP (supermovie-slides output docs stay synced with build_slide_data render/write): 1 件
+        test_supermovie_slides_render_output_docs_match_build_slide_data_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
