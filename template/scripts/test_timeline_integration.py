@@ -12729,6 +12729,67 @@ def test_claude_pipeline_commands_have_skill_and_readme_coverage_lint() -> None:
     )
 
 
+def test_readme_quickstart_workflow_matches_claude_pipeline_lint() -> None:
+    """PR-AE: README quickstart 'Claude:' workflow sentence must include all canonical
+    pipeline steps and in the correct relative order.
+    Maps canonical /supermovie-* commands to their expected Japanese keyword tokens
+    in the quickstart line, then verifies monotonic appearance order.
+    """
+    # Canonical pipeline step → expected Japanese keyword in quickstart sentence
+    # Order of entries here defines the expected canonical order.
+    CANONICAL_KEYWORD_MAP: list[tuple[str, str]] = [
+        ("supermovie-init", "プロジェクト生成"),
+        ("supermovie-transcribe", "文字起こし"),
+        ("supermovie-transcript-fix", "誤字修正"),
+        ("supermovie-cut", "カット"),
+        ("supermovie-subtitles", "テロップ"),
+        ("supermovie-slides", "スライド"),
+        ("supermovie-narration", "ナレーション"),
+        ("supermovie-image-gen", "画像生成"),
+        ("supermovie-se", "SE"),
+    ]
+
+    repo_root = Path(__file__).parents[2]
+    readme_text = (repo_root / "README.md").read_text(encoding="utf-8")
+
+    # Find the quickstart 'Claude:' workflow line
+    quickstart_line = ""
+    for line in readme_text.splitlines():
+        if line.strip().startswith("Claude:") and "→" in line:
+            quickstart_line = line.strip()
+            break
+    assert quickstart_line, "README.md: no 'Claude: ... → ...' quickstart workflow line found"
+
+    errors: list[str] = []
+
+    # (1) All canonical keywords must appear in the quickstart line
+    for step, keyword in CANONICAL_KEYWORD_MAP:
+        if keyword not in quickstart_line:
+            errors.append(
+                f"README quickstart missing '{keyword}' (for {step}): {quickstart_line!r}"
+            )
+
+    # (2) Canonical keywords must appear in monotonically increasing position
+    positions: list[tuple[int, str, str]] = []
+    for step, keyword in CANONICAL_KEYWORD_MAP:
+        pos = quickstart_line.find(keyword)
+        if pos >= 0:
+            positions.append((pos, step, keyword))
+    for i in range(len(positions) - 1):
+        pos_a, step_a, kw_a = positions[i]
+        pos_b, step_b, kw_b = positions[i + 1]
+        if pos_a > pos_b:
+            errors.append(
+                f"README quickstart has '{kw_a}' ({step_a}) at pos {pos_a} "
+                f"after '{kw_b}' ({step_b}) at pos {pos_b} — violates canonical order"
+            )
+
+    assert not errors, (
+        f"README quickstart pipeline drift ({len(errors)} error(s)):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12923,6 +12984,8 @@ def main() -> int:
         test_readme_workflow_order_matches_claude_pipeline_lint,
         # PR-AD (canonical pipeline commands have skill dir + README coverage lint): 1 件
         test_claude_pipeline_commands_have_skill_and_readme_coverage_lint,
+        # PR-AE (README quickstart workflow sentence includes all pipeline steps in order): 1 件
+        test_readme_quickstart_workflow_matches_claude_pipeline_lint,
     ]
     failed = []
     for t in tests:
