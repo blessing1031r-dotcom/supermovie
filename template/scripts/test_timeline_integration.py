@@ -13619,6 +13619,62 @@ def test_skill_frontmatter_allowed_tools_canonical_order_lint() -> None:
     assert errors == [], "allowed-tools canonical order lint failed:\n" + "\n".join(errors)
 
 
+def test_skill_md_h1_title_consistency_lint() -> None:
+    """PR-AU: every skills/*/SKILL.md body must have an H1 heading that starts with
+    '# SuperMovie ' and contains each word of the directory slug (case-insensitive).
+    Example: supermovie-image-gen → H1 must start with '# SuperMovie ' and contain
+    'image' and 'gen' as word tokens (case-insensitive).
+    """
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    skills_root = repo_root / "skills"
+    errors: list[str] = []
+
+    for skill_path in sorted(skills_root.iterdir()):
+        if not skill_path.is_dir():
+            continue
+        skill_md = skill_path / "SKILL.md"
+        if not skill_md.is_file():
+            continue
+
+        content = skill_md.read_text(encoding="utf-8")
+
+        # Strip frontmatter block
+        body = re.sub(r"^---\s*\n.*?^---\s*\n", "", content, flags=re.MULTILINE | re.DOTALL)
+
+        # Find first H1
+        h1_m = re.search(r"^# (.+)$", body, re.MULTILINE)
+        if not h1_m:
+            errors.append(f"{skill_path.name}/SKILL.md: no H1 heading found in body")
+            continue
+
+        h1_line = "# " + h1_m.group(1)
+
+        if not h1_line.startswith("# SuperMovie "):
+            errors.append(
+                f"{skill_path.name}/SKILL.md: H1 must start with '# SuperMovie ', got {h1_line!r}"
+            )
+            continue
+
+        # dir name = supermovie-X-Y-Z → slug words = [X, Y, Z]
+        dir_name = skill_path.name
+        prefix = "supermovie-"
+        if dir_name.startswith(prefix):
+            slug_words = dir_name[len(prefix):].split("-")
+        else:
+            slug_words = dir_name.split("-")
+
+        h1_lower = h1_line.lower()
+        for word in slug_words:
+            if not re.search(r"\b" + re.escape(word.lower()) + r"\b", h1_lower):
+                errors.append(
+                    f"{skill_path.name}/SKILL.md: H1 {h1_line!r} missing slug word {word!r}"
+                )
+
+    assert errors == [], "SKILL.md H1 title consistency lint failed:\n" + "\n".join(errors)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13845,6 +13901,8 @@ def main() -> int:
         test_plugin_json_optional_metadata_shape_lint,
         # PR-AT (SKILL.md frontmatter allowed-tools canonical order lint): 1 件
         test_skill_frontmatter_allowed_tools_canonical_order_lint,
+        # PR-AU (SKILL.md body H1 title starts with '# SuperMovie ' and contains slug words): 1 件
+        test_skill_md_h1_title_consistency_lint,
     ]
     failed = []
     for t in tests:
