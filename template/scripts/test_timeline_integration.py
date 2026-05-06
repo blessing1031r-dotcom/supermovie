@@ -13788,6 +13788,39 @@ def test_plugin_json_license_file_consistency_lint() -> None:
     assert errors == [], "plugin.json license file consistency lint failed:\n" + "\n".join(errors)
 
 
+def test_marketplace_json_mirrors_plugin_json_lint() -> None:
+    """PR-AY: marketplace.json owner.name and metadata.version must mirror
+    plugin.json author.name and version respectively.
+    """
+    import json
+
+    repo_root = Path(__file__).parents[2]
+    plugin = json.loads(
+        (repo_root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )
+    marketplace_path = repo_root / ".claude-plugin" / "marketplace.json"
+    assert marketplace_path.is_file(), "marketplace.json not found in .claude-plugin/"
+    market = json.loads(marketplace_path.read_text(encoding="utf-8"))
+
+    errors: list[str] = []
+
+    plugin_author = (plugin.get("author") or {}).get("name", "")
+    market_owner = (market.get("owner") or {}).get("name", "")
+    if market_owner != plugin_author:
+        errors.append(
+            f"marketplace.json owner.name {market_owner!r} != plugin.json author.name {plugin_author!r}"
+        )
+
+    plugin_version = plugin.get("version", "")
+    market_version = (market.get("metadata") or {}).get("version", "")
+    if market_version != plugin_version:
+        errors.append(
+            f"marketplace.json metadata.version {market_version!r} != plugin.json version {plugin_version!r}"
+        )
+
+    assert errors == [], "marketplace.json/plugin.json mirror lint failed:\n" + "\n".join(errors)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -14022,6 +14055,8 @@ def main() -> int:
         test_plugin_json_keywords_canonical_tokens_lint,
         # PR-AX (plugin.json license vs LICENSE file consistency lint): 1 件
         test_plugin_json_license_file_consistency_lint,
+        # PR-AY (marketplace.json owner/version mirrors plugin.json author/version): 1 件
+        test_marketplace_json_mirrors_plugin_json_lint,
     ]
     failed = []
     for t in tests:
