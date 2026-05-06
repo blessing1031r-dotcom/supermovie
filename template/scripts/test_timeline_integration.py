@@ -13437,6 +13437,67 @@ def test_plugin_json_skills_path_resolves_to_skill_dirs_lint() -> None:
     assert missing == [], f"skill dirs missing SKILL.md: {missing}"
 
 
+def test_skill_frontmatter_keyset_and_no_duplicate_keys_lint() -> None:
+    """PR-AR: every skills/*/SKILL.md frontmatter must contain exactly the required keys
+    (name, description, argument-hint, allowed-tools, effort) with no extras, no missing,
+    and no duplicates.
+    """
+    import re
+
+    REQUIRED_KEYS: frozenset[str] = frozenset(
+        {"name", "description", "argument-hint", "allowed-tools", "effort"}
+    )
+    repo_root = Path(__file__).parents[2]
+    skills_root = repo_root / "skills"
+    errors: list[str] = []
+
+    for skill_path in sorted(skills_root.iterdir()):
+        if not skill_path.is_dir():
+            continue
+        skill_md = skill_path / "SKILL.md"
+        if not skill_md.is_file():
+            continue
+
+        content = skill_md.read_text(encoding="utf-8")
+        fm_m = re.match(r"^---\s*\n(.*?)^---\s*$", content, re.MULTILINE | re.DOTALL)
+        if not fm_m:
+            errors.append(f"{skill_path.name}/SKILL.md: no YAML frontmatter block found")
+            continue
+
+        fm_block = fm_m.group(1)
+        key_counts: dict[str, int] = {}
+        for line in fm_block.splitlines():
+            km = re.match(r"^([A-Za-z0-9_-]+):", line)
+            if km:
+                k = km.group(1)
+                key_counts[k] = key_counts.get(k, 0) + 1
+
+        found_keys = frozenset(key_counts)
+
+        # Duplicate check
+        for k, count in key_counts.items():
+            if count > 1:
+                errors.append(
+                    f"{skill_path.name}/SKILL.md: duplicate frontmatter key '{k}' appears {count} times"
+                )
+
+        # Extra keys
+        extra = found_keys - REQUIRED_KEYS
+        if extra:
+            errors.append(
+                f"{skill_path.name}/SKILL.md: unexpected frontmatter keys {sorted(extra)}"
+            )
+
+        # Missing keys
+        missing = REQUIRED_KEYS - found_keys
+        if missing:
+            errors.append(
+                f"{skill_path.name}/SKILL.md: missing frontmatter keys {sorted(missing)}"
+            )
+
+    assert errors == [], "SKILL.md frontmatter key-set/duplicate lint failed:\n" + "\n".join(errors)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13657,6 +13718,8 @@ def main() -> int:
         test_skill_frontmatter_description_trigger_phrase_lint,
         # PR-AQ (plugin.json skills path integrity and skill dirs have SKILL.md lint): 1 件
         test_plugin_json_skills_path_resolves_to_skill_dirs_lint,
+        # PR-AR (SKILL.md frontmatter key-set exact match and no duplicate keys lint): 1 件
+        test_skill_frontmatter_keyset_and_no_duplicate_keys_lint,
     ]
     failed = []
     for t in tests:
