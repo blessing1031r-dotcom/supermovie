@@ -15246,6 +15246,39 @@ def test_main_video_required_layers_contract_lint() -> None:
     )
 
 
+def test_main_video_canonical_layer_import_paths_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    main_video = template_root / "src" / "MainVideo.tsx"
+    assert main_video.is_file(), "template/src/MainVideo.tsx not found"
+    raw = main_video.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    expected = [
+        ("TelopPlayer", "./テロップテンプレート"),
+        ("SESequence", "./SoundEffects/SESequence"),
+        ("BGM", "./SoundEffects/BGM"),
+        ("ImageSequence", "./InsertImage"),
+        ("TitleSequence", "./Title"),
+        ("SlideSequence", "./Slides"),
+        ("NarrationAudioWithMode", "./Narration/NarrationAudio"),
+        ("useNarrationMode", "./Narration/useNarrationMode"),
+        ("VIDEO_FILE", "./videoConfig"),
+    ]
+    errors: list[str] = []
+    for symbol, import_path in expected:
+        if not re.search(
+            rf"""import\s*\{{[^}}]*\b{re.escape(symbol)}\b[^}}]*\}}\s*from\s*['"]{re.escape(import_path)}['"]""",
+            text,
+        ):
+            errors.append(f"MainVideo.tsx: {symbol} must be imported from {import_path!r}")
+    assert errors == [], (
+        "template/src/MainVideo.tsx canonical import path contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_main_video_layer_order_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17747,6 +17780,7 @@ def main() -> int:
         test_root_composition_uses_main_video_component_lint,
         test_main_video_staticfile_uses_video_file_lint,
         test_main_video_required_layers_contract_lint,
+        test_main_video_canonical_layer_import_paths_lint,
         test_main_video_layer_order_contract_lint,
         test_main_video_base_video_fit_contract_lint,
         test_main_video_narration_mode_ssot_contract_lint,
