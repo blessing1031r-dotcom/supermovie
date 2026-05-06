@@ -15431,6 +15431,49 @@ def test_telop_background_text_css_gradient_contract_lint() -> None:
     )
 
 
+def test_telop_color_interpolation_helpers_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    telop_file = template_root / "src" / "テロップテンプレート" / "Telop.tsx"
+    assert telop_file.is_file(), "template/src/テロップテンプレート/Telop.tsx not found"
+    raw = telop_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    required_literals = [
+        ("/^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex)", "hexToRgb accepts optional # and 6 hex digits case-insensitively"),
+        ("r: parseInt(result[1], 16)", "hexToRgb parses red channel as base 16"),
+        ("g: parseInt(result[2], 16)", "hexToRgb parses green channel as base 16"),
+        ("b: parseInt(result[3], 16)", "hexToRgb parses blue channel as base 16"),
+        (": { r: 0, g: 0, b: 0 };", "hexToRgb invalid input fallback is black"),
+        ("const c1 = hexToRgb(color1);", "interpolateColor parses first color with hexToRgb"),
+        ("const c2 = hexToRgb(color2);", "interpolateColor parses second color with hexToRgb"),
+        ("return `rgb(${r}, ${g}, ${b})`;", "interpolateColor returns CSS rgb() string"),
+    ]
+    for literal, desc in required_literals:
+        if literal not in text:
+            errors.append(f"Telop.tsx: missing {desc}")
+    for pattern, desc in [
+        (r"const\s+hexToRgb\s*=\s*\(\s*hex:\s*string\s*\)\s*=>\s*\{", "hexToRgb(hex: string) helper"),
+        (
+            r"return\s+result\s*\?\s*\{\s*r:\s*parseInt\s*\(\s*result\[1\]\s*,\s*16\s*\)\s*,\s*"
+            r"g:\s*parseInt\s*\(\s*result\[2\]\s*,\s*16\s*\)\s*,\s*"
+            r"b:\s*parseInt\s*\(\s*result\[3\]\s*,\s*16\s*\)\s*,\s*\}\s*:\s*\{\s*r:\s*0\s*,\s*g:\s*0\s*,\s*b:\s*0\s*\}\s*;",
+            "hexToRgb returns parsed RGB object or black fallback",
+        ),
+        (r"const\s+interpolateColor\s*=\s*\(\s*color1:\s*string\s*,\s*color2:\s*string\s*,\s*t:\s*number\s*\)\s*=>\s*\{", "interpolateColor(color1, color2, t) helper"),
+        (r"const\s+r\s*=\s*Math\.round\s*\(\s*c1\.r\s*\+\s*\(\s*c2\.r\s*-\s*c1\.r\s*\)\s*\*\s*t\s*\)\s*;", "red channel rounded linear interpolation"),
+        (r"const\s+g\s*=\s*Math\.round\s*\(\s*c1\.g\s*\+\s*\(\s*c2\.g\s*-\s*c1\.g\s*\)\s*\*\s*t\s*\)\s*;", "green channel rounded linear interpolation"),
+        (r"const\s+b\s*=\s*Math\.round\s*\(\s*c1\.b\s*\+\s*\(\s*c2\.b\s*-\s*c1\.b\s*\)\s*\*\s*t\s*\)\s*;", "blue channel rounded linear interpolation"),
+    ]:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"Telop.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/テロップテンプレート/Telop.tsx color interpolation helper contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_file_coverage_lint() -> None:
     """PR-CM: Every .tsx file in メインテロップ/強調テロップ/ネガティブテロップ dirs must be imported by telopTemplateRegistry.tsx.
     Guards against new/renamed telop templates existing on disk but unreachable from TelopPlayer registry.
@@ -16772,6 +16815,7 @@ def main() -> int:
         test_telop_char_by_char_text_contract_lint,
         test_telop_svg_text_defs_filter_gradient_contract_lint,
         test_telop_background_text_css_gradient_contract_lint,
+        test_telop_color_interpolation_helpers_contract_lint,
         test_telop_template_registry_file_coverage_lint,
         test_telop_template_registry_metadata_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
