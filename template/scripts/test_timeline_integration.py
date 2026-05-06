@@ -17850,6 +17850,69 @@ def test_supermovie_slides_schema_docs_match_slide_segment_contract_lint() -> No
     )
 
 
+def test_supermovie_image_gen_output_sample_matches_image_segment_contract_lint() -> None:
+    """PR-IJ: supermovie-image-gen insertImageData sample must match ImageSegment."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-image-gen" / "SKILL.md"
+    types_path = template_root / "src" / "InsertImage" / "types.ts"
+    assert skill_path.is_file(), "skills/supermovie-image-gen/SKILL.md not found"
+    assert types_path.is_file(), "template/src/InsertImage/types.ts not found"
+
+    types_text = types_path.read_text(encoding="utf-8")
+    interface_match = re.search(r"\bexport\s+interface\s+ImageSegment\s*\{([\s\S]*?)\}", types_text)
+    assert interface_match is not None, "InsertImage/types.ts: export interface ImageSegment not found"
+    implementation_fields = [
+        (name, optional, typ.strip())
+        for name, optional, typ in re.findall(r"^\s*(\w+)(\?)?\s*:\s*([^;]+);", interface_match.group(1), re.MULTILINE)
+    ]
+    expected_fields = [
+        ("id", "", "number"),
+        ("startFrame", "", "number"),
+        ("endFrame", "", "number"),
+        ("file", "", "string"),
+        ("type", "", "'photo' | 'infographic' | 'overlay'"),
+        ("scale", "?", "number"),
+    ]
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    sample_match = re.search(
+        r"### 4-1\. 出力形式\s*```typescript\s*([\s\S]*?)```",
+        skill_text,
+    )
+    assert sample_match is not None, "supermovie-image-gen SKILL.md output sample code block not found"
+    sample_text = sample_match.group(1)
+    sample_objects = re.findall(r"\{\s*id:\s*\d+,[\s\S]*?\n\s*\}", sample_text)
+    assert sample_objects, "supermovie-image-gen SKILL.md insertImageData sample objects not found"
+
+    required_field_names = [name for name, optional, _typ in implementation_fields if optional == ""]
+    allowed_image_types = set(re.findall(r"'([^']+)'", dict((name, typ) for name, _optional, typ in implementation_fields)["type"]))
+    documented_types = set(re.findall(r"\btype:\s*'([^']+)'", sample_text))
+    errors: list[str] = []
+    if implementation_fields != expected_fields:
+        errors.append(f"InsertImage/types.ts ImageSegment field drift: expected {expected_fields}, got {implementation_fields}")
+    if not re.search(r"import\s+type\s*\{\s*ImageSegment\s*\}\s*from\s*['\"]\.\/types['\"]", sample_text):
+        errors.append("supermovie-image-gen sample must import ImageSegment from './types'")
+    if not re.search(r"export\s+const\s+insertImageData\s*:\s*ImageSegment\[\s*\]", sample_text):
+        errors.append("supermovie-image-gen sample must export typed insertImageData: ImageSegment[]")
+    for index, sample_object in enumerate(sample_objects, start=1):
+        keys = re.findall(r"^\s*(\w+):", sample_object, re.MULTILINE)
+        if keys[: len(required_field_names)] != required_field_names:
+            errors.append(
+                f"supermovie-image-gen sample object {index} required field order drift: "
+                f"expected prefix {required_field_names}, got {keys}"
+            )
+    if documented_types != allowed_image_types:
+        errors.append(f"supermovie-image-gen sample type values drift: expected {sorted(allowed_image_types)}, got {sorted(documented_types)}")
+
+    assert errors == [], (
+        "supermovie-image-gen insertImageData sample / ImageSegment contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
     """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
     import re
@@ -21314,6 +21377,8 @@ def main() -> int:
         test_claude_cut_data_schema_matches_supermovie_cut_skill_lint,
         # PR-II (supermovie-slides SlideSegment schema docs stay synced with implementation): 1 件
         test_supermovie_slides_schema_docs_match_slide_segment_contract_lint,
+        # PR-IJ (supermovie-image-gen insertImageData sample stays synced with ImageSegment): 1 件
+        test_supermovie_image_gen_output_sample_matches_image_segment_contract_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
