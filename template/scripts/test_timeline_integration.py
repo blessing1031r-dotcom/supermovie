@@ -18365,6 +18365,75 @@ def test_supermovie_narration_overlap_docs_match_chunk_meta_warning_lint() -> No
     )
 
 
+def test_supermovie_narration_partial_docs_match_allow_partial_contract_lint() -> None:
+    """PR-JD: supermovie-narration partial failure docs must match all-or-nothing behavior."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-narration" / "SKILL.md"
+    voicevox_path = template_root / "scripts" / "voicevox_narration.py"
+    assert skill_path.is_file(), "skills/supermovie-narration/SKILL.md not found"
+    assert voicevox_path.is_file(), "template/scripts/voicevox_narration.py not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    voicevox_text = voicevox_path.read_text(encoding="utf-8")
+    phase3h_match = re.search(r"\*\*Phase 3-H per-segment\*\*[\s\S]*?\*\*Phase 3-I", skill_text)
+    error_row_match = re.search(
+        r"\|\s*partial chunk failure \(\-\-allow-partial なし\)\s*\|\s*([^|]+?)\s*\|",
+        skill_text,
+    )
+    main_pos = voicevox_text.find("def main():")
+    assert phase3h_match is not None, "supermovie-narration Phase 3-H docs not found"
+    assert error_row_match is not None, "supermovie-narration partial failure error row not found"
+    assert main_pos != -1, "voicevox_narration.py main() not found"
+    docs_text = "\n".join([phase3h_match.group(0), error_row_match.group(1)])
+    main_text = voicevox_text[main_pos:]
+
+    required_doc_snippets = {
+        "partial failure": "partial failure (途中 chunk synthesis 失敗)",
+        "empty data reset": "`narrationData.ts` を空 array に\n  reset",
+        "partial chunk cleanup": "部分 chunk を削除",
+        "double audio reason": "二重音声 / 中途半端 timeline 防止",
+        "error row name": "exit 6",
+        "error row cleanup": "部分 chunk + 旧 narration.wav 全削除",
+        "error row empty data": "narrationData.ts 空 array",
+        "all or nothing": "all-or-nothing",
+    }
+    required_code_snippets = {
+        "allow partial argparse": 'ap.add_argument("--allow-partial", action="store_true",',
+        "allow partial help": "一部 chunk synthesis 失敗でも narration.wav を出力 + narrationData.ts 部分書き出し",
+        "all chunks default help": "(default は全 chunk 成功必須)",
+        "no chunk failure status": 'return emit_json("no_chunks_succeeded", 5, total=len(chunks))',
+        "all-or-nothing predicate": "if not args.allow_partial and len(chunk_paths) < len(chunks):",
+        "partial stderr guidance": "--allow-partial で部分成功でも narration.wav 出力可",
+        "partial cleanup comment": "部分 chunk + narrationData 全削除",
+        "partial unlink loop": "for p in chunk_paths:",
+        "partial unlink call": "p.unlink()",
+        "partial failure status": '"partial_chunks_disallowed", 6,',
+        "partial payload counts": "succeeded=len(chunk_paths), total=len(chunks),",
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in docs_text:
+            errors.append(f"supermovie-narration partial failure docs missing {name}: {snippet}")
+    for name, snippet in required_code_snippets.items():
+        if snippet not in voicevox_text:
+            errors.append(f"voicevox_narration.py missing {name}: {snippet}")
+
+    no_chunks_pos = main_text.find("if not chunk_paths:")
+    partial_pos = main_text.find("if not args.allow_partial and len(chunk_paths) < len(chunks):")
+    write_data_pos = main_text.find("write_narration_data(")
+    if no_chunks_pos == -1 or partial_pos == -1 or write_data_pos == -1 or not no_chunks_pos < partial_pos < write_data_pos:
+        errors.append("voicevox_narration.py must reject partial chunks before writing narrationData.ts")
+
+    assert errors == [], (
+        "supermovie-narration partial failure docs / allow-partial contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -22728,6 +22797,8 @@ def main() -> int:
         test_supermovie_narration_vad_docs_match_cut_aware_failfast_contract_lint,
         # PR-JC (supermovie-narration overlap docs stay synced with chunk_meta warnings): 1 件
         test_supermovie_narration_overlap_docs_match_chunk_meta_warning_lint,
+        # PR-JD (supermovie-narration partial failure docs stay synced with allow-partial guard): 1 件
+        test_supermovie_narration_partial_docs_match_allow_partial_contract_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
