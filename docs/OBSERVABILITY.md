@@ -518,6 +518,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 217 | `template/src/InsertImage/insertImageData.ts` が `export const toFrame = (seconds: number) => Math.round(seconds * FPS);` とコメント除去後の `export const insertImageData: ImageSegment[] = [];` placeholder を保つことを lint (`test_insert_image_data_placeholder_empty_array_and_toframe_export_contract_lint`、Codex 推奨 PR-FA)。InsertImage data placeholder and toFrame export contract を保護 | PR-FA |
 | 218 | `template/src/SoundEffects/seData.ts` がコメント除去後に `export const seData: SoundEffect[] = [];` の empty placeholder を保つことを lint (`test_se_data_placeholder_empty_array_contract_lint`、Codex 推奨 PR-FB)。SE data empty placeholder contract を保護 | PR-FB |
 | 219 | `template/src/テロップテンプレート/telopData.ts` がコメント除去後に `export const telopData: TelopSegment[] = [];` の empty placeholder を保つことを lint (`test_telop_data_placeholder_empty_array_contract_lint`、Codex 推奨 PR-FC)。Telop data empty placeholder contract を保護 | PR-FC |
+| 220 | `template/src/index.ts` が `registerRoot` を `remotion` から named import することを lint (`test_entrypoint_imports_register_root_from_remotion_lint`、Codex 推奨 PR-FD)。Remotion entrypoint import contract を保護 | PR-FD |
 
 ## Test Requirements
 

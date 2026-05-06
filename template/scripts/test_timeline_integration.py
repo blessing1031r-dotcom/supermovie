@@ -16188,6 +16188,24 @@ def test_entrypoint_registers_remotion_root() -> None:
     )
 
 
+def test_entrypoint_imports_register_root_from_remotion_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    index_ts = template_root / "src" / "index.ts"
+    assert index_ts.is_file(), "template/src/index.ts not found"
+    raw = index_ts.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert re.search(
+        r"""import\s*\{[^}]*\bregisterRoot\b[^}]*\}\s*from\s*['"]remotion['"]""",
+        text,
+    ), (
+        "template/src/index.ts Remotion import contract drift: "
+        "registerRoot must be imported from 'remotion'"
+    )
+
+
 def test_bgm_file_constant_is_single_source_for_presence_check_and_audio_src() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17737,6 +17755,7 @@ def main() -> int:
         test_narration_audio_none_and_default_volume_contract_lint,
         # PR-CS (index.ts imports RemotionRoot and calls registerRoot lint): 1 件
         test_entrypoint_registers_remotion_root,
+        test_entrypoint_imports_register_root_from_remotion_lint,
         # PR-CT (BGM.tsx uses BGM_FILE constant for both presence check and audio src lint): 1 件
         test_bgm_file_constant_is_single_source_for_presence_check_and_audio_src,
         test_bgm_props_default_volume_contract_lint,
