@@ -16686,6 +16686,44 @@ def test_narration_audio_none_and_default_volume_contract_lint() -> None:
     )
 
 
+def test_narration_audio_dual_component_sequence_wiring_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    narration_file = template_root / "src" / "Narration" / "NarrationAudio.tsx"
+    assert narration_file.is_file(), "template/src/Narration/NarrationAudio.tsx not found"
+    raw = narration_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+
+    def component_body(name: str) -> str:
+        start = re.search(rf"export\s+const\s+{name}\b", text)
+        if not start:
+            errors.append(f"NarrationAudio.tsx: {name} component not found")
+            return ""
+        rest = text[start.start():]
+        next_export = re.search(r"\nexport\s+const\s+", rest[len("export"):])
+        return rest[:len("export") + next_export.start() + 1] if next_export else rest
+
+    checks = [
+        (r"\bmode\.segments\.map\s*\(\s*\(\s*seg\s*\)\s*=>", "mode.segments.map((seg) => ...)"),
+        (r"<Sequence\b[^>]*\bkey=\{seg\.id\}[^>]*\bfrom=\{seg\.startFrame\}[^>]*\bdurationInFrames=\{seg\.durationInFrames\}", "chunk Sequence key/from/duration wiring"),
+        (r"<Audio\b[^>]*\bsrc=\{\s*staticFile\s*\(\s*seg\.file\s*\)\s*\}[^>]*\bvolume=\{\s*\(\s*\)\s*=>\s*volume\s*\}", "chunk Audio staticFile(seg.file) volume callback"),
+        (r"return\s+<Audio\b[^>]*\bsrc=\{\s*staticFile\s*\(\s*mode\.file\s*\)\s*\}[^>]*\bvolume=\{\s*\(\s*\)\s*=>\s*volume\s*\}", "legacy Audio staticFile(mode.file) volume callback"),
+    ]
+    for name in ("NarrationAudioWithMode", "NarrationAudio"):
+        body = component_body(name)
+        for pattern, desc in checks:
+            if not re.search(pattern, body, re.DOTALL):
+                errors.append(f"NarrationAudio.tsx: {name} missing {desc}")
+
+    assert errors == [], (
+        "template/src/Narration/NarrationAudio.tsx dual component wiring contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_entrypoint_registers_remotion_root() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -18489,6 +18527,7 @@ def main() -> int:
         # PR-CR (NarrationAudioWithMode is pure mode-prop renderer, no internal hook call lint): 1 件
         test_narration_audio_with_mode_is_pure_mode_prop_renderer,
         test_narration_audio_none_and_default_volume_contract_lint,
+        test_narration_audio_dual_component_sequence_wiring_contract_lint,
         # PR-CS (index.ts imports RemotionRoot and calls registerRoot lint): 1 件
         test_entrypoint_registers_remotion_root,
         test_entrypoint_imports_register_root_from_remotion_lint,
