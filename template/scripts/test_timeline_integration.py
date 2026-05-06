@@ -17896,6 +17896,89 @@ def test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema
     )
 
 
+def test_supermovie_transcribe_audio_extract_docs_match_file_path_contract_lint() -> None:
+    """PR-KC: supermovie-transcribe audio extraction docs must match file path contract."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    transcribe_skill_path = repo_root / "skills" / "supermovie-transcribe" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    readme_path = repo_root / "README.md"
+    assert transcribe_skill_path.is_file(), "skills/supermovie-transcribe/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert readme_path.is_file(), "README.md not found"
+
+    skill_text = transcribe_skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    readme_text = readme_path.read_text(encoding="utf-8")
+    audio_match = re.search(r"## Phase 4: 音声抽出\s*([\s\S]*?)## Phase 5:", skill_text)
+    runner_match = re.search(r"### 5-2\. 実行コマンド\s*```bash\n([\s\S]*?)\n```", skill_text)
+    cleanup_match = re.search(r"### 6-3\. 一時ファイル削除\s*```bash\n([\s\S]*?)\n```", skill_text)
+    assert audio_match is not None, "supermovie-transcribe Phase 4 audio extraction block not found"
+    assert runner_match is not None, "supermovie-transcribe runner command block not found"
+    assert cleanup_match is not None, "supermovie-transcribe cleanup command block not found"
+    audio_text = audio_match.group(1)
+    runner_text = runner_match.group(1)
+    cleanup_text = cleanup_match.group(1)
+
+    errors: list[str] = []
+    required_audio_snippets = {
+        "ffmpeg prerequisite": "- [ ] ffmpeg がインストール済み",
+        "input file prerequisite": "- [ ] 動画/音声ファイルが存在",
+        "audio stream probe": "ffprobe -v quiet -select_streams a -show_entries stream=codec_type",
+        "audio stream csv": '-of csv=p=0 "<INPUT_FILE>" | head -1',
+        "no audio guard": 'if [ -z "$HAS_AUDIO" ]; then',
+        "no audio message": "この動画に音声トラックがありません",
+        "ffmpeg command": 'ffmpeg -y -i "<INPUT_FILE>"',
+        "whisper wav format": "-vn -acodec pcm_s16le -ar 16000 -ac 1",
+        "audio output": '"<PROJECT>/transcript_audio.wav"',
+        "duration probe": "ffprobe -v quiet -show_entries format=duration",
+        "duration log": "音声長: ${DURATION}秒",
+    }
+    required_runner_snippets = {
+        "venv runner": '"<PROJECT>/.venv/bin/python3" "<PROJECT>/transcribe_runner.py"',
+        "runner audio input": '"<PROJECT>/transcript_audio.wav"',
+        "runner transcript output": '"<PROJECT>/transcript.json"',
+        "language arg": '"ja"',
+        "model arg": '"large-v3"',
+    }
+    required_cleanup_snippets = {
+        "runner cleanup": 'rm -f "<PROJECT>/transcribe_runner.py"',
+        "audio retained": "# transcript_audio.wav は後続スキルで使う可能性があるため残す",
+    }
+    required_claude_snippets = {
+        "raw transcript path": "| 文字起こし生データ | `<PROJECT>/transcript.json` |",
+        "audio file path": "| 音声ファイル | `<PROJECT>/transcript_audio.wav` |",
+        "venv path": "| Python仮想環境 | `<PROJECT>/.venv/` |",
+    }
+    required_readme_snippets = {
+        "ffmpeg install prerequisite": "- ffmpeg（動画解析・音声抽出に使用）",
+        "assemblyai optional": "- AssemblyAI APIキー（話者分離が必要な場合のみ。1人の場合はローカルWhisperで無料）",
+    }
+    for name, snippet in required_audio_snippets.items():
+        if snippet not in skill_text and snippet not in audio_text:
+            errors.append(f"supermovie-transcribe audio docs missing {name}: {snippet}")
+    for name, snippet in required_runner_snippets.items():
+        if snippet not in runner_text:
+            errors.append(f"supermovie-transcribe runner command missing {name}: {snippet}")
+    for name, snippet in required_cleanup_snippets.items():
+        if snippet not in cleanup_text and snippet not in skill_text:
+            errors.append(f"supermovie-transcribe cleanup docs missing {name}: {snippet}")
+    if 'rm -f "<PROJECT>/transcript_audio.wav"' in cleanup_text:
+        errors.append("supermovie-transcribe cleanup must not remove transcript_audio.wav")
+    for name, snippet in required_claude_snippets.items():
+        if snippet not in claude_text:
+            errors.append(f"CLAUDE.md file path contract missing {name}: {snippet}")
+    for name, snippet in required_readme_snippets.items():
+        if snippet not in readme_text:
+            errors.append(f"README prerequisite docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-transcribe audio extraction docs / file path contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_transcript_fix_output_schema_docs_match_claude_transcript_contract_lint() -> None:
     """PR-JL: supermovie-transcript-fix output docs must match CLAUDE transcript contract."""
     import json
@@ -24860,6 +24943,8 @@ def main() -> int:
         test_supermovie_subtitles_kpi_docs_match_compare_telop_split_contract_lint,
         # PR-JK (supermovie-transcribe output schema docs stay synced with CLAUDE transcript schema): 1 件
         test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema_lint,
+        # PR-KC (supermovie-transcribe audio extraction docs stay synced with file path contract): 1 件
+        test_supermovie_transcribe_audio_extract_docs_match_file_path_contract_lint,
         # PR-JL (supermovie-transcript-fix output docs stay synced with CLAUDE transcript contract): 1 件
         test_supermovie_transcript_fix_output_schema_docs_match_claude_transcript_contract_lint,
         # PR-JM (supermovie-cut VAD result docs stay synced with CLAUDE path contract): 1 件
