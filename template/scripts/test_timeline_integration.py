@@ -8882,16 +8882,56 @@ def test_observability_trace_context_precedence_semantics_lint() -> None:
         )
 
     # 関連 test 3 件 docs presence
+    # PR-CG P2 fix (Codex 09:04): md 全文検索 → §関連 test (PR-E) section
+    # slice + FunctionDef 登録 audit (PR-CE 同型)、migration row 内の
+    # 文字列で false-pass する drift を fail-loud
+    related_section_re = _re_trace.compile(
+        r"^### 関連 test[^\n]*\n(?P<body>.*?)"
+        r"(?=^## |^### )",
+        _re_trace.MULTILINE | _re_trace.DOTALL,
+    )
+    related_match = related_section_re.search(md)
+    assert related_match is not None, (
+        "`### 関連 test` の section が docs §Trace Context Convention "
+        "に見つからない (heading rename / 構造変更?)"
+    )
+    related_body = related_match.group("body")
     DOCS_RELATED_TESTS = [
         "test_observability_resolve_run_context_uses_env",
         "test_observability_resolve_run_context_generates_when_missing",
         "test_observability_resolve_run_context_no_generate",
     ]
     for tname in DOCS_RELATED_TESTS:
-        assert tname in md, (
-            f"docs/OBSERVABILITY.md §関連 test (PR-E) に test name "
-            f"'{tname}' が見つからない (関連 test 列挙削除?)"
+        assert tname in related_body, (
+            f"docs/OBSERVABILITY.md §関連 test (PR-E) section に test "
+            f"name '{tname}' が見つからない (関連 test 列挙削除 / "
+            f"section 外の migration row などで false-pass risk?)"
         )
+
+    # FunctionDef 登録 audit (PR-CE 同型 docs reference 切れ fail-loud)
+    import ast as _ast_trace
+
+    test_file_path = (
+        repo_root / "template" / "scripts" / "test_timeline_integration.py"
+    )
+    test_src = test_file_path.read_text(encoding="utf-8")
+    test_tree = _ast_trace.parse(
+        test_src, filename="test_timeline_integration.py"
+    )
+    defined_funcs = {
+        n.name
+        for n in _ast_trace.walk(test_tree)
+        if isinstance(n, _ast_trace.FunctionDef)
+    }
+    missing_tests = [
+        t for t in DOCS_RELATED_TESTS if t not in defined_funcs
+    ]
+    assert not missing_tests, (
+        f"docs §関連 test (PR-E) で挙げられた test が "
+        f"test_timeline_integration.py に FunctionDef として登録されて "
+        f"いない: {missing_tests} (test rename / 削除で docs reference "
+        f"切れ?)"
+    )
 
     # part 2: helper signature audit
     sys.path.insert(
