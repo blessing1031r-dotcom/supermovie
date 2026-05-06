@@ -17201,6 +17201,25 @@ def test_telop_data_typed_export_and_video_config_ssot_contract_lint() -> None:
     )
 
 
+def test_telop_data_placeholder_empty_array_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    data_file = template_root / "src" / "テロップテンプレート" / "telopData.ts"
+    assert data_file.is_file(), "template/src/テロップテンプレート/telopData.ts not found"
+    raw = data_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert re.search(
+        r"\bexport\s+const\s+telopData\s*:\s*TelopSegment\[\s*\]\s*=\s*\[\s*\]\s*;",
+        text,
+        re.DOTALL,
+    ), (
+        "template/src/テロップテンプレート/telopData.ts placeholder contract drift: "
+        "telopData must be an empty typed array after comments are stripped"
+    )
+
+
 def test_se_sequence_wraps_sound_effects_in_sequence_audio_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17751,6 +17770,7 @@ def main() -> int:
         test_slide_sequence_wraps_slide_segments_in_sequence_frame_ranges_lint,
         test_image_sequence_wraps_image_segments_in_sequence_frame_ranges_lint,
         test_telop_data_typed_export_and_video_config_ssot_contract_lint,
+        test_telop_data_placeholder_empty_array_contract_lint,
         test_se_sequence_wraps_sound_effects_in_sequence_audio_contract_lint,
         test_se_sequence_asset_path_prefix_contract_lint,
         test_narration_audio_chunks_sequence_wiring_contract_lint,
