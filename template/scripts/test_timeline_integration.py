@@ -21997,6 +21997,128 @@ def test_supermovie_image_gen_completion_handoff_docs_match_sequence_contract_li
     )
 
 
+def test_supermovie_image_gen_error_handling_docs_match_prereq_contract_lint() -> None:
+    """PR-KO: supermovie-image-gen error handling docs must match prerequisites."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-image-gen" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    telop_data_path = template_root / "src" / "テロップテンプレート" / "telopData.ts"
+    title_data_path = template_root / "src" / "Title" / "titleData.ts"
+    insert_data_path = template_root / "src" / "InsertImage" / "insertImageData.ts"
+    assert skill_path.is_file(), "skills/supermovie-image-gen/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert telop_data_path.is_file(), "template/src/テロップテンプレート/telopData.ts not found"
+    assert title_data_path.is_file(), "template/src/Title/titleData.ts not found"
+    assert insert_data_path.is_file(), "template/src/InsertImage/insertImageData.ts not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    telop_data_text = telop_data_path.read_text(encoding="utf-8")
+    title_data_text = title_data_path.read_text(encoding="utf-8")
+    insert_data_text = insert_data_path.read_text(encoding="utf-8")
+    prereq_match = re.search(
+        r"## 前提条件チェックリスト\s*([\s\S]*?)\n---\n\n## Phase 1:",
+        skill_text,
+    )
+    command_match = re.search(
+        r"### 3-3\. 生成実行\s*```bash\n([\s\S]*?)\n```",
+        skill_text,
+    )
+    output_match = re.search(
+        r"## Phase 4: insertImageData\.ts 生成[\s\S]*?## Phase 5: 検証",
+        skill_text,
+    )
+    error_match = re.search(
+        r"## エラーハンドリング\s*([\s\S]*?)\n---\n\n## 連携マップ",
+        skill_text,
+    )
+    assert prereq_match is not None, "supermovie-image-gen prerequisite checklist not found"
+    assert command_match is not None, "supermovie-image-gen generation command not found"
+    assert output_match is not None, "supermovie-image-gen insertImageData output section not found"
+    assert error_match is not None, "supermovie-image-gen error handling section not found"
+    prereq_text = prereq_match.group(1)
+    command_text = command_match.group(1)
+    output_text = output_match.group(0)
+    error_text = error_match.group(1)
+
+    expected_error_rows = {
+        "GEMINI_API_KEY 未設定": "設定方法を案内。画像なしで続行も提案",
+        "Gemini API エラー（レート制限）": "5秒待って再試行。3回失敗で該当画像スキップ",
+        "生成画像の品質が低い": "プロンプト調整して再生成を提案",
+        "telopData.ts が空": "`/supermovie-subtitles` の実行を促す",
+        "project-config.json なし": "デフォルト（youtube 16:9）で続行",
+        "gemini-api-image スキルが見つからない": "インストール方法を案内",
+    }
+    actual_error_rows = {
+        error.strip(): handling.strip()
+        for error, handling in re.findall(
+            r"^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|",
+            error_text,
+            re.MULTILINE,
+        )
+        if error.strip() not in {"エラー", "--------"}
+    }
+
+    errors: list[str] = []
+    if actual_error_rows != expected_error_rows:
+        errors.append(f"supermovie-image-gen error handling table drift: expected {expected_error_rows}, got {actual_error_rows}")
+
+    required_prereq_snippets = {
+        "subtitles prerequisite": "- [ ] `/supermovie-subtitles` でテロップ＆タイトル生成済み",
+        "telop data prerequisite": "- [ ] `src/テロップテンプレート/telopData.ts` にデータがある",
+        "title data prerequisite": "- [ ] `src/Title/titleData.ts` にデータがある",
+        "project config prerequisite": "- [ ] `project-config.json` が存在（format/resolution参照）",
+        "gemini api key prerequisite": "- [ ] 環境変数 `GEMINI_API_KEY` がセット済み",
+    }
+    required_command_snippets = {
+        "skill directory": "cd ~/.claude/skills/gemini-api-image",
+        "api generator": "python scripts/run.py api_generator.py",
+        "prompt arg": "--prompt \"<プロンプト>\"",
+        "aspect arg": "-a <アスペクト比>",
+        "model arg": "-m pro",
+        "generated output": "-o \"<PROJECT>/public/images/generated/<filename>.png\"",
+    }
+    required_output_snippets = {
+        "typed output": "export const insertImageData: ImageSegment[] = [",
+        "save path": "**保存先:** `src/InsertImage/insertImageData.ts`",
+        "generated file prefix": "file: 'generated/005s_infographic_01.png'",
+        "infographic type": "type: 'infographic'",
+        "photo type": "type: 'photo'",
+        "overlay type": "type: 'overlay'",
+    }
+    for name, snippet in required_prereq_snippets.items():
+        if snippet not in prereq_text:
+            errors.append(f"supermovie-image-gen prerequisites missing {name}: {snippet}")
+    for name, snippet in required_command_snippets.items():
+        if snippet not in command_text:
+            errors.append(f"supermovie-image-gen generation command missing {name}: {snippet}")
+    for name, snippet in required_output_snippets.items():
+        if snippet not in output_text:
+            errors.append(f"supermovie-image-gen output docs missing {name}: {snippet}")
+
+    data_surface_checks = {
+        "telop generated by subtitles": (telop_data_text, "/supermovie-subtitles"),
+        "title generated by subtitles": (title_data_text, "/supermovie-subtitles"),
+        "insert image generated by image-gen": (insert_data_text, "/supermovie-image-gen"),
+        "insert image typed export": (insert_data_text, "export const insertImageData: ImageSegment[] = ["),
+        "insert image generated prefix": (insert_data_text, "file: 'generated/example.png'"),
+    }
+    for name, (text, snippet) in data_surface_checks.items():
+        if snippet not in text:
+            errors.append(f"template data surface missing {name}: {snippet}")
+    for snippet in ("環境変数: `GEMINI_API_KEY`", "/supermovie-image-gen         ← テロップ分析 → 画像生成 + insertImageData.ts"):
+        if snippet not in claude_text:
+            errors.append(f"CLAUDE.md image-gen contract missing snippet: {snippet}")
+
+    assert errors == [], (
+        "supermovie-image-gen error handling docs / prerequisite contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_slides_validation_docs_match_build_slide_data_lint() -> None:
     """PR-IM: supermovie-slides validation docs must match build_slide_data guards."""
     import re
@@ -26165,6 +26287,8 @@ def main() -> int:
         test_supermovie_image_gen_validation_docs_match_image_sequence_contract_lint,
         # PR-KN (supermovie-image-gen completion docs stay synced with preview/SE handoff): 1 件
         test_supermovie_image_gen_completion_handoff_docs_match_sequence_contract_lint,
+        # PR-KO (supermovie-image-gen error handling docs stay synced with prerequisites): 1 件
+        test_supermovie_image_gen_error_handling_docs_match_prereq_contract_lint,
         # PR-IM (supermovie-slides validation docs stay synced with build_slide_data guards): 1 件
         test_supermovie_slides_validation_docs_match_build_slide_data_lint,
         # PR-IN (supermovie-slides tone style docs stay synced with build_slide_data): 1 件
