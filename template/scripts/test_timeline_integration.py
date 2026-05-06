@@ -18025,6 +18025,57 @@ def test_supermovie_image_gen_type_docs_match_image_segment_union_lint() -> None
     )
 
 
+def test_supermovie_slides_validation_docs_match_build_slide_data_lint() -> None:
+    """PR-IM: supermovie-slides validation docs must match build_slide_data guards."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-slides" / "SKILL.md"
+    script_path = template_root / "scripts" / "build_slide_data.py"
+    assert skill_path.is_file(), "skills/supermovie-slides/SKILL.md not found"
+    assert script_path.is_file(), "template/scripts/build_slide_data.py not found"
+
+    script_text = script_path.read_text(encoding="utf-8")
+    max_bullets_match = re.search(r"^MAX_BULLETS_PER_SLIDE\s*=\s*(\d+)\b", script_text, re.MULTILINE)
+    assert max_bullets_match is not None, "build_slide_data.py MAX_BULLETS_PER_SLIDE not found"
+    max_bullets = int(max_bullets_match.group(1))
+    script_required_patterns = {
+        "title": r"\.title empty",
+        "bullets": r"\.bullets exceeds \{MAX_BULLETS_PER_SLIDE\}",
+        "overlap": r"word range overlaps previous",
+        "cut_total": r"cut_total\s*=\s*cut_segments\[-1\]\[\"playbackEnd\"\]",
+    }
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    validation_match = re.search(
+        r"## Phase 4: ファイル書き出し \+ verify\s*([\s\S]*?)## 実行コマンド",
+        skill_text,
+    )
+    assert validation_match is not None, "supermovie-slides Phase 4 validation section not found"
+    validation_text = validation_match.group(1)
+    expected_doc_snippets = {
+        "output": "出力先: `<PROJECT>/src/Slides/slideData.ts`",
+        "cut_total": "frame 範囲が CUT_TOTAL_FRAMES 内",
+        "title": "title が空でない",
+        "bullets": f"bullets が 0-{max_bullets} 個",
+        "overlap": "隣接 slide が overlap しない",
+    }
+
+    errors: list[str] = []
+    for name, pattern in script_required_patterns.items():
+        if not re.search(pattern, script_text):
+            errors.append(f"build_slide_data.py validation guard missing: {name}")
+    for name, snippet in expected_doc_snippets.items():
+        if snippet not in validation_text:
+            errors.append(f"supermovie-slides validation docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-slides validation docs / build_slide_data contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
     """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
     import re
@@ -21495,6 +21546,8 @@ def main() -> int:
         test_supermovie_image_gen_aspect_table_matches_video_config_lint,
         # PR-IL (supermovie-image-gen type docs stay synced with ImageSegment union): 1 件
         test_supermovie_image_gen_type_docs_match_image_segment_union_lint,
+        # PR-IM (supermovie-slides validation docs stay synced with build_slide_data guards): 1 件
+        test_supermovie_slides_validation_docs_match_build_slide_data_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
