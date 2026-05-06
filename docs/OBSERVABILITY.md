@@ -582,6 +582,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 281 | `template/src/テロップテンプレート/telopTemplateRegistry.tsx` の public export surface が registry API 9 件に限定され、default export / re-export を持たないことを lint (`test_telop_template_registry_public_export_surface_contract_lint`、Codex 推奨 PR-HM)。Telop template registry module の API surface creep を保護 | PR-HM |
 | 282 | `template/src/テロップテンプレート/Telop.tsx` の public export surface が `Telop` に限定され、default export / re-export を持たないことを lint (`test_telop_public_export_surface_contract_lint`、Codex 推奨 PR-HN)。Telop module の API surface creep を保護 | PR-HN |
 | 283 | `template/src/テロップテンプレート/TelopPlayer.tsx` の public export surface が `TelopPlayer` に限定され、default export / re-export を持たないことを lint (`test_telop_player_public_export_surface_contract_lint`、Codex 推奨 PR-HO)。TelopPlayer module の API surface creep を保護 | PR-HO |
+| 284 | `template/src/Narration/narrationData.ts` の public export surface が `narrationData` に限定され、default export / re-export を持たないことを lint (`test_narration_data_public_export_surface_contract_lint`、Codex 推奨 PR-HP)。Narration data module の API surface creep を保護 | PR-HP |
 
 ## Test Requirements
 
