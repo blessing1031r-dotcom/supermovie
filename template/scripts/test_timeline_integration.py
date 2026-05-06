@@ -17987,6 +17987,61 @@ def test_supermovie_narration_input_docs_match_collect_chunks_lint() -> None:
     )
 
 
+def test_supermovie_narration_fps_docs_match_voicevox_resolution_lint() -> None:
+    """PR-IX: supermovie-narration FPS docs must match voicevox_narration resolution."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-narration" / "SKILL.md"
+    voicevox_path = template_root / "scripts" / "voicevox_narration.py"
+    assert skill_path.is_file(), "skills/supermovie-narration/SKILL.md not found"
+    assert voicevox_path.is_file(), "template/scripts/voicevox_narration.py not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    voicevox_text = voicevox_path.read_text(encoding="utf-8")
+    timing_match = re.search(r"FPS は `--fps` 引数[\s\S]*?`--fps <= 0` は exit 4。", skill_text)
+    error_row_match = re.search(r"\|\s*FPS 不正[^|]*\|\s*([^|]+?)\s*\|", skill_text)
+    assert timing_match is not None, "supermovie-narration FPS priority docs not found"
+    assert error_row_match is not None, "supermovie-narration FPS error row not found"
+    timing_text = timing_match.group(0)
+    error_row = error_row_match.group(1)
+
+    required_doc_snippets = {
+        "cli priority": "`--fps` 引数",
+        "videoConfig source": "`<PROJECT>/src/videoConfig.ts` の `export const FPS = N;`",
+        "default fallback": "default 30 の優先順位で解決",
+        "videoConfig SSOT reason": "videoConfig.ts を一次 source に統一",
+        "invalid fps exit": "`--fps <= 0` は exit 4",
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in timing_text:
+            errors.append(f"supermovie-narration FPS docs missing {name}: {snippet}")
+    if "exit 4" not in error_row or "default 30 fallback" not in error_row:
+        errors.append("supermovie-narration FPS error row must document exit 4 and default 30 fallback")
+
+    for pattern, desc in (
+        (r"from\s+timeline\s+import\s*\([\s\S]*?\bDEFAULT_FPS\b[\s\S]*?\bread_video_config_fps\b", "timeline DEFAULT_FPS/read_video_config_fps imports"),
+        (r"ap\.add_argument\(\s*['\"]--fps['\"][\s\S]*?type\s*=\s*int[\s\S]*?default\s*=\s*None", "--fps argparse int optional"),
+        (r"help=f?['\"][\s\S]*?default:\s*src/videoConfig\.ts FPS[\s\S]*?\{DEFAULT_FPS\}", "--fps help mentions videoConfig and DEFAULT_FPS"),
+        (r"fps\s*=\s*args\.fps\s+if\s+args\.fps\s+is\s+not\s+None\s+else\s+read_video_config_fps\(PROJ\)", "FPS resolution priority"),
+        (r"if\s+fps\s*<=\s*0\s*:", "invalid fps guard"),
+        (r"return\s+emit_json\(\s*['\"]invalid_fps['\"]\s*,\s*4\s*,\s*fps=fps\s*\)", "invalid_fps exit 4"),
+        (r"print\(f['\"]target fps: \{fps\}['\"]\)", "target fps stdout"),
+        (r"write_narration_data\(\s*pairs\s*,\s*fps\s*,\s*cut_segments\s*\)", "write_narration_data receives resolved fps"),
+        (r"project_load_cut_segments\(\s*fps\s*\)", "cut mapping receives resolved fps"),
+    ):
+        if not re.search(pattern, voicevox_text):
+            errors.append(f"voicevox_narration.py missing {desc}")
+
+    assert errors == [], (
+        "supermovie-narration FPS docs / voicevox resolution contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -22338,6 +22393,8 @@ def main() -> int:
         test_supermovie_narration_output_docs_match_voicevox_paths_lint,
         # PR-IW (supermovie-narration input docs stay synced with collect_chunks): 1 件
         test_supermovie_narration_input_docs_match_collect_chunks_lint,
+        # PR-IX (supermovie-narration FPS docs stay synced with voicevox resolution): 1 件
+        test_supermovie_narration_fps_docs_match_voicevox_resolution_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
