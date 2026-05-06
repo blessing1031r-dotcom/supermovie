@@ -523,6 +523,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 222 | `template/src/MainVideo.tsx` が主要 layer/helper (`TelopPlayer` / `SESequence` / `BGM` / `ImageSequence` / `TitleSequence` / `SlideSequence` / `NarrationAudioWithMode` / `useNarrationMode` / `VIDEO_FILE`) を canonical path から named import することを lint (`test_main_video_canonical_layer_import_paths_lint`、Codex 推奨 PR-FF)。MainVideo layer import path contract を保護 | PR-FF |
 | 223 | `template/src/MainVideo.tsx` が `const baseVolume = narrationMode.kind === 'none' ? 1.0 : 0;` を保つことを lint (`test_main_video_base_volume_none_branch_contract_lint`、Codex 推奨 PR-FG)。MainVideo base video volume branch contract を保護 | PR-FG |
 | 224 | `template/src/Slides/SlideSequence.tsx` が `Sequence` を `remotion` から、`Slide` を `./Slide` から、`slideData` を `./slideData` から named import することを lint (`test_slide_sequence_canonical_imports_contract_lint`、Codex 推奨 PR-FH)。SlideSequence import contract を保護 | PR-FH |
+| 225 | `template/src/InsertImage/ImageSequence.tsx` が `Sequence` を `remotion` から、`InsertImage` を `./InsertImage` から、`insertImageData` を `./insertImageData` から named import することを lint (`test_image_sequence_canonical_imports_contract_lint`、Codex 推奨 PR-FI)。ImageSequence import contract を保護 | PR-FI |
 
 ## Test Requirements
 
