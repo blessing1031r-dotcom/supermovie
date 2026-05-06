@@ -567,6 +567,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 266 | `template/src/テロップテンプレート/index.tsx` の public export surface が `Telop` / `TelopPlayer` / `telopData` / `TOTAL_FRAMES` / `FPS` / `TelopSegment` / `subtitleConfig` に限定され、default export を持たないことを lint (`test_telop_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GX)。Telop barrel の API surface creep を保護 | PR-GX |
 | 267 | `template/src/SoundEffects/BGM.tsx` の public export surface が `BGM` に限定され、default export を持たないことを lint (`test_bgm_public_export_surface_contract_lint`、Codex 推奨 PR-GY)。BGM module の API surface creep を保護 | PR-GY |
 | 268 | `template/src/SoundEffects/SESequence.tsx` の public export surface が `SESequence` に限定され、default export を持たないことを lint (`test_se_sequence_public_export_surface_contract_lint`、Codex 推奨 PR-GZ)。SESequence module の API surface creep を保護 | PR-GZ |
+| 269 | `template/src/SoundEffects/SEPlayer.ts` の public export surface が `SoundEffect` に限定され、default export / re-export を持たないことを lint (`test_seplayer_public_export_surface_contract_lint`、Codex 推奨 PR-HA)。SEPlayer module の API surface creep を保護 | PR-HA |
 
 ## Test Requirements
 

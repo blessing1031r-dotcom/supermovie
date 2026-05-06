@@ -18790,6 +18790,35 @@ def test_sound_effect_schema_and_se_data_export_lint() -> None:
     )
 
 
+def test_seplayer_public_export_surface_contract_lint() -> None:
+    """PR-HA: SEPlayer module must export only the SoundEffect type."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    se_player = template_root / "src" / "SoundEffects" / "SEPlayer.ts"
+    assert se_player.is_file(), "template/src/SoundEffects/SEPlayer.ts not found"
+    raw = se_player.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/SoundEffects/SEPlayer.ts must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*\{""", text, re.MULTILINE), (
+        "template/src/SoundEffects/SEPlayer.ts must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    assert exported == {"SoundEffect"}, (
+        "template/src/SoundEffects/SEPlayer.ts public export surface drift: "
+        f"expected ['SoundEffect'], got {sorted(exported)}"
+    )
+
+
 def test_se_data_placeholder_empty_array_contract_lint() -> None:
     import re
 
@@ -19887,6 +19916,8 @@ def main() -> int:
         test_telop_segment_template_id_and_animation_contract_lint,
         test_telop_config_types_export_style_shape_and_slide_direction_union,
         test_sound_effect_schema_and_se_data_export_lint,
+        # PR-HA (SEPlayer module exports only the SoundEffect type): 1 件
+        test_seplayer_public_export_surface_contract_lint,
         test_se_data_placeholder_empty_array_contract_lint,
         test_telop_styles_animation_exports_motion_contract_lint,
         test_telop_styles_template_exports_and_config_helpers_lint,
