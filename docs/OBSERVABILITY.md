@@ -563,6 +563,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 262 | `template/src/Slides/index.tsx` の public export surface が `SlideSequence` / `Slide` / `SlideSegment` / `SlideBullet` / `SlideAlignment` / `slideData` に限定され、default export を持たないことを lint (`test_slides_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GT)。Slides barrel の API surface creep を保護 | PR-GT |
 | 263 | `template/src/Title/index.ts` の public export surface が `TitleSequence` / `TitleSegment` に限定され、default export を持たないことを lint (`test_title_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GU)。Title barrel の API surface creep を保護 | PR-GU |
 | 264 | `template/src/InsertImage/index.ts` の public export surface が `InsertImage` / `ImageSequence` / `ImageSegment` に限定され、default export を持たないことを lint (`test_insert_image_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GV)。InsertImage barrel の API surface creep を保護 | PR-GV |
+| 265 | `template/src/Narration/index.ts` の public export surface が `NarrationAudio` / `NarrationAudioWithMode` / `narrationData` / `getNarrationMode` / `invalidateNarrationMode` / `NARRATION_LEGACY_FILE` / `useNarrationMode` / `NarrationSegment` / `NarrationMode` に限定され、default export を持たないことを lint (`test_narration_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GW)。Narration barrel の API surface creep を保護 | PR-GW |
 
 ## Test Requirements
 
