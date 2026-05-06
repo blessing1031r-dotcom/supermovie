@@ -18025,6 +18025,80 @@ def test_supermovie_image_gen_type_docs_match_image_segment_union_lint() -> None
     )
 
 
+def test_supermovie_image_gen_asset_path_docs_match_insert_image_contract_lint() -> None:
+    """PR-IR: supermovie-image-gen asset path docs must match InsertImage contract."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-image-gen" / "SKILL.md"
+    data_path = template_root / "src" / "InsertImage" / "insertImageData.ts"
+    renderer_path = template_root / "src" / "InsertImage" / "InsertImage.tsx"
+    assert skill_path.is_file(), "skills/supermovie-image-gen/SKILL.md not found"
+    assert data_path.is_file(), "template/src/InsertImage/insertImageData.ts not found"
+    assert renderer_path.is_file(), "template/src/InsertImage/InsertImage.tsx not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    data_text = data_path.read_text(encoding="utf-8")
+    renderer_text = renderer_path.read_text(encoding="utf-8")
+    generation_command_match = re.search(
+        r"### 3-3\. 生成実行\s*```bash\n([\s\S]*?)\n```",
+        skill_text,
+    )
+    assert generation_command_match is not None, "supermovie-image-gen generation command block not found"
+    output_sample_match = re.search(
+        r"### 4-1\. 出力形式\s*```typescript\s*([\s\S]*?)```",
+        skill_text,
+    )
+    assert output_sample_match is not None, "supermovie-image-gen insertImageData output sample not found"
+    validation_match = re.search(
+        r"### 5-1\. バリデーション\s*([\s\S]*?)### 5-2\.",
+        skill_text,
+    )
+    assert validation_match is not None, "supermovie-image-gen validation table not found"
+
+    command_text = generation_command_match.group(1)
+    sample_text = output_sample_match.group(1)
+    validation_text = validation_match.group(1)
+    sample_files = re.findall(r"\bfile:\s*'([^']+)'", sample_text)
+    assert sample_files, "supermovie-image-gen sample file paths not found"
+    data_comment_files = re.findall(r"\bfile:\s*'([^']+)'", data_text)
+
+    required_doc_snippets = {
+        "generator output path": '-o "<PROJECT>/public/images/generated/<filename>.png"',
+        "filename convention": "<startSec>s_<type>_<連番>.png",
+        "filename examples": "例: 005s_infographic_01.png, 030s_photo_02.png",
+        "data output path": "**保存先:** `src/InsertImage/insertImageData.ts`",
+        "validation asset root": "全ファイルが `public/images/generated/` にある",
+        "report asset root": "保存先: public/images/generated/",
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        haystack = command_text if name == "generator output path" else skill_text
+        if snippet not in haystack:
+            errors.append(f"supermovie-image-gen asset path docs missing {name}: {snippet}")
+    for file_path in sample_files:
+        if not file_path.startswith("generated/") or not file_path.endswith(".png"):
+            errors.append(f"supermovie-image-gen sample file path must be generated/*.png: {file_path}")
+        if file_path.startswith("public/images/"):
+            errors.append(f"supermovie-image-gen sample file path must be relative to public/images/: {file_path}")
+    for file_path in data_comment_files:
+        if not file_path.startswith("generated/"):
+            errors.append(f"insertImageData.ts placeholder file path must use generated/ prefix: {file_path}")
+    if "`images/${segment.file}`" not in renderer_text:
+        errors.append("InsertImage.tsx must resolve ImageSegment.file via staticFile(`images/${segment.file}`)")
+    if not re.search(r"staticFile\s*\(\s*`images/\$\{segment\.file\}`\s*\)", renderer_text):
+        errors.append("InsertImage.tsx staticFile call for generated image assets not found")
+    if "public/images/generated/" not in validation_text:
+        errors.append("supermovie-image-gen validation table must mention public/images/generated/")
+
+    assert errors == [], (
+        "supermovie-image-gen asset path docs / InsertImage contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_slides_validation_docs_match_build_slide_data_lint() -> None:
     """PR-IM: supermovie-slides validation docs must match build_slide_data guards."""
     import re
@@ -21876,6 +21950,8 @@ def main() -> int:
         test_supermovie_image_gen_aspect_table_matches_video_config_lint,
         # PR-IL (supermovie-image-gen type docs stay synced with ImageSegment union): 1 件
         test_supermovie_image_gen_type_docs_match_image_segment_union_lint,
+        # PR-IR (supermovie-image-gen asset path docs stay synced with InsertImage): 1 件
+        test_supermovie_image_gen_asset_path_docs_match_insert_image_contract_lint,
         # PR-IM (supermovie-slides validation docs stay synced with build_slide_data guards): 1 件
         test_supermovie_slides_validation_docs_match_build_slide_data_lint,
         # PR-IN (supermovie-slides tone style docs stay synced with build_slide_data): 1 件
