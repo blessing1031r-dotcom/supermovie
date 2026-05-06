@@ -17346,6 +17346,33 @@ def test_use_narration_mode_imports_mode_exports_contract_lint() -> None:
     )
 
 
+def test_use_narration_mode_public_export_surface_contract_lint() -> None:
+    """PR-GR: useNarrationMode module must export only the hook."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    hook_file = template_root / "src" / "Narration" / "useNarrationMode.ts"
+    assert hook_file.is_file(), "template/src/Narration/useNarrationMode.ts not found"
+    raw = hook_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/Narration/useNarrationMode.ts must not use a default export"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|type|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    assert exported == {"useNarrationMode"}, (
+        "template/src/Narration/useNarrationMode.ts public export surface drift: "
+        f"expected ['useNarrationMode'], got {sorted(exported)}"
+    )
+
+
 def test_use_narration_mode_watch_dedup_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -19428,6 +19455,8 @@ def main() -> int:
         # PR-CQ (useNarrationMode.ts watches mode constants + narrationData files lint): 1 件
         test_narration_watch_uses_mode_constants_and_data_files,
         test_use_narration_mode_imports_mode_exports_contract_lint,
+        # PR-GR (useNarrationMode module exports only the hook): 1 件
+        test_use_narration_mode_public_export_surface_contract_lint,
         test_use_narration_mode_watch_dedup_contract_lint,
         test_narration_audio_canonical_imports_contract_lint,
         # PR-CR (NarrationAudioWithMode is pure mode-prop renderer, no internal hook call lint): 1 件
