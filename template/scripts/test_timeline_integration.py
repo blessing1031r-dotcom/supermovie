@@ -13864,6 +13864,37 @@ def test_marketplace_json_plugins_array_shape_lint() -> None:
     assert errors == [], "marketplace.json plugins array shape lint failed:\n" + "\n".join(errors)
 
 
+def test_skill_md_body_single_h1_lint() -> None:
+    """PR-BA: Each SKILL.md body (after stripping frontmatter and fenced code blocks)
+    must contain exactly one H1 heading line (^# .+).
+    """
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    skills_root = repo_root / "skills"
+    errors: list[str] = []
+
+    for skill_path in sorted(skills_root.iterdir()):
+        if not skill_path.is_dir():
+            continue
+        skill_md = skill_path / "SKILL.md"
+        if not skill_md.is_file():
+            continue
+        content = skill_md.read_text(encoding="utf-8")
+        # strip YAML frontmatter block (anchored to file start with \A)
+        body = re.sub(r"\A---\s*\n.*?^---\s*\n", "", content, flags=re.MULTILINE | re.DOTALL)
+        # strip fenced code blocks (``` and ~~~)
+        body = re.sub(r"^(?:```|~~~).*?^(?:```|~~~)\s*$", "", body, flags=re.MULTILINE | re.DOTALL)
+        h1s = re.findall(r"^# .+", body, re.MULTILINE)
+        if len(h1s) != 1:
+            errors.append(
+                f"{skill_path.name}/SKILL.md: expected exactly 1 H1 heading outside "
+                f"frontmatter/code-blocks, found {len(h1s)}: {h1s}"
+            )
+
+    assert errors == [], "SKILL.md body single-H1 lint failed:\n" + "\n".join(errors)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -14102,6 +14133,8 @@ def main() -> int:
         test_marketplace_json_mirrors_plugin_json_lint,
         # PR-AZ (marketplace.json plugins array: 1 entry, name/source/description shape): 1 件
         test_marketplace_json_plugins_array_shape_lint,
+        # PR-BA (SKILL.md body single H1 heading outside frontmatter/code-blocks lint): 1 件
+        test_skill_md_body_single_h1_lint,
     ]
     failed = []
     for t in tests:
