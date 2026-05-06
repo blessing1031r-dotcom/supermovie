@@ -15367,6 +15367,32 @@ def test_template_css_entrypoint_side_effects_lint() -> None:
     )
 
 
+def test_root_css_import_first_contract_lint() -> None:
+    """PR-GG: Root.tsx must import ./index.css before component/config imports.
+
+    CSS is a global side effect entrypoint; keep it as the first import so future import
+    reshuffles do not hide Tailwind/global CSS loading behind component modules.
+    """
+    import re
+
+    template_root = Path(__file__).parents[1]
+    root_tsx = template_root / "src" / "Root.tsx"
+    assert root_tsx.is_file(), "template/src/Root.tsx not found"
+    raw = root_tsx.read_text(encoding="utf-8")
+    text = re.sub(r"/\*.*?\*/", "", raw, flags=re.DOTALL)
+    code_lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("//")
+    ]
+    import_lines = [line for line in code_lines if line.startswith("import")]
+    assert import_lines, "template/src/Root.tsx: no import statements found"
+    assert re.fullmatch(r"""import\s+['"]\.\/index\.css['"]\s*;?""", import_lines[0]), (
+        "template/src/Root.tsx CSS import order contract drift: "
+        f"first import must be import './index.css'; got {import_lines[0]!r}"
+    )
+
+
 def test_template_index_css_tailwind_v4_entrypoint_lint() -> None:
     import re
 
@@ -18901,6 +18927,8 @@ def main() -> int:
         test_scripts_required_files_executable_lint,
         test_sm_claude_entrypoint_executable_lint,
         test_template_css_entrypoint_side_effects_lint,
+        # PR-GG (Root imports global CSS before component/config modules): 1 件
+        test_root_css_import_first_contract_lint,
         test_template_index_css_tailwind_v4_entrypoint_lint,
         test_root_composition_uses_video_config_lint,
         test_root_composition_uses_main_video_component_lint,
