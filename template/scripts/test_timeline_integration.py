@@ -16389,6 +16389,51 @@ def test_sequence_components_are_data_driven_from_local_arrays() -> None:
     )
 
 
+def test_sequence_components_return_fragment_wrapped_data_maps_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    COMPONENTS = [
+        ("Slides/SlideSequence.tsx", "SlideSequence", "slideData"),
+        ("InsertImage/ImageSequence.tsx", "ImageSequence", "insertImageData"),
+        ("Title/Title.tsx", "TitleSequence", "titleData"),
+        ("SoundEffects/SESequence.tsx", "SESequence", "seData"),
+    ]
+    errors: list[str] = []
+    for rel_path, component, data_name in COMPONENTS:
+        file_path = template_root / "src" / rel_path
+        if not file_path.is_file():
+            errors.append(f"template/src/{rel_path}: file not found")
+            continue
+        raw = file_path.read_text(encoding="utf-8")
+        text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+        export_match = re.search(
+            rf"export\s+const\s+{re.escape(component)}\s*:\s*React\.FC\s*=\s*\(\s*\)\s*=>\s*\{{(?P<body>[\s\S]*?)^\}};",
+            text,
+            re.MULTILINE,
+        )
+        if export_match is None:
+            errors.append(f"{rel_path}: export const {component}: React.FC = () => {{...}} not found")
+            continue
+        body = export_match.group("body")
+        if not re.search(
+            rf"return\s*\(\s*<>\s*\{{\s*{re.escape(data_name)}\.map\s*\(",
+            body,
+            re.DOTALL,
+        ):
+            errors.append(
+                f"{rel_path}: {component} must return a Fragment whose first child is "
+                f"{data_name}.map(...)"
+            )
+        if not re.search(r"\}\s*</>\s*\)\s*;", body, re.DOTALL):
+            errors.append(f"{rel_path}: {component} must close the data map inside the Fragment")
+    assert errors == [], (
+        "Sequence component Fragment/data-map wrapper contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_player_bridges_telop_data_to_registry_templates() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -18515,6 +18560,8 @@ def main() -> int:
         test_telop_template_components_canonical_imports_contract_lint,
         # PR-CO (sequence components are data-driven from local arrays lint): 1 件
         test_sequence_components_are_data_driven_from_local_arrays,
+        # PR-FZ (sequence components return Fragment-wrapped data maps lint): 1 件
+        test_sequence_components_return_fragment_wrapped_data_maps_lint,
         # PR-CP (TelopPlayer bridges telopData to registry templates lint): 1 件
         test_telop_player_bridges_telop_data_to_registry_templates,
         test_telop_player_canonical_imports_contract_lint,
