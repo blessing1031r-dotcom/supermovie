@@ -16876,6 +16876,24 @@ def test_se_sequence_wraps_sound_effects_in_sequence_audio_contract_lint() -> No
     )
 
 
+def test_se_sequence_asset_path_prefix_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    seq_file = template_root / "src" / "SoundEffects" / "SESequence.tsx"
+    assert seq_file.is_file(), "template/src/SoundEffects/SESequence.tsx not found"
+    raw = seq_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert re.search(
+        r"""<Audio\b[^>]*\bsrc=\{\s*staticFile\s*\(\s*`se/\$\{se\.file\}`\s*\)\s*\}""",
+        text,
+    ), (
+        "template/src/SoundEffects/SESequence.tsx asset path contract drift: "
+        "<Audio> must use staticFile(`se/${se.file}`)"
+    )
+
+
 def test_narration_audio_chunks_sequence_wiring_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17362,6 +17380,7 @@ def main() -> int:
         test_image_sequence_wraps_image_segments_in_sequence_frame_ranges_lint,
         test_telop_data_typed_export_and_video_config_ssot_contract_lint,
         test_se_sequence_wraps_sound_effects_in_sequence_audio_contract_lint,
+        test_se_sequence_asset_path_prefix_contract_lint,
         test_narration_audio_chunks_sequence_wiring_contract_lint,
         test_narration_mode_priority_dispatch_contract_lint,
         test_narration_audio_legacy_branch_wiring_contract_lint,
