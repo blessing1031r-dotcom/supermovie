@@ -18303,6 +18303,68 @@ def test_supermovie_narration_vad_docs_match_cut_aware_failfast_contract_lint() 
     )
 
 
+def test_supermovie_narration_overlap_docs_match_chunk_meta_warning_lint() -> None:
+    """PR-JC: supermovie-narration overlap docs must match chunk_meta warning behavior."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-narration" / "SKILL.md"
+    voicevox_path = template_root / "scripts" / "voicevox_narration.py"
+    assert skill_path.is_file(), "skills/supermovie-narration/SKILL.md not found"
+    assert voicevox_path.is_file(), "template/scripts/voicevox_narration.py not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    voicevox_text = voicevox_path.read_text(encoding="utf-8")
+    phase3h_match = re.search(r"\*\*Phase 3-H per-segment\*\*[\s\S]*?\*\*Phase 3-I", skill_text)
+    phase3i_match = re.search(r"隣接 chunk の overlap[\s\S]*?`--script`", skill_text)
+    assert phase3h_match is not None, "supermovie-narration Phase 3-H docs not found"
+    assert phase3i_match is not None, "supermovie-narration overlap docs not found"
+    docs_text = "\n".join([phase3h_match.group(0), phase3i_match.group(0)])
+
+    required_doc_snippets = {
+        "chunk meta overlaps field": "overlaps + segments[] を debug 出力",
+        "overlap predicate": "隣接 chunk の overlap (前 chunk 終端 > 現 startFrame) を検出して WARN",
+        "overlaps persisted": "chunk_meta.json の `overlaps[]` にも記録",
+        "sequence risk": "render では `<Sequence>` 重複",
+        "double playback risk": "二重再生になり得る",
+        "mitigation transcript": "transcript 再分割",
+        "mitigation partial": "`--allow-partial` 検討",
+    }
+    required_code_snippets = {
+        "overlap accumulator": "overlap_warns: list[str] = []",
+        "previous segment": "prev = segments[-1]",
+        "previous end": 'prev_end = prev["startFrame"] + prev["durationInFrames"]',
+        "overlap predicate": "if prev_end > start_frame:",
+        "overlap warning body": "frames overlap",
+        "sequence overlap warning": "narration <Sequence> overlap(s) detected",
+        "not transcript bug": "transcript の bug ではなく",
+        "mitigation transcript": "transcript 再分割",
+        "mitigation text": "chunk text 短縮",
+        "mitigation speaker": "speaker 早話速度",
+        "mitigation sourceStart": "sourceStartMs を後ろ送り",
+        "chunk meta overlaps field": '"overlaps": overlap_warns',
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in docs_text:
+            errors.append(f"supermovie-narration overlap docs missing {name}: {snippet}")
+    for name, snippet in required_code_snippets.items():
+        if snippet not in voicevox_text:
+            errors.append(f"voicevox_narration.py missing {name}: {snippet}")
+
+    warning_pos = voicevox_text.find("if overlap_warns:")
+    meta_pos = voicevox_text.find('"overlaps": overlap_warns')
+    if warning_pos == -1 or meta_pos == -1 or not warning_pos < meta_pos:
+        errors.append("voicevox_narration.py must warn about overlaps before writing chunk_meta overlaps")
+
+    assert errors == [], (
+        "supermovie-narration overlap docs / chunk_meta warning contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -22664,6 +22726,8 @@ def main() -> int:
         test_supermovie_narration_cleanup_docs_match_stale_reset_contract_lint,
         # PR-JB (supermovie-narration VAD docs stay synced with cut-aware fail-fast behavior): 1 件
         test_supermovie_narration_vad_docs_match_cut_aware_failfast_contract_lint,
+        # PR-JC (supermovie-narration overlap docs stay synced with chunk_meta warnings): 1 件
+        test_supermovie_narration_overlap_docs_match_chunk_meta_warning_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
