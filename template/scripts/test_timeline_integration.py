@@ -15226,6 +15226,63 @@ def test_vitest_use_narration_mode_tests_render_hook_import_contract_lint() -> N
     )
 
 
+def test_vitest_use_narration_mode_tests_vitest_import_surface_lint() -> None:
+    """PR-GM: useNarrationMode hook tests must import every used Vitest API.
+
+    Keep React hook tests explicit about their Vitest surface so the template cannot drift
+    toward implicit globals or partially imported test helpers.
+    """
+    import re
+
+    template_root = Path(__file__).parents[1]
+    test_dir = template_root / "src" / "Narration"
+    target_files = sorted(test_dir.glob("useNarrationMode*.test.tsx"))
+    assert target_files, "template/src/Narration/useNarrationMode*.test.tsx files not found"
+
+    api_use_patterns = {
+        "describe": r"\bdescribe\s*\(",
+        "it": r"\bit\s*\(",
+        "expect": r"\bexpect\s*\(",
+        "vi": r"\bvi\s*\.",
+        "beforeEach": r"\bbeforeEach\s*\(",
+        "afterEach": r"\bafterEach\s*\(",
+    }
+    vitest_import_pattern = re.compile(
+        r"""^import\s*\{(?P<names>[^}]+)\}\s*from\s*['"]vitest['"]\s*;?\s*$""",
+        re.MULTILINE,
+    )
+
+    errors: list[str] = []
+    for path in target_files:
+        raw = path.read_text(encoding="utf-8")
+        text = "\n".join(
+            line for line in raw.splitlines()
+            if not line.lstrip().startswith("//")
+        )
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+        rel = path.relative_to(template_root).as_posix()
+
+        import_match = vitest_import_pattern.search(text)
+        if not import_match:
+            errors.append(f"{rel}: missing named import from vitest")
+            continue
+
+        imported = {name.strip() for name in import_match.group("names").split(",")}
+        used = {
+            api
+            for api, pattern in api_use_patterns.items()
+            if re.search(pattern, text)
+        }
+        missing = sorted(used - imported)
+        if missing:
+            errors.append(f"{rel}: Vitest APIs used but not imported: {missing}")
+
+    assert errors == [], (
+        "template useNarrationMode React test Vitest import surface contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_vitest_setup_jest_dom_import_contract_lint() -> None:
     import json
     import re
@@ -19178,6 +19235,8 @@ def main() -> int:
         test_vitest_use_narration_mode_tests_reset_cache_before_each_lint,
         # PR-GL (useNarrationMode React tests import renderHook from testing-library/react): 1 件
         test_vitest_use_narration_mode_tests_render_hook_import_contract_lint,
+        # PR-GM (useNarrationMode React tests import every used Vitest API): 1 件
+        test_vitest_use_narration_mode_tests_vitest_import_surface_lint,
         # PR-GD (Vitest setup imports jest-dom/vitest and dependency exists): 1 件
         test_vitest_setup_jest_dom_import_contract_lint,
         test_eslint_config_no_explicit_any_contract_lint,
