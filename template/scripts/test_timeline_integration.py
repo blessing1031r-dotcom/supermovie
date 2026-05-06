@@ -12678,6 +12678,57 @@ def test_readme_workflow_order_matches_claude_pipeline_lint() -> None:
     )
 
 
+def test_claude_pipeline_commands_have_skill_and_readme_coverage_lint() -> None:
+    """PR-AD: every /supermovie-* step in CLAUDE.md canonical pipeline must:
+    (1) have a matching skills/<command>/ directory with SKILL.md, and
+    (2) appear as a command in README.md command table.
+    """
+    import re
+
+    repo_root = Path(__file__).parents[2]
+
+    # Canonical pipeline steps
+    claude_md_text = (repo_root / "CLAUDE.md").read_text(encoding="utf-8")
+    workflow_m = re.search(
+        r"## 正規ワークフロー[^\n]*\n+```[^\n]*\n(.*?)```",
+        claude_md_text,
+        re.DOTALL,
+    )
+    assert workflow_m, "CLAUDE.md: ## 正規ワークフロー code block not found"
+    canonical_steps = list(
+        dict.fromkeys(re.findall(r"/(supermovie-[\w-]+)", workflow_m.group(1)))
+    )
+    assert canonical_steps, "CLAUDE.md: ## 正規ワークフロー block has no /supermovie-* steps"
+
+    skills_dir = repo_root / "skills"
+    readme_text = (repo_root / "README.md").read_text(encoding="utf-8")
+    readme_table_commands = set(
+        re.findall(r"/(supermovie-[\w-]+)", "\n".join(
+            line for line in readme_text.splitlines()
+            if line.strip().startswith("|") and "/supermovie-" in line
+        ))
+    )
+
+    errors: list[str] = []
+    for step in canonical_steps:
+        # (1) skills/<step>/SKILL.md must exist
+        skill_md = skills_dir / step / "SKILL.md"
+        if not skill_md.exists():
+            errors.append(
+                f"CLAUDE.md pipeline step '{step}' has no skills/{step}/SKILL.md"
+            )
+        # (2) step must appear in README command table
+        if step not in readme_table_commands:
+            errors.append(
+                f"CLAUDE.md pipeline step '{step}' not found in README.md command table"
+            )
+
+    assert not errors, (
+        f"Canonical pipeline coverage gaps ({len(errors)} error(s)):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12870,6 +12921,8 @@ def main() -> int:
         test_skill_embedded_workflow_matches_claude_pipeline_lint,
         # PR-AC (README command table workflow order matches CLAUDE.md pipeline lint): 1 件
         test_readme_workflow_order_matches_claude_pipeline_lint,
+        # PR-AD (canonical pipeline commands have skill dir + README coverage lint): 1 件
+        test_claude_pipeline_commands_have_skill_and_readme_coverage_lint,
     ]
     failed = []
     for t in tests:
