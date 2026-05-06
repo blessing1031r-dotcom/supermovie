@@ -18696,6 +18696,99 @@ def test_supermovie_cut_timeline_helper_docs_match_vad_mapping_contract_lint() -
     )
 
 
+def test_supermovie_cut_completion_preview_docs_match_subtitles_handoff_lint() -> None:
+    """PR-KI: supermovie-cut completion docs must match preview/subtitles handoff."""
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    cut_skill_path = repo_root / "skills" / "supermovie-cut" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    package_path = repo_root / "template" / "package.json"
+    assert cut_skill_path.is_file(), "skills/supermovie-cut/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert package_path.is_file(), "template/package.json not found"
+
+    cut_text = cut_skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    package_json = json.loads(package_path.read_text(encoding="utf-8"))
+    completion_match = re.search(
+        r"## 完了時の報告フォーマット\s*```([\s\S]*?)```\s*\n---\n\n## 実行タイミングの注意",
+        cut_text,
+    )
+    timing_match = re.search(
+        r"## 実行タイミングの注意\s*([\s\S]*?)\n---\n\n## エラーハンドリング",
+        cut_text,
+    )
+    integration_match = re.search(r"## 連携マップ\s*```([\s\S]*?)```\s*$", cut_text)
+    assert completion_match is not None, "supermovie-cut completion report block not found"
+    assert timing_match is not None, "supermovie-cut execution timing note not found"
+    assert integration_match is not None, "supermovie-cut integration map block not found"
+    completion_text = completion_match.group(1)
+    timing_text = timing_match.group(1)
+    integration_text = integration_match.group(1)
+
+    errors: list[str] = []
+    if package_json.get("scripts", {}).get("dev") != "remotion studio":
+        errors.append(
+            "template/package.json scripts.dev must remain remotion studio for cut preview handoff, "
+            f"got {package_json.get('scripts', {}).get('dev')!r}"
+        )
+
+    required_completion_snippets = {
+        "done heading": "✅ カット完了",
+        "result heading": "✂️ カット結果:",
+        "original duration": "元の動画: <X>分<Y>秒",
+        "cut duration": "カット後: <X>分<Y>秒（<Z>秒短縮 = <P>%削減）",
+        "cut count": "カット箇所: <N>箇所",
+        "silence count": "- 無音短縮: <n>箇所",
+        "content count": "- 内容カット: <n>箇所",
+        "filler count": "- フィラー除去: <n>箇所",
+        "cut data file": "cutData.ts（カット区間定義）",
+        "telop data file": "telopData.ts（フレーム再計算済み）",
+        "preview next step": "→ npm run dev でカット結果をプレビュー",
+        "subtitles next step": "→ /supermovie-subtitles でテロップ再生成（カット後のタイミングで）",
+    }
+    required_timing_snippets = {
+        "before subtitles": "カットは subtitles の前に実行するのが推奨。",
+        "recalculate if late": "subtitles の後にカットすると全テロップのフレーム再計算が必要",
+    }
+    required_integration_snippets = {
+        "transcript fix": "/supermovie-transcript-fix    ← 誤字修正（辞書 + Claude LLM）",
+        "fixed transcript": "↓ transcript_fixed.json",
+        "current cut": "/supermovie-cut               ← ★ここ: 不要区間カット（VAD + LLM分析）",
+        "cut data": "↓ cutData.ts",
+        "subtitles": "/supermovie-subtitles         ← テロップ＆タイトル生成",
+        "telop title": "↓ telopData.ts + titleData.ts",
+        "preview": "npm run dev                   ← プレビュー",
+    }
+    required_claude_snippets = {
+        "workflow cut": "/supermovie-cut               ← 不要区間カット（VAD + LLM分析）",
+        "workflow cut data": "    ↓ cutData.ts",
+        "workflow subtitles": "/supermovie-subtitles         ← transcript_fixed.json → telopData.ts + titleData.ts",
+        "workflow preview": "npm run dev                   ← Remotion Studioプレビュー",
+        "workflow render": "npm run render                ← out/video.mp4 出力",
+        "cut data path": "| カットデータ | `<PROJECT>/src/cutData.ts` |",
+    }
+    for name, snippet in required_completion_snippets.items():
+        if snippet not in completion_text:
+            errors.append(f"supermovie-cut completion docs missing {name}: {snippet}")
+    for name, snippet in required_timing_snippets.items():
+        if snippet not in timing_text:
+            errors.append(f"supermovie-cut execution timing docs missing {name}: {snippet}")
+    for name, snippet in required_integration_snippets.items():
+        if snippet not in integration_text:
+            errors.append(f"supermovie-cut integration map missing {name}: {snippet}")
+    for name, snippet in required_claude_snippets.items():
+        if snippet not in claude_text:
+            errors.append(f"CLAUDE cut workflow docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-cut completion/preview handoff docs drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_timeline_transcript_segment_validation_docs_match_schema_contract_lint() -> None:
     """PR-JO: timeline.py transcript segment validation must match transcript schema docs."""
     import json
@@ -25382,6 +25475,8 @@ def main() -> int:
         test_supermovie_cut_vad_result_schema_docs_match_claude_path_contract_lint,
         # PR-JN (supermovie-cut docs stay synced with timeline.py VAD mapping helpers): 1 件
         test_supermovie_cut_timeline_helper_docs_match_vad_mapping_contract_lint,
+        # PR-KI (supermovie-cut completion docs stay synced with preview/subtitles handoff): 1 件
+        test_supermovie_cut_completion_preview_docs_match_subtitles_handoff_lint,
         # PR-JO (timeline.py transcript segment validation stays synced with transcript schema docs): 1 件
         test_timeline_transcript_segment_validation_docs_match_schema_contract_lint,
         # PR-JP (supermovie-slides output docs stay synced with build_slide_data render/write): 1 件
