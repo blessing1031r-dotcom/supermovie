@@ -17295,6 +17295,33 @@ def test_telop_styles_template_exports_and_config_helpers_lint() -> None:
     )
 
 
+def test_telop_styles_css_helper_body_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    styles_file = template_root / "src" / "テロップテンプレート" / "telopStyles.ts"
+    assert styles_file.is_file(), "template/src/テロップテンプレート/telopStyles.ts not found"
+    raw = styles_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    for pattern, desc in [
+        (
+            r"export\s+const\s+getTextShadowCSS\s*=\s*\(\s*\)\s*=>\s*\{[\s\S]*?const\s+\{\s*offsetX\s*,\s*offsetY\s*,\s*blur\s*,\s*color\s*\}\s*=\s*subtitleConfig\.textShadow\s*;[\s\S]*?return\s+`\$\{offsetX\}px\s+\$\{offsetY\}px\s+\$\{blur\}px\s+\$\{color\}`\s*;[\s\S]*?\}",
+            "getTextShadowCSS destructures subtitleConfig.textShadow and returns CSS shadow string",
+        ),
+        (
+            r"export\s+const\s+getTextStrokeCSS\s*=\s*\(\s*\)\s*=>\s*\{[\s\S]*?const\s+\{\s*width\s*,\s*gradient\s*\}\s*=\s*subtitleConfig\.textStroke\s*;[\s\S]*?return\s+\{\s*width\s*,\s*gradient\s*\}\s*;[\s\S]*?\}",
+            "getTextStrokeCSS returns width and gradient from subtitleConfig.textStroke",
+        ),
+    ]:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"telopStyles.ts: missing {desc}")
+    assert errors == [], (
+        "template/src/テロップテンプレート/telopStyles.ts CSS helper body contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_title_segment_schema_and_title_data_typed_export_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -18152,6 +18179,7 @@ def main() -> int:
         test_se_data_placeholder_empty_array_contract_lint,
         test_telop_styles_animation_exports_motion_contract_lint,
         test_telop_styles_template_exports_and_config_helpers_lint,
+        test_telop_styles_css_helper_body_contract_lint,
         test_title_segment_schema_and_title_data_typed_export_contract_lint,
         test_title_data_placeholder_empty_array_and_toframe_export_contract_lint,
         test_slide_data_exports_typed_empty_array_lint,
