@@ -559,6 +559,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 258 | `template/src/videoConfig.ts` の public export surface が `VideoFormat` / `FORMAT` / `FPS` / `SOURCE_DURATION_FRAMES` / `VIDEO_FILE` / `RESOLUTION` / `TELOP_CONFIG` に限定され、default export を持たないことを lint (`test_videoconfig_public_export_surface_contract_lint`、Codex 推奨 PR-GP)。RESOLUTION_MAP / TELOP_CONFIG_MAP など内部 map の API surface 化を保護 | PR-GP |
 | 259 | `template/src/Narration/mode.ts` の public export surface が `NARRATION_LEGACY_FILE` / `NARRATION_READY_FILE` / `NarrationMode` / `getNarrationMode` / `invalidateNarrationMode` に限定され、default export を持たないことを lint (`test_narration_mode_public_export_surface_contract_lint`、Codex 推奨 PR-GQ)。Narration mode SSoT helper の API surface creep を保護 | PR-GQ |
 | 260 | `template/src/Narration/useNarrationMode.ts` の public export surface が `useNarrationMode` だけに限定され、default export を持たないことを lint (`test_use_narration_mode_public_export_surface_contract_lint`、Codex 推奨 PR-GR)。Narration hook module の API surface creep を保護 | PR-GR |
+| 261 | `template/src/Narration/NarrationAudio.tsx` の public export surface が `NarrationAudioWithMode` / `NarrationAudio` に限定され、default export を持たないことを lint (`test_narration_audio_public_export_surface_contract_lint`、Codex 推奨 PR-GS)。Narration audio module の API surface creep を保護 | PR-GS |
 
 ## Test Requirements
 

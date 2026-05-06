@@ -17449,6 +17449,32 @@ def test_narration_audio_canonical_imports_contract_lint() -> None:
     )
 
 
+def test_narration_audio_public_export_surface_contract_lint() -> None:
+    """PR-GS: NarrationAudio module must export only the two audio components."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    narration_file = template_root / "src" / "Narration" / "NarrationAudio.tsx"
+    assert narration_file.is_file(), "template/src/Narration/NarrationAudio.tsx not found"
+    raw = narration_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/Narration/NarrationAudio.tsx must not use a default export"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|type|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    assert exported == {"NarrationAudioWithMode", "NarrationAudio"}, (
+        "template/src/Narration/NarrationAudio.tsx public export surface drift: "
+        f"expected ['NarrationAudio', 'NarrationAudioWithMode'], got {sorted(exported)}"
+    )
+
+
 def test_narration_audio_with_mode_is_pure_mode_prop_renderer() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -19459,6 +19485,8 @@ def main() -> int:
         test_use_narration_mode_public_export_surface_contract_lint,
         test_use_narration_mode_watch_dedup_contract_lint,
         test_narration_audio_canonical_imports_contract_lint,
+        # PR-GS (NarrationAudio module exports only audio components): 1 件
+        test_narration_audio_public_export_surface_contract_lint,
         # PR-CR (NarrationAudioWithMode is pure mode-prop renderer, no internal hook call lint): 1 件
         test_narration_audio_with_mode_is_pure_mode_prop_renderer,
         test_narration_audio_none_and_default_volume_contract_lint,
