@@ -12994,6 +12994,64 @@ def test_skill_frontmatter_effort_field_lint() -> None:
     )
 
 
+def test_plugin_json_required_fields_lint() -> None:
+    """PR-AI: .claude-plugin/plugin.json must contain required fields with non-empty values.
+    Required: name (str), description (str), version (semver X.Y.Z), repository (https:// URL).
+    Validates the plugin manifest stays complete and machine-readable.
+    """
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    plugin_path = repo_root / ".claude-plugin" / "plugin.json"
+
+    assert plugin_path.exists(), f"plugin manifest not found: {plugin_path}"
+
+    try:
+        data = json.loads(plugin_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise AssertionError(f"plugin.json is not valid JSON: {e}") from e
+
+    errors: list[str] = []
+
+    # name: non-empty string
+    name = data.get("name")
+    if not isinstance(name, str) or not name.strip():
+        errors.append("'name' must be a non-empty string")
+
+    # description: non-empty string
+    desc = data.get("description")
+    if not isinstance(desc, str) or not desc.strip():
+        errors.append("'description' must be a non-empty string")
+
+    # version: non-empty, strict semver X.Y.Z (optional pre-release/build suffix)
+    version = data.get("version")
+    if not isinstance(version, str) or not version.strip():
+        errors.append("'version' must be a non-empty string")
+    elif not re.fullmatch(r"\d+\.\d+\.\d+(?:[+-][A-Za-z0-9.+\-]*)?", version):
+        errors.append(
+            f"'version' must match semver X.Y.Z format, got {version!r}"
+        )
+
+    # repository: non-empty https:// URL with non-empty netloc
+    from urllib.parse import urlparse
+
+    repo = data.get("repository")
+    if not isinstance(repo, str) or not repo.strip():
+        errors.append("'repository' must be a non-empty string")
+    else:
+        parsed = urlparse(repo)
+        if parsed.scheme != "https" or not parsed.netloc:
+            errors.append(
+                f"'repository' must be a valid https:// URL with a host, got {repo!r}"
+            )
+
+    assert not errors, (
+        f"plugin.json required fields violations ({len(errors)} error(s)):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13196,6 +13254,8 @@ def main() -> int:
         test_skill_frontmatter_allowed_tools_allowlist_lint,
         # PR-AH (skill frontmatter effort field required + valid enum lint): 1 件
         test_skill_frontmatter_effort_field_lint,
+        # PR-AI (plugin.json required fields completeness lint): 1 件
+        test_plugin_json_required_fields_lint,
     ]
     failed = []
     for t in tests:
