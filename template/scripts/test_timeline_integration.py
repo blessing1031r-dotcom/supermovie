@@ -12541,12 +12541,16 @@ def test_skill_embedded_workflow_matches_claude_pipeline_lint() -> None:
     repo_root = Path(__file__).parents[2]
     claude_md_path = repo_root / "CLAUDE.md"
     assert claude_md_path.exists(), "CLAUDE.md not found at repo root"
-    claude_md_text = claude_md_path.read_text()
+    claude_md_text = claude_md_path.read_text(encoding="utf-8")
 
-    # (1) Extract canonical pipeline step order from the first code block in CLAUDE.md
-    first_block_m = re.search(r"```[^\n]*\n(.*?)```", claude_md_text, re.DOTALL)
-    assert first_block_m, "CLAUDE.md: no code block found for canonical pipeline"
-    canonical_steps_raw = re.findall(r"/(supermovie-[\w-]+)", first_block_m.group(1))
+    # (1) Extract canonical pipeline step order from the 正規ワークフロー code block in CLAUDE.md
+    workflow_section_m = re.search(
+        r"## 正規ワークフロー[^\n]*\n+```[^\n]*\n(.*?)```",
+        claude_md_text,
+        re.DOTALL,
+    )
+    assert workflow_section_m, "CLAUDE.md: ## 正規ワークフロー code block not found"
+    canonical_steps_raw = re.findall(r"/(supermovie-[\w-]+)", workflow_section_m.group(1))
     # deduplicate while preserving order
     seen: set[str] = set()
     canonical_steps: list[str] = []
@@ -12570,7 +12574,7 @@ def test_skill_embedded_workflow_matches_claude_pipeline_lint() -> None:
         skill_md_path = skill_path / "SKILL.md"
         if not skill_md_path.exists():
             continue
-        content = skill_md_path.read_text()
+        content = skill_md_path.read_text(encoding="utf-8")
         code_blocks = re.findall(r"```[^\n]*\n(.*?)```", content, re.DOTALL)
 
         for block in code_blocks:
