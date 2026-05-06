@@ -19728,6 +19728,70 @@ def test_supermovie_slides_layer_handoff_docs_match_mainvideo_contract_lint() ->
     )
 
 
+def test_supermovie_slides_required_input_docs_match_build_slide_data_lint() -> None:
+    """PR-KS: supermovie-slides required input docs must match build_slide_data."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-slides" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    script_path = template_root / "scripts" / "build_slide_data.py"
+    assert skill_path.is_file(), "skills/supermovie-slides/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert script_path.is_file(), "template/scripts/build_slide_data.py not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    script_text = script_path.read_text(encoding="utf-8")
+    input_match = re.search(
+        r"## Phase 1: 入力データ読込\s*([\s\S]*?)## Phase 2:",
+        skill_text,
+    )
+    assert input_match is not None, "supermovie-slides Phase 1 input docs not found"
+    input_text = input_match.group(1)
+
+    errors: list[str] = []
+    required_script_snippets = {
+        "docstring transcript": "<PROJECT>/transcript_fixed.json  - segments[] / words[]",
+        "docstring config": "<PROJECT>/project-config.json    - format / tone",
+        "transcript path": 'transcript_path = PROJ / "transcript_fixed.json"',
+        "config path": 'config_path = PROJ / "project-config.json"',
+        "missing guard": "if not transcript_path.exists() or not config_path.exists():",
+        "missing message": "missing input: transcript_fixed.json or project-config.json",
+        "load transcript": "transcript = load_json(transcript_path)",
+        "load config": "config = load_json(config_path)",
+        "format default": 'fmt = config.get("format", "short")',
+        "tone default": 'tone = config.get("tone", "プロフェッショナル")',
+        "segments": 'segments = transcript.get("segments", [])',
+        "words": 'words = transcript.get("words", [])',
+    }
+    required_skill_snippets = {
+        "transcript": "- `<PROJECT>/transcript_fixed.json` から `segments[]` (start/end ms + text) と `words[]`",
+        "project config": "- `<PROJECT>/project-config.json` から `format` (youtube/short/square)、`tone`",
+    }
+    required_claude_snippets = {
+        "project config path": "| プロジェクト設定 | `<PROJECT>/project-config.json` |",
+        "fixed transcript path": "| 文字起こし修正済み | `<PROJECT>/transcript_fixed.json` |",
+        "project config format": '"format": "youtube"',
+        "project config tone": '"tone": "プロフェッショナル"',
+    }
+    for name, snippet in required_script_snippets.items():
+        if snippet not in script_text:
+            errors.append(f"build_slide_data.py required input contract missing {name}: {snippet}")
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in input_text:
+            errors.append(f"supermovie-slides Phase 1 input docs missing {name}: {snippet}")
+    for name, snippet in required_claude_snippets.items():
+        if snippet not in claude_text:
+            errors.append(f"CLAUDE.md slides input contract missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-slides required input docs / build_slide_data.py contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -26516,6 +26580,8 @@ def main() -> int:
         test_supermovie_slides_topic_grouping_docs_match_build_slide_data_lint,
         # PR-KB (supermovie-slides completion/map docs stay synced with MainVideo layer): 1 件
         test_supermovie_slides_layer_handoff_docs_match_mainvideo_contract_lint,
+        # PR-KS (supermovie-slides required input docs stay synced with build_slide_data): 1 件
+        test_supermovie_slides_required_input_docs_match_build_slide_data_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
