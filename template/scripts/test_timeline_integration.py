@@ -15466,6 +15466,61 @@ def test_main_video_canonical_layer_import_paths_lint() -> None:
     )
 
 
+def test_main_video_layer_boundary_no_data_imports_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    main_video = template_root / "src" / "MainVideo.tsx"
+    assert main_video.is_file(), "template/src/MainVideo.tsx not found"
+    raw = main_video.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    forbidden_symbols = {
+        "slideData",
+        "insertImageData",
+        "titleData",
+        "telopData",
+        "seData",
+        "narrationData",
+    }
+    forbidden_sources = {
+        "./Slides/slideData",
+        "./InsertImage/insertImageData",
+        "./Title/titleData",
+        "./テロップテンプレート/telopData",
+        "./SoundEffects/seData",
+        "./Narration/narrationData",
+    }
+    errors: list[str] = []
+    import_re = re.compile(
+        r"""import\s+(?:type\s+)?(?P<body>[\s\S]*?)\s+from\s*['"](?P<source>[^'"]+)['"]""",
+        re.DOTALL,
+    )
+    for match in import_re.finditer(text):
+        source = match.group("source")
+        body = match.group("body").replace("\n", " ")
+        if source in forbidden_sources:
+            errors.append(
+                f"MainVideo.tsx: must not import data module {source!r}; "
+                "data arrays belong inside layer sequence/player components"
+            )
+        imported_names = {
+            token.strip().split(" as ", 1)[0].removeprefix("type ").strip()
+            for token in re.sub(r"[{}]", "", body).split(",")
+            if token.strip()
+        }
+        leaked = sorted(forbidden_symbols & imported_names)
+        if leaked:
+            errors.append(
+                f"MainVideo.tsx: must not import data array symbol(s) {leaked}; "
+                "MainVideo should compose layers, not read timeline data directly"
+            )
+    assert errors == [], (
+        "template/src/MainVideo.tsx layer boundary/data import contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_main_video_layer_order_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -18726,6 +18781,8 @@ def main() -> int:
         test_main_video_staticfile_uses_video_file_lint,
         test_main_video_required_layers_contract_lint,
         test_main_video_canonical_layer_import_paths_lint,
+        # PR-GC (MainVideo composes layers without direct data-array imports): 1 件
+        test_main_video_layer_boundary_no_data_imports_lint,
         test_main_video_layer_order_contract_lint,
         test_main_video_base_video_fit_contract_lint,
         test_main_video_narration_mode_ssot_contract_lint,
