@@ -12449,6 +12449,55 @@ def test_skill_readme_command_surface_lint() -> None:
     )
 
 
+def test_package_lock_root_dependency_drift_lint() -> None:
+    """PR-Z: package.json ↔ package-lock.json root dependency key drift lint.
+    (1) name and version match between package.json and package-lock.json packages[""]
+    (2) dependencies keys match (no extra/missing packages)
+    (3) devDependencies keys match
+    Detects: running 'npm install' after package.json edit was forgotten.
+    """
+    import json
+    scripts_dir = Path(__file__).parent
+    pkg_path = scripts_dir.parent / "package.json"
+    lock_path = scripts_dir.parent / "package-lock.json"
+    assert pkg_path.exists(), f"package.json not found: {pkg_path}"
+    if not lock_path.exists():
+        # package-lock.json not tracked in repo — drift check skipped (soft-skip)
+        return
+
+    pkg = json.loads(pkg_path.read_text())
+    lock = json.loads(lock_path.read_text())
+    lock_root: dict = lock.get("packages", {}).get("", {})
+
+    # (1) name and version
+    assert pkg.get("name") == lock_root.get("name"), (
+        f"name mismatch: package.json={pkg.get('name')!r} vs "
+        f"package-lock.json packages[''].name={lock_root.get('name')!r}"
+    )
+    assert pkg.get("version") == lock_root.get("version"), (
+        f"version mismatch: package.json={pkg.get('version')!r} vs "
+        f"package-lock.json packages[''].version={lock_root.get('version')!r}"
+    )
+
+    # (2) dependencies keys
+    pkg_deps = set(pkg.get("dependencies", {}).keys())
+    lock_deps = set(lock_root.get("dependencies", {}).keys())
+    assert pkg_deps == lock_deps, (
+        f"dependencies key drift — "
+        f"in package.json only: {sorted(pkg_deps - lock_deps)}, "
+        f"in package-lock.json only: {sorted(lock_deps - pkg_deps)}"
+    )
+
+    # (3) devDependencies keys
+    pkg_dev = set(pkg.get("devDependencies", {}).keys())
+    lock_dev = set(lock_root.get("devDependencies", {}).keys())
+    assert pkg_dev == lock_dev, (
+        f"devDependencies key drift — "
+        f"in package.json only: {sorted(pkg_dev - lock_dev)}, "
+        f"in package-lock.json only: {sorted(lock_dev - pkg_dev)}"
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12633,6 +12682,8 @@ def main() -> int:
         test_plugin_manifest_marketplace_contract_lint,
         # PR-Y (skill README command surface lint): 1 件
         test_skill_readme_command_surface_lint,
+        # PR-Z (package-lock root dependency drift lint): 1 件
+        test_package_lock_root_dependency_drift_lint,
     ]
     failed = []
     for t in tests:
