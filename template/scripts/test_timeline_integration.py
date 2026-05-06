@@ -16592,6 +16592,36 @@ def test_telop_canonical_imports_contract_lint() -> None:
     )
 
 
+def test_telop_public_export_surface_contract_lint() -> None:
+    """PR-HN: Telop module must export only the Telop component."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    telop_file = template_root / "src" / "テロップテンプレート" / "Telop.tsx"
+    assert telop_file.is_file(), "template/src/テロップテンプレート/Telop.tsx not found"
+    raw = telop_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/テロップテンプレート/Telop.tsx must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*(?:\*|\{)""", text, re.MULTILINE), (
+        "template/src/テロップテンプレート/Telop.tsx must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    expected = {"Telop"}
+    assert exported == expected, (
+        "template/src/テロップテンプレート/Telop.tsx public export surface drift: "
+        f"expected {sorted(expected)}, got {sorted(exported)}"
+    )
+
+
 def test_telop_legacy_template_selection_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -20239,6 +20269,8 @@ def main() -> int:
         test_main_video_base_volume_none_branch_contract_lint,
         test_text_overlay_telop_config_ssot_contract_lint,
         test_telop_canonical_imports_contract_lint,
+        # PR-HN (Telop module exports only the Telop component): 1 件
+        test_telop_public_export_surface_contract_lint,
         test_telop_legacy_template_selection_contract_lint,
         test_telop_legacy_animation_selection_contract_lint,
         test_telop_render_timing_and_slide_transform_contract_lint,

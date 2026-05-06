@@ -580,6 +580,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 279 | `template/src/テロップテンプレート/telopConfigTypes.ts` の public export surface が Telop config 系 10 型に限定され、default export / re-export を持たないことを lint (`test_telop_config_types_public_export_surface_contract_lint`、Codex 推奨 PR-HK)。Telop config type module の API surface creep を保護 | PR-HK |
 | 280 | `template/src/テロップテンプレート/telopStyles.ts` の public export surface が animation 9件 / template 6件 / `subtitleConfig` / CSS helper 2件に限定され、default export / re-export を持たないことを lint (`test_telop_styles_public_export_surface_contract_lint`、Codex 推奨 PR-HL)。Telop styles module の API surface creep を保護 | PR-HL |
 | 281 | `template/src/テロップテンプレート/telopTemplateRegistry.tsx` の public export surface が registry API 9 件に限定され、default export / re-export を持たないことを lint (`test_telop_template_registry_public_export_surface_contract_lint`、Codex 推奨 PR-HM)。Telop template registry module の API surface creep を保護 | PR-HM |
+| 282 | `template/src/テロップテンプレート/Telop.tsx` の public export surface が `Telop` に限定され、default export / re-export を持たないことを lint (`test_telop_public_export_surface_contract_lint`、Codex 推奨 PR-HN)。Telop module の API surface creep を保護 | PR-HN |
 
 ## Test Requirements
 
