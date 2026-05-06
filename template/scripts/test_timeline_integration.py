@@ -17816,6 +17816,86 @@ def test_supermovie_subtitles_kpi_docs_match_compare_telop_split_contract_lint()
     )
 
 
+def test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema_lint() -> None:
+    """PR-JK: supermovie-transcribe transcript schema docs must match CLAUDE.md."""
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    transcribe_skill_path = repo_root / "skills" / "supermovie-transcribe" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    assert transcribe_skill_path.is_file(), "skills/supermovie-transcribe/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+
+    skill_text = transcribe_skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    skill_schema_match = re.search(
+        r"### 6-1\. transcript\.json 出力スキーマ\s*```json\n([\s\S]*?)\n```",
+        skill_text,
+    )
+    claude_schema_match = re.search(
+        r"### transcript\.json / transcript_fixed\.json\s*```json\n([\s\S]*?)\n```",
+        claude_text,
+    )
+    assert skill_schema_match is not None, "supermovie-transcribe transcript.json schema block not found"
+    assert claude_schema_match is not None, "CLAUDE.md transcript.json schema block not found"
+
+    skill_schema = json.loads(skill_schema_match.group(1))
+    claude_schema = json.loads(claude_schema_match.group(1))
+    expected_top_keys = ["engine", "model", "language", "duration_ms", "text", "words", "segments"]
+    expected_word_keys = ["text", "start", "end", "confidence"]
+    expected_segment_keys = ["text", "start", "end"]
+    errors: list[str] = []
+    for label, schema in (("supermovie-transcribe", skill_schema), ("CLAUDE.md", claude_schema)):
+        if list(schema.keys()) != expected_top_keys:
+            errors.append(f"{label} transcript schema top-level keys drift: expected {expected_top_keys}, got {list(schema.keys())}")
+        if not schema.get("words") or list(schema["words"][0].keys()) != expected_word_keys:
+            got = list(schema.get("words", [{}])[0].keys()) if schema.get("words") else []
+            errors.append(f"{label} transcript words[] keys drift: expected {expected_word_keys}, got {got}")
+        if not schema.get("segments") or list(schema["segments"][0].keys()) != expected_segment_keys:
+            got = list(schema.get("segments", [{}])[0].keys()) if schema.get("segments") else []
+            errors.append(f"{label} transcript segments[] keys drift: expected {expected_segment_keys}, got {got}")
+
+    required_skill_snippets = {
+        "runner file": "`<PROJECT>/transcribe_runner.py` を生成",
+        "mlx timestamps": "word_timestamps=True",
+        "mlx word start ms": "'start': round(w['start'] * 1000)",
+        "mlx word end ms": "'end': round(w['end'] * 1000)",
+        "mlx confidence": "'confidence': round(w.get('probability', 0.0), 3)",
+        "mlx duration": "duration_ms = round(segments_list[-1]['end'] * 1000) if segments_list else 0",
+        "faster word start ms": "'start': round(w.start * 1000)",
+        "faster word end ms": "'end': round(w.end * 1000)",
+        "faster confidence": "'confidence': round(w.probability, 3)",
+        "faster duration": "duration_ms = segments[-1]['end'] if segments else 0",
+        "audio input": '"<PROJECT>/transcript_audio.wav"',
+        "transcript output": '"<PROJECT>/transcript.json"',
+        "validation section": "### 6-2. バリデーション",
+        "confidence validation": "| 信頼度範囲 | `0 <= confidence <= 1` | クランプ |",
+    }
+    required_claude_snippets = {
+        "time unit": "- `start` / `end` は**ミリ秒**",
+        "confidence range": "- `confidence` は 0.0〜1.0",
+        "raw transcript path": "| 文字起こし生データ | `<PROJECT>/transcript.json` |",
+        "audio path": "| 音声ファイル | `<PROJECT>/transcript_audio.wav` |",
+    }
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-transcribe docs missing {name}: {snippet}")
+    for name, snippet in required_claude_snippets.items():
+        if snippet not in claude_text:
+            errors.append(f"CLAUDE.md transcript schema docs missing {name}: {snippet}")
+
+    if skill_schema.get("engine") != "mlx-whisper":
+        errors.append(f"supermovie-transcribe sample engine drift: expected mlx-whisper, got {skill_schema.get('engine')!r}")
+    if claude_schema.get("engine") != "mlx-whisper":
+        errors.append(f"CLAUDE.md sample engine drift: expected mlx-whisper, got {claude_schema.get('engine')!r}")
+
+    assert errors == [], (
+        "supermovie-transcribe transcript schema docs / CLAUDE.md contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -23336,6 +23416,8 @@ def main() -> int:
         test_supermovie_subtitles_linebreak_docs_match_insert_linebreak_contract_lint,
         # PR-JI (supermovie-subtitles KPI gate docs stay synced with compare_telop_split): 1 件
         test_supermovie_subtitles_kpi_docs_match_compare_telop_split_contract_lint,
+        # PR-JK (supermovie-transcribe output schema docs stay synced with CLAUDE transcript schema): 1 件
+        test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
