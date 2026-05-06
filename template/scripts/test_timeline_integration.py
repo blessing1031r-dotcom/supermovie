@@ -18091,6 +18091,107 @@ def test_supermovie_cut_vad_result_schema_docs_match_claude_path_contract_lint()
     )
 
 
+def test_supermovie_cut_timeline_helper_docs_match_vad_mapping_contract_lint() -> None:
+    """PR-JN: supermovie-cut docs must match timeline.py VAD validation and mapping helpers."""
+    import ast
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    cut_skill_path = repo_root / "skills" / "supermovie-cut" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    timeline_path = template_root / "scripts" / "timeline.py"
+    assert cut_skill_path.is_file(), "skills/supermovie-cut/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert timeline_path.is_file(), "template/scripts/timeline.py not found"
+
+    skill_text = cut_skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    timeline_text = timeline_path.read_text(encoding="utf-8")
+    vad_schema_match = re.search(
+        r"### 1-4\. 出力: vad_result\.json\s*```json\n([\s\S]*?)\n```",
+        skill_text,
+    )
+    assert vad_schema_match is not None, "supermovie-cut vad_result.json output schema block not found"
+    vad_schema = json.loads(vad_schema_match.group(1))
+
+    tree = ast.parse(timeline_text)
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    required_functions = {
+        "validate_vad_schema",
+        "build_cut_segments_from_vad",
+        "load_cut_segments",
+        "ms_to_playback_frame",
+    }
+    errors: list[str] = []
+    if set(functions) & required_functions != required_functions:
+        missing = sorted(required_functions - set(functions))
+        errors.append(f"timeline.py missing required cut helper functions: {missing}")
+
+    if list(vad_schema.get("speech_segments", [{}])[0].keys()) != ["start", "end"]:
+        errors.append("supermovie-cut vad_result.json speech_segments[] must document start/end keys")
+
+    build_func = functions.get("build_cut_segments_from_vad")
+    if build_func is not None:
+        dict_key_orders = [
+            [key.value for key in node.keys if isinstance(key, ast.Constant) and isinstance(key.value, str)]
+            for node in ast.walk(build_func)
+            if isinstance(node, ast.Dict)
+        ]
+        expected_mapping_keys = ["id", "originalStartMs", "originalEndMs", "playbackStart", "playbackEnd"]
+        if expected_mapping_keys not in dict_key_orders:
+            errors.append(
+                "timeline.build_cut_segments_from_vad output keys drift: "
+                f"expected one dict with {expected_mapping_keys}, got {dict_key_orders}"
+            )
+
+    required_timeline_snippets = {
+        "validate vad getter": 'segments = vad.get("speech_segments")',
+        "validate list": "if not isinstance(segments, list):",
+        "validate start end loop": 'for key in ("start", "end"):',
+        "validate numeric": "if not isinstance(v, (int, float)):",
+        "validate order": 'if seg["start"] > seg["end"]:',
+        "load vad path": 'vad_path = proj / "vad_result.json"',
+        "load build helper": "return build_cut_segments_from_vad(validated, fps)",
+        "mapping cursor": "cursor_ms = 0",
+        "mapping playback start": '"playbackStart": round(cursor_ms / 1000 * fps)',
+        "mapping playback end": '"playbackEnd": round((cursor_ms + dur_ms) / 1000 * fps)',
+        "ms range": 'if cs["originalStartMs"] <= ms <= cs["originalEndMs"]:',
+        "ms playback": 'return cs["playbackStart"] + round(offset_ms / 1000 * fps)',
+        "cut gap none": "return None",
+    }
+    required_skill_snippets = {
+        "vad result heading": "### 1-4. 出力: vad_result.json",
+        "three source merge": "VAD無音区間 + transcriptギャップ + LLM内容分析",
+        "keep segments": "カットではなく**残す区間（keep segments）**をリスト化",
+        "to frame helper": "const toFrame = (ms: number) => Math.round(ms / 1000 * FPS);",
+        "cut data export": "export const cutData: CutSegment[] = [",
+        "mechanical remap": "この再計算はcutData.tsのマッピングから機械的に算出可能。",
+    }
+    required_claude_snippets = {
+        "cut segment schema": "### cutData.ts（CutSegment型）",
+        "original start field": "originalStart: number;",
+        "playback start field": "playbackStart: number;",
+        "vad path": "| VAD結果 | `<PROJECT>/vad_result.json` |",
+        "cut data path": "| カットデータ | `<PROJECT>/src/cutData.ts` |",
+    }
+    for name, snippet in required_timeline_snippets.items():
+        if snippet not in timeline_text:
+            errors.append(f"template/scripts/timeline.py missing cut helper contract {name}: {snippet}")
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-cut docs missing timeline mapping contract {name}: {snippet}")
+    for name, snippet in required_claude_snippets.items():
+        if snippet not in claude_text:
+            errors.append(f"CLAUDE.md cut mapping contract missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-cut docs / timeline.py VAD mapping contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -23617,6 +23718,8 @@ def main() -> int:
         test_supermovie_transcript_fix_output_schema_docs_match_claude_transcript_contract_lint,
         # PR-JM (supermovie-cut VAD result docs stay synced with CLAUDE path contract): 1 件
         test_supermovie_cut_vad_result_schema_docs_match_claude_path_contract_lint,
+        # PR-JN (supermovie-cut docs stay synced with timeline.py VAD mapping helpers): 1 件
+        test_supermovie_cut_timeline_helper_docs_match_vad_mapping_contract_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
