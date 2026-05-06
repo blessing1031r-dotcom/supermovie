@@ -17669,6 +17669,81 @@ def test_supermovie_se_asset_path_docs_match_sequence_contract_lint() -> None:
     )
 
 
+def test_supermovie_se_rotation_docs_match_style_matrix_lint() -> None:
+    """PR-IT: supermovie-se round-robin rotation docs must match the SE matrix/catalog."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    se_skill_path = repo_root / "skills" / "supermovie-se" / "SKILL.md"
+    assert se_skill_path.is_file(), "skills/supermovie-se/SKILL.md not found"
+
+    skill_text = se_skill_path.read_text(encoding="utf-8")
+    catalog_aliases = [
+        alias.strip()
+        for alias in re.findall(r"^│\s*[^│]+?\.mp3\s*│\s*([A-Z]+(?:-\d+)?)\s*│", skill_text, re.MULTILINE)
+    ]
+    matrix_rows = re.findall(
+        r"^│\s*(normal|emphasis|warning|success)\s*│\s*([^│]+?)\s*│\s*0\.\d{2}\s*│",
+        skill_text,
+        re.MULTILINE,
+    )
+    style_candidates = {
+        style: [candidate.strip() for candidate in candidates_raw.split(",")]
+        for style, candidates_raw in matrix_rows
+    }
+    rotation_rows = re.findall(
+        r"^\s*([A-Z]+)_ROTATION\s*=\s*\[([^\]]+)\](?:\s*//\s*([^\n]+))?",
+        skill_text,
+        re.MULTILINE,
+    )
+    actual_rotations = {
+        family: [candidate.strip() for candidate in candidates_raw.split(",")]
+        for family, candidates_raw, _comment in rotation_rows
+    }
+
+    expected_rotations = {
+        "BTN": style_candidates.get("emphasis", []),
+        "WSH": [
+            candidate
+            for candidate in style_candidates.get("normal", [])
+            if candidate.startswith("WSH-")
+        ],
+        "CUR": [alias for alias in catalog_aliases if alias.startswith("CUR-")],
+    }
+
+    errors: list[str] = []
+    if actual_rotations != expected_rotations:
+        errors.append(f"supermovie-se rotation docs drift: expected {expected_rotations}, got {actual_rotations}")
+
+    rotation_aliases = {alias for aliases in actual_rotations.values() for alias in aliases}
+    missing_aliases = sorted(rotation_aliases - set(catalog_aliases))
+    if missing_aliases:
+        errors.append(f"supermovie-se rotation docs reference aliases missing from catalog: {missing_aliases}")
+
+    if not set(style_candidates.get("success", [])).issubset(set(expected_rotations["BTN"])):
+        errors.append("supermovie-se success candidates must remain a subset of BTN rotation")
+
+    required_literals = {
+        "BTN line": "BTN系は2, 3, 4, 12をローテーション",
+        "WSH line": "WSH系は1, 2, 3をローテーション",
+        "CUR line": "CUR系は2, 7, 8をローテーション",
+        "consecutive guard": "同一SEファイルが **3回連続** しない",
+        "round robin": "ラウンドロビン方式",
+    }
+    for name, literal in required_literals.items():
+        if literal not in skill_text:
+            errors.append(f"supermovie-se rotation docs missing {name}: {literal}")
+
+    btn_comment = next((comment for family, _aliases, comment in rotation_rows if family == "BTN"), "")
+    if btn_comment.strip() != "index循環":
+        errors.append("supermovie-se BTN_ROTATION must document index循環")
+
+    assert errors == [], (
+        "supermovie-se rotation docs / style matrix contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -22012,6 +22087,8 @@ def main() -> int:
         test_supermovie_se_output_schema_docs_match_sound_effect_contract_lint,
         # PR-IS (supermovie-se asset path docs stay synced with SESequence): 1 件
         test_supermovie_se_asset_path_docs_match_sequence_contract_lint,
+        # PR-IT (supermovie-se rotation docs stay synced with style matrix/catalog): 1 件
+        test_supermovie_se_rotation_docs_match_style_matrix_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
