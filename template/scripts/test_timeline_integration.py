@@ -22119,6 +22119,114 @@ def test_supermovie_image_gen_error_handling_docs_match_prereq_contract_lint() -
     )
 
 
+def test_supermovie_image_gen_content_analysis_docs_match_image_segment_type_contract_lint() -> None:
+    """PR-KP: supermovie-image-gen content analysis docs must match ImageSegment.type."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-image-gen" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    types_path = template_root / "src" / "InsertImage" / "types.ts"
+    telop_data_path = template_root / "src" / "テロップテンプレート" / "telopData.ts"
+    title_data_path = template_root / "src" / "Title" / "titleData.ts"
+    assert skill_path.is_file(), "skills/supermovie-image-gen/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert types_path.is_file(), "template/src/InsertImage/types.ts not found"
+    assert telop_data_path.is_file(), "template/src/テロップテンプレート/telopData.ts not found"
+    assert title_data_path.is_file(), "template/src/Title/titleData.ts not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    types_text = types_path.read_text(encoding="utf-8")
+    telop_data_text = telop_data_path.read_text(encoding="utf-8")
+    title_data_text = title_data_path.read_text(encoding="utf-8")
+
+    type_match = re.search(r"\btype\s*:\s*([^;]+);", types_text)
+    assert type_match is not None, "InsertImage/types.ts ImageSegment.type union not found"
+    allowed_types = set(re.findall(r"'([^']+)'", type_match.group(1)))
+    expected_types = {"infographic", "photo", "overlay"}
+
+    data_match = re.search(
+        r"### 1-1\. データ読み込み\s*([\s\S]*?)### 1-2\.",
+        skill_text,
+    )
+    analysis_match = re.search(
+        r"### 1-2\. 画像候補の自動抽出\s*([\s\S]*?)### 1-3\.",
+        skill_text,
+    )
+    candidate_match = re.search(
+        r"### 1-3\. 候補リスト生成\s*```json\s*([\s\S]*?)```",
+        skill_text,
+    )
+    assert data_match is not None, "supermovie-image-gen Phase 1 data loading section not found"
+    assert analysis_match is not None, "supermovie-image-gen Phase 1 content analysis section not found"
+    assert candidate_match is not None, "supermovie-image-gen candidate JSON section not found"
+    data_text = data_match.group(1)
+    analysis_text = analysis_match.group(1)
+    candidate_text = candidate_match.group(1)
+
+    documented_rows = [
+        (criterion.strip(), image_type.strip())
+        for criterion, image_type, _example in re.findall(
+            r"^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|",
+            analysis_text,
+            re.MULTILINE,
+        )
+        if criterion.strip() not in {"判定基準", "---------"}
+    ]
+    expected_rows = [
+        ("数字・データが含まれる", "`infographic`"),
+        ("手順・ステップの説明", "`infographic`"),
+        ("比較・対比", "`infographic`"),
+        ("抽象的な概念", "`photo`"),
+        ("ツール・サービス紹介", "`infographic`"),
+        ("ネガティブな問題提起", "`overlay`"),
+        ("タイトル切り替わり", "なし（タイトル自体が表示）"),
+    ]
+    documented_types = {
+        image_type.strip("`")
+        for _criterion, image_type in documented_rows
+        if image_type.startswith("`") and image_type.endswith("`")
+    }
+    suggested_types = set(re.findall(r'"suggestedType"\s*:\s*"([^"]+)"', candidate_text))
+
+    errors: list[str] = []
+    if allowed_types != expected_types:
+        errors.append(f"ImageSegment.type union drift: expected {sorted(expected_types)}, got {sorted(allowed_types)}")
+    if documented_rows != expected_rows:
+        errors.append(f"supermovie-image-gen content analysis table drift: expected {expected_rows}, got {documented_rows}")
+    if documented_types != allowed_types:
+        errors.append(f"supermovie-image-gen content analysis type coverage drift: expected {sorted(allowed_types)}, got {sorted(documented_types)}")
+    if suggested_types - allowed_types:
+        errors.append(f"supermovie-image-gen candidate suggestedType must be in ImageSegment.type: {sorted(suggested_types - allowed_types)}")
+
+    required_data_snippets = {
+        "telop data": "`telopData.ts` — 全テロップのテキスト・スタイル・タイミング",
+        "title data": "`titleData.ts` — セグメント（チャプター）構成",
+        "project config": "`project-config.json` — format, tone, notes",
+    }
+    for name, snippet in required_data_snippets.items():
+        if snippet not in data_text:
+            errors.append(f"supermovie-image-gen data loading docs missing {name}: {snippet}")
+
+    data_surface_checks = {
+        "telopData typed export": (telop_data_text, "export const telopData: TelopSegment[] = ["),
+        "titleData typed export": (title_data_text, "export const titleData: TitleSegment[] = ["),
+        "project config format": (claude_text, '"format": "youtube"'),
+        "project config tone": (claude_text, '"tone": "プロフェッショナル"'),
+        "project config notes": (claude_text, '"notes": "テンポ重視、キーワード「AI」を強調"'),
+    }
+    for name, (text, snippet) in data_surface_checks.items():
+        if snippet not in text:
+            errors.append(f"supermovie-image-gen content analysis input surface missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-image-gen content analysis docs / ImageSegment type contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_slides_validation_docs_match_build_slide_data_lint() -> None:
     """PR-IM: supermovie-slides validation docs must match build_slide_data guards."""
     import re
@@ -26289,6 +26397,8 @@ def main() -> int:
         test_supermovie_image_gen_completion_handoff_docs_match_sequence_contract_lint,
         # PR-KO (supermovie-image-gen error handling docs stay synced with prerequisites): 1 件
         test_supermovie_image_gen_error_handling_docs_match_prereq_contract_lint,
+        # PR-KP (supermovie-image-gen content analysis docs stay synced with ImageSegment type): 1 件
+        test_supermovie_image_gen_content_analysis_docs_match_image_segment_type_contract_lint,
         # PR-IM (supermovie-slides validation docs stay synced with build_slide_data guards): 1 件
         test_supermovie_slides_validation_docs_match_build_slide_data_lint,
         # PR-IN (supermovie-slides tone style docs stay synced with build_slide_data): 1 件
