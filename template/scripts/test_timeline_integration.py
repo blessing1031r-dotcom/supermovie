@@ -15862,6 +15862,38 @@ def test_bgm_file_constant_is_single_source_for_presence_check_and_audio_src() -
     )
 
 
+def test_bgm_props_default_volume_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    bgm_file = template_root / "src" / "SoundEffects" / "BGM.tsx"
+    assert bgm_file.is_file(), "template/src/SoundEffects/BGM.tsx not found"
+    raw = bgm_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    checks = [
+        (
+            r"interface\s+BGMProps\s*\{[\s\S]*?volume\?:\s*number\s*;[\s\S]*?\}",
+            "BGMProps optional volume",
+        ),
+        (
+            r"export\s+const\s+BGM\s*:\s*React\.FC\s*<\s*BGMProps\s*>\s*=\s*\(\s*\{\s*volume\s*=\s*0\.3\s*\}\s*\)\s*=>\s*\{",
+            "BGM component default volume = 0.3",
+        ),
+        (
+            r"<Audio\b[^>]*volume=\{\s*\(\s*\)\s*=>\s*volume\s*\}[^>]*\bloop\b",
+            "Audio callback volume and loop wiring",
+        ),
+    ]
+    for pattern, desc in checks:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"BGM.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/SoundEffects/BGM.tsx props/default-volume contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_slide_uses_sequence_local_frame_without_startframe_offset() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -16977,6 +17009,7 @@ def main() -> int:
         test_entrypoint_registers_remotion_root,
         # PR-CT (BGM.tsx uses BGM_FILE constant for both presence check and audio src lint): 1 件
         test_bgm_file_constant_is_single_source_for_presence_check_and_audio_src,
+        test_bgm_props_default_volume_contract_lint,
         test_slide_uses_sequence_local_frame_without_startframe_offset,
         test_slide_style_defaults_and_alignment_contract_lint,
         test_title_uses_sequence_local_frame_without_startframe_offset_lint,
