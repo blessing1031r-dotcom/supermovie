@@ -16816,6 +16816,35 @@ def test_insert_image_segment_schema_contract_lint() -> None:
     )
 
 
+def test_insert_image_canonical_imports_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    image_file = template_root / "src" / "InsertImage" / "InsertImage.tsx"
+    assert image_file.is_file(), "template/src/InsertImage/InsertImage.tsx not found"
+    raw = image_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    remotion_import = re.search(r"""import\s*\{(?P<body>[^}]*)\}\s*from\s*['"]remotion['"]""", text)
+    if remotion_import is None:
+        errors.append("InsertImage.tsx: no named import from remotion found")
+    else:
+        remotion_body = remotion_import.group("body")
+        for sym in ("useCurrentFrame", "interpolate", "Img", "staticFile"):
+            if not re.search(rf"\b{sym}\b", remotion_body):
+                errors.append(f"InsertImage.tsx: {sym} not imported from remotion")
+    if not re.search(
+        r"""import\s+type\s*\{\s*ImageSegment\s*\}\s*from\s*['"]\.\/types['"]""",
+        text,
+    ):
+        errors.append("InsertImage.tsx: type ImageSegment must be imported from ./types")
+    assert errors == [], (
+        "template/src/InsertImage/InsertImage.tsx import contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_insert_image_render_variant_style_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17982,6 +18011,7 @@ def main() -> int:
         test_narration_mode_static_file_lookup_contract_lint,
         test_template_narration_data_exports_typed_empty_array_lint,
         test_insert_image_segment_schema_contract_lint,
+        test_insert_image_canonical_imports_contract_lint,
         test_insert_image_render_variant_style_contract_lint,
         test_narration_segment_required_fields_contract_lint,
         test_title_data_toframe_uses_video_config_fps_lint,
