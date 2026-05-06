@@ -16850,6 +16850,25 @@ def test_sound_effect_schema_and_se_data_export_lint() -> None:
     )
 
 
+def test_se_data_placeholder_empty_array_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    data_file = template_root / "src" / "SoundEffects" / "seData.ts"
+    assert data_file.is_file(), "template/src/SoundEffects/seData.ts not found"
+    raw = data_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert re.search(
+        r"\bexport\s+const\s+seData\s*:\s*SoundEffect\[\s*\]\s*=\s*\[\s*\]\s*;",
+        text,
+        re.DOTALL,
+    ), (
+        "template/src/SoundEffects/seData.ts placeholder contract drift: "
+        "seData must be an empty typed array after comments are stripped"
+    )
+
+
 def test_telop_styles_animation_exports_motion_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17720,6 +17739,7 @@ def main() -> int:
         test_telop_segment_template_id_and_animation_contract_lint,
         test_telop_config_types_export_style_shape_and_slide_direction_union,
         test_sound_effect_schema_and_se_data_export_lint,
+        test_se_data_placeholder_empty_array_contract_lint,
         test_telop_styles_animation_exports_motion_contract_lint,
         test_telop_styles_template_exports_and_config_helpers_lint,
         test_title_segment_schema_and_title_data_typed_export_contract_lint,
