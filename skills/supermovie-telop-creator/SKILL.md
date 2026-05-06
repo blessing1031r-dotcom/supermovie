@@ -169,12 +169,24 @@ import {
   Easing,
 } from "remotion";
 
-// テロップデータの型定義（CLAUDE.md統一ルール準拠）
-import type { TelopSegment } from '../テロップテンプレート/telopTypes';
-import { telopData } from '../テロップテンプレート/telopData';
+// registry component contract: TelopPlayer から subtitleData を受け取る
+export interface SubtitleItem {
+  text: string;
+  lines: string[];
+  start: number;
+  end: number;
+  startFrame: number;
+  endFrame: number;
+}
 
-// Props: telopDataをimportして使用。他はカスタマイズ可能なデフォルト値付き
+export interface SubtitleData {
+  fps: number;
+  subtitles: SubtitleItem[];
+}
+
+// Props: subtitleData は必須。他はカスタマイズ可能なデフォルト値付き
 interface <ComponentName>Props {
+  subtitleData: SubtitleData;
   fontSize?: number;
   bottomOffset?: number;
   fontFamily?: string;
@@ -190,14 +202,14 @@ export const <ComponentName>: React.FC<<ComponentName>Props> = ({
 }) => {
   const frame = useCurrentFrame();
 
-  // テロップ検索（telopDataから現在フレームを検索）
-  const currentTelop = telopData.find(
-    (t) => frame >= t.startFrame && frame <= t.endFrame
+  // 現在のフレームに対応する字幕を検索
+  const currentSubtitle = subtitleData.subtitles.find(
+    (sub) => frame >= sub.startFrame && frame <= sub.endFrame
   );
-  if (!currentTelop) return null;
+  if (!currentSubtitle) return null;
 
   // フェードイン/アウト（共通パターン）
-  const duration = currentTelop.endFrame - currentTelop.startFrame;
+  const duration = currentSubtitle.endFrame - currentSubtitle.startFrame;
   const maxFadeDuration = Math.floor(duration / 3);
   const fadeInDuration = Math.min(3, maxFadeDuration);
   // ... opacity計算 ...
@@ -223,6 +235,9 @@ export const <ComponentName>: React.FC<<ComponentName>Props> = ({
   );
 };
 ```
+
+この skeleton では `telopData` を import しない。`TelopPlayer` が現在 segment を
+`SubtitleData` に変換し、registry component に `subtitleData` prop として渡す。
 
 ### 3-3. SVG filter/shadow テクニック集
 
