@@ -12498,6 +12498,36 @@ def test_package_lock_root_dependency_drift_lint() -> None:
     )
 
 
+def test_readme_install_url_matches_plugin_repository_lint() -> None:
+    """PR-AA: README git clone URL must match plugin.json repository (normalized, .git suffix ok).
+    (1) plugin.json has 'repository' field
+    (2) README.md install command contains a git clone URL matching the repository
+    URL normalization: strip trailing .git for comparison.
+    """
+    import json, re
+    repo_root = Path(__file__).parents[2]
+    plugin_path = repo_root / ".claude-plugin" / "plugin.json"
+    assert plugin_path.exists(), ".claude-plugin/plugin.json not found"
+    plugin = json.loads(plugin_path.read_text())
+
+    # (1) repository field present
+    repo_url = plugin.get("repository", "")
+    assert repo_url, "plugin.json: 'repository' field missing or empty"
+    repo_url_normalized = repo_url.rstrip("/").removesuffix(".git")
+
+    # (2) README.md install command has matching clone URL
+    readme_path = repo_root / "README.md"
+    assert readme_path.exists(), "README.md not found"
+    readme_text = readme_path.read_text()
+    clone_urls = re.findall(r"git clone\s+(\S+)", readme_text)
+    clone_urls_normalized = [u.rstrip("/").removesuffix(".git") for u in clone_urls]
+    assert repo_url_normalized in clone_urls_normalized, (
+        f"README.md install command must include plugin repository {repo_url!r} "
+        f"(normalized: {repo_url_normalized!r}); "
+        f"found clone URLs: {clone_urls}"
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12684,6 +12714,8 @@ def main() -> int:
         test_skill_readme_command_surface_lint,
         # PR-Z (package-lock root dependency drift lint): 1 件
         test_package_lock_root_dependency_drift_lint,
+        # PR-AA (README install URL matches plugin.json repository lint): 1 件
+        test_readme_install_url_matches_plugin_repository_lint,
     ]
     failed = []
     for t in tests:
