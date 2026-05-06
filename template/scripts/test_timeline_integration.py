@@ -16269,7 +16269,7 @@ def test_supermovie_telop_creator_preview_cleanup_docs_match_root_contract_lint(
     }
     required_cleanup_snippets = {
         "save path": "src/<カテゴリ>テロップ/<日本語テロップ名>.tsx",
-        "optional integration": "telopStyles.ts への統合（任意）",
+        "registry integration": "telopTemplateRegistry.tsx への統合（推奨）",
         "cleanup heading": "### 6-3. プレビューCompositionの削除",
         "cleanup action": "Root.tsx から一時的に追加した TelopPreview Composition を削除。",
     }
@@ -16304,6 +16304,95 @@ def test_supermovie_telop_creator_preview_cleanup_docs_match_root_contract_lint(
 
     assert errors == [], (
         "supermovie-telop-creator preview cleanup docs / Root.tsx contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
+def test_supermovie_telop_creator_registry_integration_docs_match_registry_contract_lint() -> None:
+    """PR-KV: telop-creator integration docs must stay registry-first."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-telop-creator" / "SKILL.md"
+    registry_path = template_root / "src" / "テロップテンプレート" / "telopTemplateRegistry.tsx"
+    player_path = template_root / "src" / "テロップテンプレート" / "TelopPlayer.tsx"
+    obs_path = repo_root / "docs" / "OBSERVABILITY.md"
+    for path in (skill_path, registry_path, player_path, obs_path):
+        assert path.is_file(), f"{path.relative_to(repo_root)} not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    registry_text = registry_path.read_text(encoding="utf-8")
+    player_text = player_path.read_text(encoding="utf-8")
+    obs_text = obs_path.read_text(encoding="utf-8")
+    integration_match = re.search(
+        r"### 6-2\. telopTemplateRegistry\.tsx への統合（推奨）([\s\S]*?)### 6-3\.",
+        skill_text,
+    )
+    assert integration_match is not None, "supermovie-telop-creator registry integration docs not found"
+    integration_text = integration_match.group(1)
+
+    errors: list[str] = []
+    required_skill_snippets = {
+        "registry path": "src/テロップテンプレート/telopTemplateRegistry.tsx",
+        "template id": "`templateId` は registry key (= export 名)",
+        "import step": "作成した `.tsx` から component を import",
+        "registry entry": "`telopTemplateRegistry` に `{ category, displayName, Component }` を追加",
+        "category union": "`category` は `main` / `emphasis` / `negative` のいずれか",
+        "display name": "`displayName` は `/supermovie-init` / `/supermovie-subtitles` で選べる日本語名",
+        "find helper": "`findTemplateIdByDisplayName()` / `listTemplatesByCategory()`",
+        "legacy optional": "`telopStyles.ts` への `template<N>_<name>` 追加は legacy fallback 用の任意対応。",
+        "player path": "TelopPlayer は `templateId` 指定時に registry component を描画する。",
+    }
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in integration_text:
+            errors.append(f"telop-creator registry docs missing {name}: {snippet}")
+
+    required_registry_snippets = {
+        "category type": "export type TelopCategory = 'main' | 'emphasis' | 'negative';",
+        "entry interface": "export interface TelopTemplateEntry",
+        "category field": "category: TelopCategory;",
+        "display field": "displayName: string;",
+        "component field": "Component: TelopComponent;",
+        "registry export": "export const telopTemplateRegistry =",
+        "template id export": "export type TelopTemplateId = keyof typeof telopTemplateRegistry;",
+        "display helper": "export function findTemplateIdByDisplayName(displayName: string): TelopTemplateId | undefined",
+        "category helper": "export function listTemplatesByCategory(category: TelopCategory): TelopTemplateId[]",
+    }
+    for name, snippet in required_registry_snippets.items():
+        if snippet not in registry_text:
+            errors.append(f"telopTemplateRegistry.tsx missing {name}: {snippet}")
+
+    required_player_snippets = {
+        "registry import": "telopTemplateRegistry,",
+        "template id type import": "type TelopTemplateId,",
+        "template id read": "const tplId = (current as TelopSegment).templateId as TelopTemplateId | undefined;",
+        "registry branch": "if (tplId && telopTemplateRegistry[tplId])",
+        "entry component": "const Component = Entry.Component;",
+        "component render": "<Component subtitleData={subtitleData} />",
+        "legacy fallback": "<Telop segment={current} />",
+    }
+    for name, snippet in required_player_snippets.items():
+        if snippet not in player_text:
+            errors.append(f"TelopPlayer.tsx registry render path missing {name}: {snippet}")
+
+    completion_required = ("registry統合: 済 / 未", "telopStyles.ts legacy統合: 済 / 未（希望時のみ）")
+    for snippet in completion_required:
+        if snippet not in skill_text:
+            errors.append(f"telop-creator completion report missing: {snippet}")
+
+    required_obs_snippets = {
+        "step": "| 368 | `skills/supermovie-telop-creator/SKILL.md`",
+        "test name": "test_supermovie_telop_creator_registry_integration_docs_match_registry_contract_lint",
+        "pr code": "PR-KV",
+        "registry first": "registry-first",
+    }
+    for name, snippet in required_obs_snippets.items():
+        if snippet not in obs_text:
+            errors.append(f"OBSERVABILITY step 368 missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-telop-creator registry integration docs / registry contract drift:\n"
         + "\n".join(errors)
     )
 
@@ -26692,6 +26781,8 @@ def main() -> int:
         test_root_public_export_surface_contract_lint,
         # PR-KU (telop-creator preview Composition cleanup stays synced with Root): 1 件
         test_supermovie_telop_creator_preview_cleanup_docs_match_root_contract_lint,
+        # PR-KV (telop-creator integration docs stay registry-first): 1 件
+        test_supermovie_telop_creator_registry_integration_docs_match_registry_contract_lint,
         test_main_video_staticfile_uses_video_file_lint,
         test_main_video_required_layers_contract_lint,
         test_main_video_canonical_layer_import_paths_lint,
