@@ -13052,6 +13052,85 @@ def test_plugin_json_required_fields_lint() -> None:
     )
 
 
+def test_claude_data_schema_sections_lint() -> None:
+    """PR-AJ: CLAUDE.md must have a data schema section for each required data file.
+    For each (filename, type_name) pair, verifies:
+    (1) a ### heading containing the filename exists in the ## データスキーマ section,
+    (2) a typescript code block following that heading contains the expected type name.
+    Prevents schema drift where a new data file is added but CLAUDE.md is not updated.
+    """
+    import re
+
+    REQUIRED_SCHEMAS: list[tuple[str, str]] = [
+        ("telopData.ts", "TelopSegment"),
+        ("titleData.ts", "TitleSegment"),
+        ("insertImageData.ts", "ImageSegment"),
+        ("cutData.ts", "CutSegment"),
+        ("seData.ts", "SoundEffect"),
+    ]
+
+    repo_root = Path(__file__).parents[2]
+    claude_md = (repo_root / "CLAUDE.md").read_text(encoding="utf-8")
+
+    # Anchor to ## データスキーマ section (up to next ## heading)
+    schema_section_m = re.search(
+        r"^##\s+データスキーマ[^\n]*\n(.*?)(?=^##\s|\Z)",
+        claude_md,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert schema_section_m, "CLAUDE.md: '## データスキーマ' section not found"
+    schema_body = schema_section_m.group(1)
+
+    errors: list[str] = []
+
+    for filename, type_name in REQUIRED_SCHEMAS:
+        # Look for a ### heading containing the filename
+        heading_m = re.search(
+            rf"^###[^\n]*{re.escape(filename)}[^\n]*$",
+            schema_body,
+            re.MULTILINE,
+        )
+        if not heading_m:
+            errors.append(
+                f"CLAUDE.md データスキーマ: missing '### ...{filename}...' heading"
+            )
+            continue
+
+        # Slice the body from that heading to the next ### or end
+        after_heading = schema_body[heading_m.end():]
+        section_body_m = re.match(
+            r"(.*?)(?=^###|\Z)", after_heading, re.MULTILINE | re.DOTALL
+        )
+        section_body = section_body_m.group(1) if section_body_m else after_heading
+
+        # Require a typescript code block containing the expected type name
+        ts_block_m = re.search(
+            r"```typescript\n(.*?)```",
+            section_body,
+            re.DOTALL,
+        )
+        if not ts_block_m:
+            errors.append(
+                f"CLAUDE.md データスキーマ/{filename}: missing typescript code block"
+            )
+            continue
+
+        # Require a declaration (interface X or type X), not just a substring mention
+        if not re.search(
+            rf"(?:interface|type)\s+{re.escape(type_name)}\b",
+            ts_block_m.group(1),
+        ):
+            errors.append(
+                f"CLAUDE.md データスキーマ/{filename}: typescript block does not "
+                f"contain expected declaration 'interface|type {type_name}'"
+            )
+
+    assert not errors, (
+        f"CLAUDE.md data schema section violations ({len(errors)} error(s)):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13256,6 +13335,8 @@ def main() -> int:
         test_skill_frontmatter_effort_field_lint,
         # PR-AI (plugin.json required fields completeness lint): 1 件
         test_plugin_json_required_fields_lint,
+        # PR-AJ (CLAUDE.md data schema section coverage lint): 1 件
+        test_claude_data_schema_sections_lint,
     ]
     failed = []
     for t in tests:
