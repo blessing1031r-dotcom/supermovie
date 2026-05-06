@@ -513,6 +513,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 212 | `template/src/videoConfig.ts` が Root composition duration の SSoT である `export const SOURCE_DURATION_FRAMES = <positive integer>;` を保つことを lint (`test_videoconfig_source_duration_frames_numeric_export_lint`、Codex 推奨 PR-EV)。videoConfig source duration numeric export contract を保護 | PR-EV |
 | 213 | `template/src/videoConfig.ts` の `/supermovie-init` rewrite block が `FORMAT: VideoFormat`、positive integer の `FPS` / `SOURCE_DURATION_FRAMES`、public-relative `VIDEO_FILE` export を保持することを lint (`test_videoconfig_supermovie_init_block_scalar_exports_lint`、Codex 推奨 PR-EW)。videoConfig init scalar rewrite block contract を保護 | PR-EW |
 | 214 | `template/src/Slides/types.ts` が `SlideBullet` の `text: string` / `emphasis?: boolean` と `SlideSegment` の `subtitle?: string` / `bullets?: SlideBullet[]` / `align?: SlideAlignment` / `backgroundColor?: string` / `textColor?: string` を保つことを lint (`test_slide_types_bullet_and_optional_fields_contract_lint`、Codex 推奨 PR-EX)。Slide types bullet and optional display fields contract を保護 | PR-EX |
+| 215 | `template/src/Title/titleData.ts` が `TitleSegment` type import、`FPS` import、`export const toFrame = (seconds: number) => Math.round(seconds * FPS);`、コメント除去後の `export const titleData: TitleSegment[] = [];` placeholder を保つことを lint (`test_title_data_placeholder_empty_array_and_toframe_export_contract_lint`、Codex 推奨 PR-EY)。Title data placeholder and toFrame export contract を保護 | PR-EY |
 
 ## Test Requirements
 
