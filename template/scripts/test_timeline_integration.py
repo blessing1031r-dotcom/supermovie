@@ -19083,6 +19083,77 @@ def test_supermovie_se_error_handling_docs_match_fallback_contract_lint() -> Non
     )
 
 
+def test_supermovie_se_tone_density_docs_match_init_tone_choices_lint() -> None:
+    """PR-KA: supermovie-se tone density docs must match supermovie-init tone choices."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    se_skill_path = repo_root / "skills" / "supermovie-se" / "SKILL.md"
+    init_skill_path = repo_root / "skills" / "supermovie-init" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    assert se_skill_path.is_file(), "skills/supermovie-se/SKILL.md not found"
+    assert init_skill_path.is_file(), "skills/supermovie-init/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+
+    se_text = se_skill_path.read_text(encoding="utf-8")
+    init_text = init_skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+
+    init_tone_match = re.search(r"動画のトーンは？\s*\n\s*→\s*([^\n]+)", init_text)
+    assert init_tone_match is not None, "supermovie-init tone choices line not found"
+    init_tones = [tone.strip() for tone in init_tone_match.group(1).split("/") if tone.strip()]
+    density_rows = {
+        tone.strip(): (density.strip(), feature.strip())
+        for tone, density, feature in re.findall(
+            r"^\|\s*([^|]+?)\s*\|\s*(\d+-\d+%)\s*\|\s*([^|]+?)\s*\|",
+            se_text,
+            re.MULTILINE,
+        )
+        if tone.strip() != "トーン"
+    }
+
+    expected_density_rows = {
+        "プロフェッショナル": ("30-40%", "控えめ、POP中心"),
+        "エンタメ": ("50-70%", "積極的、バリエーション豊富"),
+        "カジュアル": ("40-50%", "程よい、自然な配置"),
+        "教育的": ("25-35%", "最小限、邪魔しない"),
+    }
+    errors: list[str] = []
+    if init_tones != ["プロフェッショナル", "カジュアル", "エンタメ", "教育的"]:
+        errors.append(f"supermovie-init tone choices drift: expected canonical 4 tones, got {init_tones}")
+    if set(density_rows) != set(init_tones):
+        errors.append(f"supermovie-se tone density keys drift: expected {init_tones}, got {list(density_rows)}")
+    if density_rows != expected_density_rows:
+        errors.append(f"supermovie-se tone density table drift: expected {expected_density_rows}, got {density_rows}")
+
+    for tone, (density, _feature) in density_rows.items():
+        low_raw, high_raw = density.rstrip("%").split("-", 1)
+        low, high = int(low_raw), int(high_raw)
+        if not (0 < low <= high <= 100):
+            errors.append(f"supermovie-se tone density range invalid for {tone}: {density}")
+
+    required_snippets = {
+        "se reads tone": "`project-config.json` の `tone` を取得（SE密度の調整に使用）。",
+        "se density heading": "### 3-1. 配置密度（トーン別）",
+        "init config tone": '"tone": "プロフェッショナル"',
+        "claude config tone": '"tone": "プロフェッショナル"',
+    }
+    haystacks = {
+        "se reads tone": se_text,
+        "se density heading": se_text,
+        "init config tone": init_text,
+        "claude config tone": claude_text,
+    }
+    for name, snippet in required_snippets.items():
+        if snippet not in haystacks[name]:
+            errors.append(f"tone config contract missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-se tone density docs / supermovie-init tone choices contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_narration_mode_docs_match_runtime_contract_lint() -> None:
     """PR-IU: supermovie-narration Remotion mode docs must match runtime wiring."""
     import re
@@ -24712,6 +24783,8 @@ def main() -> int:
         test_supermovie_se_completion_docs_match_preview_and_catalog_contract_lint,
         # PR-JZ (supermovie-se error handling docs stay synced with fallback runbook): 1 件
         test_supermovie_se_error_handling_docs_match_fallback_contract_lint,
+        # PR-KA (supermovie-se tone density docs stay synced with init tone choices): 1 件
+        test_supermovie_se_tone_density_docs_match_init_tone_choices_lint,
         # PR-IU (supermovie-narration mode docs stay synced with runtime wiring): 1 件
         test_supermovie_narration_mode_docs_match_runtime_contract_lint,
         # PR-IV (supermovie-narration output docs stay synced with voicevox paths): 1 件
