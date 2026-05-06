@@ -328,10 +328,18 @@ Remotion StudioでComposition「TelopPreview」を選択してプレビュー確
 src/<カテゴリ>テロップ/<日本語テロップ名>.tsx
 ```
 
-### 6-2. telopStyles.ts への統合（任意）
-ユーザーが希望すれば、`テロップテンプレート/telopStyles.ts` に
-新しい `template<N>_<name>` として追加。
-TelopPlayer / Telop.tsx のマッピングも更新。
+### 6-2. telopTemplateRegistry.tsx への統合（推奨）
+本番利用する場合は `src/テロップテンプレート/telopTemplateRegistry.tsx` に
+新規 component を登録する。`templateId` は registry key (= export 名) を使う。
+
+1. 作成した `.tsx` から component を import
+2. `telopTemplateRegistry` に `{ category, displayName, Component }` を追加
+3. `category` は `main` / `emphasis` / `negative` のいずれか
+4. `displayName` は `/supermovie-init` / `/supermovie-subtitles` で選べる日本語名
+5. `findTemplateIdByDisplayName()` / `listTemplatesByCategory()` で逆引きされる前提を保つ
+
+`telopStyles.ts` への `template<N>_<name>` 追加は legacy fallback 用の任意対応。
+registry 統合を primary とし、TelopPlayer は `templateId` 指定時に registry component を描画する。
 
 ### 6-3. プレビューCompositionの削除
 Root.tsx から一時的に追加した TelopPreview Composition を削除。
@@ -353,7 +361,8 @@ Root.tsx から一時的に追加した TelopPreview Composition を削除。
   - fontFamily
   - ...
 
-telopStyles.ts統合: 済 / 未（希望時に実施）
+registry統合: 済 / 未
+telopStyles.ts legacy統合: 済 / 未（希望時のみ）
 ```
 
 ---
