@@ -18015,6 +18015,32 @@ def test_bgm_props_default_volume_contract_lint() -> None:
     )
 
 
+def test_bgm_public_export_surface_contract_lint() -> None:
+    """PR-GY: BGM module must export only the BGM component."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    bgm_file = template_root / "src" / "SoundEffects" / "BGM.tsx"
+    assert bgm_file.is_file(), "template/src/SoundEffects/BGM.tsx not found"
+    raw = bgm_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/SoundEffects/BGM.tsx must not use a default export"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|type|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    assert exported == {"BGM"}, (
+        "template/src/SoundEffects/BGM.tsx public export surface drift: "
+        f"expected ['BGM'], got {sorted(exported)}"
+    )
+
+
 def test_slide_canonical_imports_contract_lint() -> None:
     import re
 
@@ -19809,6 +19835,8 @@ def main() -> int:
         # PR-CT (BGM.tsx uses BGM_FILE constant for both presence check and audio src lint): 1 件
         test_bgm_file_constant_is_single_source_for_presence_check_and_audio_src,
         test_bgm_props_default_volume_contract_lint,
+        # PR-GY (BGM module exports only the BGM component): 1 件
+        test_bgm_public_export_surface_contract_lint,
         test_slide_canonical_imports_contract_lint,
         test_slide_uses_sequence_local_frame_without_startframe_offset,
         test_slide_style_defaults_and_alignment_contract_lint,
