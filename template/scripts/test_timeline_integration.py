@@ -12378,10 +12378,10 @@ def test_plugin_manifest_marketplace_contract_lint() -> None:
 
 def test_skill_readme_command_surface_lint() -> None:
     """PR-Y: 3-part lint verifying skills/*/SKILL.md names are in sync with README.md.
-    (1) Each non-template SKILL.md has frontmatter 'name:' matching its dir name
-    (2) Each non-template skill name appears as `/{name}` in README.md
-    (3) README.md `/{supermovie-*}` entries must have matching skill dirs
-    (Template skills with '<' in name are skipped — scaffold placeholders.)
+    (1) Each non-template SKILL.md has frontmatter 'name:' (YAML block only) matching dir name
+    (2) Each non-template skill name appears as `/{name}` in README.md command table
+    (3) README.md command table `/{supermovie-*}` entries must have matching skill dirs
+    (Template skills with '<' or '>' in name are skipped — scaffold placeholders.)
     """
     import re
     repo_root = Path(__file__).parents[2]
@@ -12392,8 +12392,14 @@ def test_skill_readme_command_surface_lint() -> None:
     assert readme_path.exists(), "README.md not found"
     readme_text = readme_path.read_text()
 
+    # Extract README command table rows only (lines starting with | that contain `/supermovie-`)
+    table_lines = [
+        line for line in readme_text.splitlines()
+        if line.strip().startswith("|") and "/supermovie-" in line
+    ]
+    readme_table_text = "\n".join(table_lines)
+
     errors: list[str] = []
-    known_skill_names: set[str] = set()
 
     for skill_path in sorted(skills_dir.iterdir()):
         if not skill_path.is_dir():
@@ -12402,7 +12408,15 @@ def test_skill_readme_command_surface_lint() -> None:
         if not skill_md.exists():
             continue
         content = skill_md.read_text()
-        name_m = re.search(r"^name:\s*(.+)$", content, re.MULTILINE)
+
+        # Extract only YAML frontmatter block (between first --- and second ---)
+        fm_m = re.match(r"^---\n(.*?)^---", content, re.MULTILINE | re.DOTALL)
+        if not fm_m:
+            errors.append(f"{skill_path.name}/SKILL.md: no YAML frontmatter block found")
+            continue
+        frontmatter_block = fm_m.group(1)
+
+        name_m = re.search(r"^name:\s*(.+)$", frontmatter_block, re.MULTILINE)
         if not name_m:
             errors.append(f"{skill_path.name}/SKILL.md: missing 'name:' in frontmatter")
             continue
@@ -12410,21 +12424,23 @@ def test_skill_readme_command_surface_lint() -> None:
         if "<" in frontmatter_name or ">" in frontmatter_name:
             continue  # skip template placeholder
 
-        known_skill_names.add(frontmatter_name)
-
         # (1) dir name == frontmatter name
         if skill_path.name != frontmatter_name:
             errors.append(
                 f"{skill_path.name}: dir name != SKILL.md name {frontmatter_name!r}"
             )
 
-        # (2) /{name} in README.md
-        if f"`/{frontmatter_name}`" not in readme_text:
-            errors.append(f"{frontmatter_name}: `/{frontmatter_name}` not found in README.md")
+        # (2) /{name} in README.md command table
+        if f"`/{frontmatter_name}`" not in readme_table_text:
+            errors.append(
+                f"{frontmatter_name}: `/{frontmatter_name}` not found in README.md command table"
+            )
 
-    # (3) README commands must have matching skill dirs
-    readme_commands = re.findall(r"`/(supermovie-[^`]+)`", readme_text)
+    # (3) README command table entries must have matching skill dirs (skip placeholders)
+    readme_commands = re.findall(r"`/(supermovie-[^`]+)`", readme_table_text)
     for cmd in readme_commands:
+        if "<" in cmd or ">" in cmd:
+            continue  # skip template placeholder commands
         if not (skills_dir / cmd).is_dir():
             errors.append(f"README.md: `/{cmd}` listed but skills/{cmd}/ dir not found")
 
