@@ -545,6 +545,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 244 | `template/vitest.config.ts` が `defineConfig` を `vitest/config` から import し、`test.environment = 'jsdom'` / `globals: true` / `setupFiles: ['./vitest.setup.ts']` / `include: ['src/**/*.test.{ts,tsx}']` を保ち、`template/package.json` の `scripts.test:react` が `vitest run --config vitest.config.ts` を実行することを lint (`test_vitest_react_test_discovery_contract_lint`、Codex consult 推奨 PR-GB)。React/Vitest test discovery contract を保護 | PR-GB |
 | 245 | `template/src/MainVideo.tsx` が timeline data arrays (`slideData` / `insertImageData` / `titleData` / `telopData` / `seData` / `narrationData`) や各 data module を直接 import せず、layer component / hook / config の composition に留めることを lint (`test_main_video_layer_boundary_no_data_imports_lint`、Codex consult 推奨 PR-GC)。MainVideo layer boundary contract を保護 | PR-GC |
 | 246 | `template/vitest.setup.ts` が `import '@testing-library/jest-dom/vitest';` を保持し、`template/package.json` の `devDependencies` に `@testing-library/jest-dom` が存在することを lint (`test_vitest_setup_jest_dom_import_contract_lint`、Codex 推奨 PR-GD)。Vitest setup の jest-dom matcher extension contract を保護 | PR-GD |
+| 247 | `template/src/MainVideo.tsx` が `useNarrationMode()` を 1 回だけ呼び、戻り値を `const narrationMode` に集約することを lint (`test_main_video_single_narration_hook_call_contract_lint`、Codex 推奨 PR-GE)。Narration watcher の二重登録回避 contract を保護 | PR-GE |
 
 ## Test Requirements
 
