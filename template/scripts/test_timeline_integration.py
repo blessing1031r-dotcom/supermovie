@@ -15260,6 +15260,46 @@ def test_slide_uses_sequence_local_frame_without_startframe_offset() -> None:
     )
 
 
+def test_slide_style_defaults_and_alignment_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    slide_file = template_root / "src" / "Slides" / "Slide.tsx"
+    assert slide_file.is_file(), "template/src/Slides/Slide.tsx not found"
+    raw = slide_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    if not re.search(r"""\bconst\s+align\s*=\s*segment\.align\s*\?\?\s*['"]center['"]""", text):
+        errors.append("Slide.tsx: align must default to 'center'")
+    if not re.search(r"""\bconst\s+bg\s*=\s*segment\.backgroundColor\s*\?\?\s*['"]rgba\(20,\s*26,\s*44,\s*0\.92\)['"]""", text):
+        errors.append("Slide.tsx: backgroundColor must default to rgba(20, 26, 44, 0.92)")
+    if not re.search(r"""\bconst\s+fg\s*=\s*segment\.textColor\s*\?\?\s*['"]#ffffff['"]""", text):
+        errors.append("Slide.tsx: textColor must default to #ffffff")
+    if not re.search(r"""\bconst\s+justify\s*=\s*align\s*===\s*['"]center['"]\s*\?\s*['"]center['"]\s*:\s*['"]flex-start['"]""", text):
+        errors.append("Slide.tsx: justify must map center→center and left→flex-start")
+    if not re.search(r"""\bconst\s+textAlign\s*=\s*align\s*===\s*['"]center['"]\s*\?\s*\(\s*['"]center['"]\s+as\s+const\s*\)\s*:\s*\(\s*['"]left['"]\s+as\s+const\s*\)""", text):
+        errors.append("Slide.tsx: textAlign must map center→center and left→left as const")
+    for prop, value in (
+        ("backgroundColor", "bg"),
+        ("justifyContent", "justify"),
+        ("color", "fg"),
+    ):
+        if not re.search(rf"\b{prop}\s*:\s*{value}\b", text):
+            errors.append(f"Slide.tsx: style must use {prop}: {value}")
+    if not re.search(r"style=\{\{[^}]*\btextAlign\b", text, re.DOTALL):
+        errors.append("Slide.tsx: text container style must use textAlign")
+    if not re.search(r"\bpaddingLeft\s*:\s*align\s*===\s*['\"]left['\"]\s*\?\s*32\s*:\s*0\b", text):
+        errors.append("Slide.tsx: bullet paddingLeft must depend on left alignment")
+    if not re.search(r"\blistStyle\s*:\s*align\s*===\s*['\"]left['\"]\s*\?\s*['\"]disc['\"]\s*:\s*['\"]none['\"]", text):
+        errors.append("Slide.tsx: bullet listStyle must use disc for left alignment and none otherwise")
+    if not re.search(r"\bb\.emphasis\s*\?\s*['\"]#ffd166['\"]\s*:\s*fg\b", text):
+        errors.append("Slide.tsx: emphasized bullet color must use #ffd166 and default bullet color must use fg")
+    assert errors == [], (
+        "template/src/Slides/Slide.tsx style defaults / alignment contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_title_uses_sequence_local_frame_without_startframe_offset_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -16246,6 +16286,7 @@ def main() -> int:
         # PR-CT (BGM.tsx uses BGM_FILE constant for both presence check and audio src lint): 1 件
         test_bgm_file_constant_is_single_source_for_presence_check_and_audio_src,
         test_slide_uses_sequence_local_frame_without_startframe_offset,
+        test_slide_style_defaults_and_alignment_contract_lint,
         test_title_uses_sequence_local_frame_without_startframe_offset_lint,
         test_slide_segment_schema_contract_lint,
         test_narration_mode_invalidate_resets_cached_mode,
