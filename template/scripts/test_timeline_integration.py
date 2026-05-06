@@ -11819,7 +11819,7 @@ def test_build_slide_data_human_stdout_path_redacted_by_default() -> None:
         _shutil_mod.rmtree(proj, ignore_errors=True)
 
 
-def test_observability_emit_json_local_wrapper_kwargs_type_contract_lint() -> None:
+def test_observability_emit_json_local_wrapper_positional_type_contract_lint() -> None:
     """PR-S1: generate_slide_plan / voicevox_narration の local emit_json wrapper
     signature type annotation + 全 call site での status/exit_code literal type contract audit。
 
@@ -12114,7 +12114,7 @@ def main() -> int:
         # PR-J (stderr path leak audit、Codex 00:22 approve): 1 件
         test_generate_slide_plan_stderr_proj_path_redacted,
         # PR-S1 (local emit_json wrapper kwargs type contract audit): 1 件
-        test_observability_emit_json_local_wrapper_kwargs_type_contract_lint,
+        test_observability_emit_json_local_wrapper_positional_type_contract_lint,
     ]
     failed = []
     for t in tests:
