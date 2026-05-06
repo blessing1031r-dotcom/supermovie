@@ -18434,6 +18434,106 @@ def test_supermovie_narration_partial_docs_match_allow_partial_contract_lint() -
     )
 
 
+def test_supermovie_narration_wav_docs_match_header_concat_contract_lint() -> None:
+    """PR-JE: supermovie-narration WAV docs must match header and concat guards."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-narration" / "SKILL.md"
+    voicevox_path = template_root / "scripts" / "voicevox_narration.py"
+    assert skill_path.is_file(), "skills/supermovie-narration/SKILL.md not found"
+    assert voicevox_path.is_file(), "template/scripts/voicevox_narration.py not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    voicevox_text = voicevox_path.read_text(encoding="utf-8")
+    error_table_match = re.search(r"## エラーハンドリング[\s\S]*?(?:\n## |\Z)", skill_text)
+    concat_match = re.search(
+        r"def concat_wavs_atomic\(wavs: list\[Path\], out_path: Path\) -> None:[\s\S]*?"
+        r"(?=\ndef measure_duration_seconds)",
+        voicevox_text,
+    )
+    measure_match = re.search(
+        r"def measure_duration_seconds\(wav_path: Path\) -> float:[\s\S]*?"
+        r"(?=\n\nclass StaleCleanupError)",
+        voicevox_text,
+    )
+    main_pos = voicevox_text.find("def main():")
+    assert error_table_match is not None, "supermovie-narration error handling docs not found"
+    assert concat_match is not None, "voicevox_narration.py concat_wavs_atomic() not found"
+    assert measure_match is not None, "voicevox_narration.py measure_duration_seconds() not found"
+    assert main_pos != -1, "voicevox_narration.py main() not found"
+    docs_text = error_table_match.group(0)
+    concat_text = concat_match.group(0)
+    measure_text = measure_match.group(0)
+    main_text = voicevox_text[main_pos:]
+
+    required_doc_snippets = {
+        "format mismatch row": "WAV 結合 format mismatch",
+        "format mismatch behavior": "chunk skip + WARN",
+        "partial concat behavior": "可能な範囲で結合",
+        "header failure row": "WAV header 解析失敗 (wave.Error / EOFError)",
+        "header failure exit": "exit 6",
+        "header failure cleanup": "chunk + narration.wav 削除",
+    }
+    required_code_snippets = {
+        "concat function": "def concat_wavs_atomic(wavs: list[Path], out_path: Path) -> None:",
+        "concat wave open first": 'with wave.open(str(wavs[0]), "rb") as w0:',
+        "concat params": "params = w0.getparams()",
+        "format tuple check": "w.getframerate(), w.getnchannels(), w.getsampwidth()",
+        "format mismatch warn": 'print(f"WARN: {p.name} format mismatch、skip", file=sys.stderr)',
+        "format mismatch continue": "continue",
+        "tmp cleanup": "tmp.unlink()",
+        "measure function": "def measure_duration_seconds(wav_path: Path) -> float:",
+        "measure header": "return w.getnframes() / float(w.getframerate())",
+        "duration write call": "segments, ts_path, meta_path = write_narration_data(pairs, fps, cut_segments)",
+        "duration catch": "except (wave.Error, EOFError) as e:",
+        "duration error status": '"write_narration_data_wave_error", 6,',
+        "concat call": "concat_wavs_atomic(chunk_paths, out_path)",
+        "concat catch": "except Exception as e:",
+        "concat rollback reset": "reset_narration_data_ts()",
+        "concat rollback meta": "CHUNK_META_JSON.unlink()",
+        "concat error status": '"concat_fail", 6,',
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in docs_text:
+            errors.append(f"supermovie-narration WAV docs missing {name}: {snippet}")
+    for name, snippet in required_code_snippets.items():
+        if snippet not in voicevox_text:
+            errors.append(f"voicevox_narration.py missing {name}: {snippet}")
+
+    mismatch_pos = concat_text.find("format mismatch")
+    continue_pos = concat_text.find("continue", mismatch_pos)
+    append_pos = concat_text.find("frames.append(w.readframes(w.getnframes()))", mismatch_pos)
+    if mismatch_pos == -1 or continue_pos == -1 or append_pos == -1 or not mismatch_pos < continue_pos < append_pos:
+        errors.append("concat_wavs_atomic() must warn and skip format-mismatched chunks before appending frames")
+
+    measure_wave_pos = measure_text.find('with wave.open(str(wav_path), "rb") as w:')
+    measure_return_pos = measure_text.find("return w.getnframes() / float(w.getframerate())")
+    if measure_wave_pos == -1 or measure_return_pos == -1 or not measure_wave_pos < measure_return_pos:
+        errors.append("measure_duration_seconds() must derive duration from the WAV header")
+
+    write_data_pos = main_text.find("segments, ts_path, meta_path = write_narration_data(pairs, fps, cut_segments)")
+    wave_catch_pos = main_text.find("except (wave.Error, EOFError) as e:")
+    concat_call_pos = main_text.find("concat_wavs_atomic(chunk_paths, out_path)")
+    concat_fail_pos = main_text.find('"concat_fail", 6,')
+    if (
+        write_data_pos == -1
+        or wave_catch_pos == -1
+        or concat_call_pos == -1
+        or concat_fail_pos == -1
+        or not write_data_pos < wave_catch_pos < concat_call_pos < concat_fail_pos
+    ):
+        errors.append("main() must catch WAV header failures before concat and emit concat_fail on concat rollback")
+
+    assert errors == [], (
+        "supermovie-narration WAV docs / header concat contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -22799,6 +22899,8 @@ def main() -> int:
         test_supermovie_narration_overlap_docs_match_chunk_meta_warning_lint,
         # PR-JD (supermovie-narration partial failure docs stay synced with allow-partial guard): 1 件
         test_supermovie_narration_partial_docs_match_allow_partial_contract_lint,
+        # PR-JE (supermovie-narration WAV docs stay synced with header/concat guards): 1 件
+        test_supermovie_narration_wav_docs_match_header_concat_contract_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
