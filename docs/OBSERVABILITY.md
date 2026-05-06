@@ -528,6 +528,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 227 | `template/src/Narration/NarrationAudio.tsx` が `Audio` / `Sequence` / `staticFile` を `remotion` から、`useNarrationMode` を `./useNarrationMode` から、`NarrationMode` 型を `./mode` から import することを lint (`test_narration_audio_canonical_imports_contract_lint`、Codex 推奨 PR-FK)。NarrationAudio import contract を保護 | PR-FK |
 | 228 | `template/src/Slides/Slide.tsx` が `AbsoluteFill` / `useCurrentFrame` / `interpolate` を `remotion` から、`SlideSegment` 型を `./types` から import することを lint (`test_slide_canonical_imports_contract_lint`、Codex 推奨 PR-FL)。Slide import contract を保護 | PR-FL |
 | 229 | `template/src/InsertImage/InsertImage.tsx` が `useCurrentFrame` / `interpolate` / `Img` / `staticFile` を `remotion` から、`ImageSegment` 型を `./types` から import することを lint (`test_insert_image_canonical_imports_contract_lint`、Codex 推奨 PR-FM)。InsertImage import contract を保護 | PR-FM |
+| 230 | `template/src/テロップテンプレート/Telop.tsx` が Remotion helper、Telop 型、`TELOP_CONFIG`、legacy template / animation config を canonical module から import することを lint (`test_telop_canonical_imports_contract_lint`、Codex 推奨 PR-FN)。Telop import contract を保護 | PR-FN |
 
 ## Test Requirements
 
