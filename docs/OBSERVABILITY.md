@@ -576,6 +576,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 275 | `template/src/Slides/types.ts` の public export surface が `SlideAlignment` / `SlideBullet` / `SlideSegment` に限定され、default export / re-export を持たないことを lint (`test_slide_types_public_export_surface_contract_lint`、Codex 推奨 PR-HG)。Slides type module の API surface creep を保護 | PR-HG |
 | 276 | `template/src/Title/titleData.ts` の public export surface が `toFrame` / `titleData` に限定され、default export / re-export を持たないことを lint (`test_title_data_public_export_surface_contract_lint`、Codex 推奨 PR-HH)。Title data module の API surface creep を保護 | PR-HH |
 | 277 | `template/src/テロップテンプレート/telopData.ts` の public export surface が `FPS` / `TOTAL_FRAMES` / `telopData` に限定され、default export / re-export を持たないことを lint (`test_telop_data_public_export_surface_contract_lint`、Codex 推奨 PR-HI)。Telop data module の API surface creep を保護 | PR-HI |
+| 278 | `template/src/テロップテンプレート/telopTypes.ts` の public export surface が `TelopSegment` に限定され、default export / re-export を持たないことを lint (`test_telop_types_public_export_surface_contract_lint`、Codex 推奨 PR-HJ)。Telop type module の API surface creep を保護 | PR-HJ |
 
 ## Test Requirements
 
