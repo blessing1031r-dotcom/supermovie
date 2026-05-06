@@ -15973,6 +15973,31 @@ def test_telop_template_registry_metadata_contract_lint() -> None:
     )
 
 
+def test_telop_template_registry_type_surface_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    registry_path = template_root / "src" / "テロップテンプレート" / "telopTemplateRegistry.tsx"
+    assert registry_path.is_file(), "telopTemplateRegistry.tsx not found"
+    raw = registry_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    for pattern, desc in [
+        (r"""import\s+type\s+React\s+from\s*['"]react['"]\s*;""", "type-only React import"),
+        (r"export\s+interface\s+SubtitleItem\s*\{[\s\S]*?\btext\s*:\s*string\s*;[\s\S]*?\blines\s*:\s*string\[\]\s*;[\s\S]*?\bstart\s*:\s*number\s*;[\s\S]*?\bend\s*:\s*number\s*;[\s\S]*?\bstartFrame\s*:\s*number\s*;[\s\S]*?\bendFrame\s*:\s*number\s*;[\s\S]*?\}", "SubtitleItem timing/text fields"),
+        (r"export\s+interface\s+SubtitleData\s*\{[\s\S]*?\bfps\s*:\s*number\s*;[\s\S]*?\bsubtitles\s*:\s*SubtitleItem\[\]\s*;[\s\S]*?\}", "SubtitleData fps + subtitles"),
+        (r"export\s+type\s+TelopComponent\s*=\s*React\.FC\s*<\s*\{\s*subtitleData\s*:\s*SubtitleData\s*\}\s*>\s*;", "TelopComponent React.FC subtitleData prop"),
+        (r"export\s+interface\s+TelopTemplateEntry\s*\{[\s\S]*?\bcategory\s*:\s*TelopCategory\s*;[\s\S]*?\bdisplayName\s*:\s*string\s*;[\s\S]*?\bComponent\s*:\s*TelopComponent\s*;[\s\S]*?\}", "TelopTemplateEntry category/displayName/Component fields"),
+        (r"export\s+const\s+telopTemplateRegistry\s*=\s*\{[\s\S]*?\}\s+as\s+const\s+satisfies\s+Record\s*<\s*string\s*,\s*TelopTemplateEntry\s*>\s*;", "registry as const satisfies Record<string, TelopTemplateEntry>"),
+    ]:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"telopTemplateRegistry.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/テロップテンプレート/telopTemplateRegistry.tsx type surface contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_lookup_helpers_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -18080,6 +18105,7 @@ def main() -> int:
         test_telop_color_interpolation_helpers_contract_lint,
         test_telop_template_registry_file_coverage_lint,
         test_telop_template_registry_metadata_contract_lint,
+        test_telop_template_registry_type_surface_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
         # PR-CO (sequence components are data-driven from local arrays lint): 1 件
