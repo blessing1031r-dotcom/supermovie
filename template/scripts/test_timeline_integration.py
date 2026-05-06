@@ -13357,6 +13357,58 @@ def test_plugin_docs_no_merge_conflict_markers_lint() -> None:
     )
 
 
+def test_skill_frontmatter_description_trigger_phrase_lint() -> None:
+    """PR-AP: every skills/*/SKILL.md frontmatter description must include a
+    quoted trigger phrase in the form 「...」と言われたときに使用.
+    Only the YAML frontmatter block is inspected; body placeholders are ignored.
+    """
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    skills_dir = repo_root / "skills"
+    errors: list[str] = []
+
+    for skill_path in sorted(skills_dir.iterdir()):
+        if not skill_path.is_dir():
+            continue
+        skill_md = skill_path / "SKILL.md"
+        if not skill_md.exists():
+            continue
+
+        content = skill_md.read_text(encoding="utf-8")
+        fm_m = re.match(r"^---\s*$\n(.*?)^---\s*$", content, re.MULTILINE | re.DOTALL)
+        if not fm_m:
+            continue
+
+        fm_block = fm_m.group(1)
+        # Extract YAML block scalar description (| or > style) up to next top-level key
+        desc_m = re.search(
+            r"^description:\s*[|>][^\n]*\n(.*?)(?=^[A-Za-z0-9_-]+:|\Z)",
+            fm_block,
+            re.MULTILINE | re.DOTALL,
+        )
+        if not desc_m:
+            # If description field exists but is not block scalar, it cannot be verified
+            if re.search(r"^description:", fm_block, re.MULTILINE):
+                errors.append(
+                    f"{skill_path.name}/SKILL.md: description is not block scalar "
+                    f"style (| or >); trigger phrase cannot be verified"
+                )
+            continue  # Missing description is handled by PR-AF
+
+        desc_content = desc_m.group(1)
+        if not re.search(r"「[^」]+」と言われたときに使用", desc_content):
+            errors.append(
+                f"{skill_path.name}/SKILL.md: description lacks trigger phrase "
+                f"matching '「...」と言われたときに使用'"
+            )
+
+    assert not errors, (
+        f"SKILL.md description trigger phrase violations ({len(errors)}):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13573,6 +13625,8 @@ def main() -> int:
         test_skill_frontmatter_name_plugin_namespace_lint,
         # PR-AO (plugin docs/manifest no unresolved merge conflict markers lint): 1 件
         test_plugin_docs_no_merge_conflict_markers_lint,
+        # PR-AP (SKILL.md frontmatter description trigger phrase lint): 1 件
+        test_skill_frontmatter_description_trigger_phrase_lint,
     ]
     failed = []
     for t in tests:
