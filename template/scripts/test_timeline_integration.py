@@ -20461,6 +20461,87 @@ def test_supermovie_skill_creator_scaffold_docs_match_plugin_skill_lint() -> Non
     )
 
 
+def test_supermovie_skill_creator_quality_checklist_docs_match_scaffold_contract_lint() -> None:
+    """PR-LB: supermovie-skill-creator quality checklist must protect scaffold quality."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    skill_path = repo_root / "skills" / "supermovie-skill-creator" / "SKILL.md"
+    obs_path = repo_root / "docs" / "OBSERVABILITY.md"
+    for path in (skill_path, obs_path):
+        assert path.is_file(), f"{path.relative_to(repo_root)} not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    obs_text = obs_path.read_text(encoding="utf-8")
+    errors: list[str] = []
+
+    section_match = re.search(
+        r"### 品質チェックリスト（生成後に自己検証）\n(.*?)(?=\n---\n|\Z)",
+        skill_text,
+        re.DOTALL,
+    )
+    if not section_match:
+        errors.append("supermovie-skill-creator quality checklist section not found")
+        checklist_body = ""
+    else:
+        checklist_body = section_match.group(1)
+
+    expected_rows = [
+        ("1", "YAML frontmatter", "name, description, argument-hint, allowed-tools, effort が canonical order で全てある"),
+        ("2", "ロール定義", "1行で専門性が伝わる"),
+        ("3", "ワークフロー図", "ASCII図で全体像が一目で分かる"),
+        ("4", "前提条件", "チェックリスト形式で漏れなし"),
+        ("5", "フェーズ分割", "各フェーズが独立して理解できる"),
+        ("6", "データスキーマ", "入出力のJSON/TS型が明示されている"),
+        ("7", "バリデーション", "成功条件と失敗時対応が全フェーズにある"),
+        ("8", "エラーテーブル", "起こりうるエラーが網羅されている"),
+        ("9", "完了報告", "コピペ可能なテンプレート形式"),
+        ("10", "次のステップ", "後続スキルへの導線がある"),
+        ("11", "テーブル活用", "選択肢やマッピングはテーブルで整理"),
+        ("12", "コード例", "bash/TypeScriptのコードブロックが適切"),
+    ]
+    actual_rows = re.findall(
+        r"^\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$",
+        checklist_body,
+        re.MULTILINE,
+    )
+    actual_rows = [
+        (idx.strip(), item.strip(), criterion.strip())
+        for idx, item, criterion in actual_rows
+        if idx.strip().isdigit()
+    ]
+    if actual_rows != expected_rows:
+        errors.append(
+            "supermovie-skill-creator quality checklist rows drift: "
+            f"expected {expected_rows!r}, got {actual_rows!r}"
+        )
+
+    required_skill_snippets = {
+        "threshold pass": "12項目中10個以上クリアで合格",
+        "threshold improve": "9個以下は改善してから保存",
+        "quality heading": "### 品質チェックリスト（生成後に自己検証）",
+        "scaffold frontmatter row": "| 1 | YAML frontmatter | name, description, argument-hint, allowed-tools, effort が canonical order で全てある |",
+    }
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-skill-creator quality checklist missing {name}: {snippet}")
+
+    required_obs_snippets = {
+        "step": "| 374 | `skills/supermovie-skill-creator/SKILL.md` の品質チェックリスト",
+        "test name": "test_supermovie_skill_creator_quality_checklist_docs_match_scaffold_contract_lint",
+        "pr code": "PR-LB",
+        "threshold": "12項目中10個以上",
+    }
+    for name, snippet in required_obs_snippets.items():
+        if snippet not in obs_text:
+            errors.append(f"OBSERVABILITY step 374 missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-skill-creator quality checklist docs drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -27267,6 +27348,8 @@ def main() -> int:
         test_supermovie_skill_creator_scaffold_docs_match_plugin_skill_lint,
         # PR-LA (Remotion-facing skills route official guidance through bridge skill): 1 件
         test_remotion_facing_skills_route_through_bridge_skill_lint,
+        # PR-LB (supermovie-skill-creator quality checklist protects scaffold quality): 1 件
+        test_supermovie_skill_creator_quality_checklist_docs_match_scaffold_contract_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
