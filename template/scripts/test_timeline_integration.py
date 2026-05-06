@@ -18814,6 +18814,90 @@ def test_supermovie_se_rotation_docs_match_style_matrix_lint() -> None:
     )
 
 
+def test_supermovie_se_input_prereq_docs_match_template_data_surface_lint() -> None:
+    """PR-JX: supermovie-se input/prerequisite docs must match template data surface."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    se_skill_path = repo_root / "skills" / "supermovie-se" / "SKILL.md"
+    telop_data_path = template_root / "src" / "テロップテンプレート" / "telopData.ts"
+    title_data_path = template_root / "src" / "Title" / "titleData.ts"
+    insert_image_data_path = template_root / "src" / "InsertImage" / "insertImageData.ts"
+    se_data_path = template_root / "src" / "SoundEffects" / "seData.ts"
+    se_player_path = template_root / "src" / "SoundEffects" / "SEPlayer.ts"
+    se_sequence_path = template_root / "src" / "SoundEffects" / "SESequence.tsx"
+    for path in (
+        se_skill_path,
+        telop_data_path,
+        title_data_path,
+        insert_image_data_path,
+        se_data_path,
+        se_player_path,
+        se_sequence_path,
+    ):
+        assert path.is_file(), f"{path.relative_to(repo_root)} not found"
+
+    skill_text = se_skill_path.read_text(encoding="utf-8")
+    telop_data_text = telop_data_path.read_text(encoding="utf-8")
+    title_data_text = title_data_path.read_text(encoding="utf-8")
+    se_data_text = se_data_path.read_text(encoding="utf-8")
+    se_player_text = se_player_path.read_text(encoding="utf-8")
+    se_sequence_text = se_sequence_path.read_text(encoding="utf-8")
+
+    prerequisite_match = re.search(
+        r"## 前提条件チェックリスト\s*([\s\S]*?)\n---\n",
+        skill_text,
+    )
+    phase1_match = re.search(
+        r"## Phase 1: データ読み込み\s*([\s\S]*?)\n---\n",
+        skill_text,
+    )
+    assert prerequisite_match is not None, "supermovie-se prerequisite checklist section not found"
+    assert phase1_match is not None, "supermovie-se Phase 1 input section not found"
+    prerequisite_text = prerequisite_match.group(1)
+    phase1_text = phase1_match.group(1)
+
+    required_prerequisite_snippets = {
+        "subtitles command": "- [ ] `/supermovie-subtitles` でテロップ生成済み",
+        "telop data path": "- [ ] `src/テロップテンプレート/telopData.ts` にデータあり",
+        "se asset dir": "- [ ] `public/se/` にSEファイル配置済み",
+        "image-gen command": "- [ ] /supermovie-image-gen で画像生成済み（任意）",
+        "insert image data path": "- [ ] src/InsertImage/insertImageData.ts が存在（任意：画像出現タイミングにSE付与）",
+    }
+    required_phase1_snippets = {
+        "telop input": "`src/テロップテンプレート/telopData.ts` から全セグメントを取得。",
+        "title input": "`src/Title/titleData.ts` からセグメント境界を取得。",
+        "tone input": "`project-config.json` の `tone` を取得（SE密度の調整に使用）。",
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_prerequisite_snippets.items():
+        if snippet not in prerequisite_text:
+            errors.append(f"supermovie-se prerequisite docs missing {name}: {snippet}")
+    for name, snippet in required_phase1_snippets.items():
+        if snippet not in phase1_text:
+            errors.append(f"supermovie-se Phase 1 input docs missing {name}: {snippet}")
+
+    template_surface_checks = {
+        "telopData subtitles generator comment": (telop_data_text, "/supermovie-subtitles"),
+        "titleData subtitles generator comment": (title_data_text, "/supermovie-subtitles"),
+        "seData generator comment": (se_data_text, "/supermovie-se が自動生成します"),
+        "seData SoundEffect typed export": (se_data_text, "export const seData: SoundEffect[] = ["),
+        "SEPlayer SoundEffect export": (se_player_text, "export type SoundEffect = {"),
+        "SESequence imports seData": (se_sequence_text, "import { seData } from './seData';"),
+        "SESequence maps seData": (se_sequence_text, "{seData.map((se) => {"),
+    }
+    for name, (haystack, snippet) in template_surface_checks.items():
+        if snippet not in haystack:
+            errors.append(f"template SE data surface missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-se input prerequisite docs / template data surface contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_narration_mode_docs_match_runtime_contract_lint() -> None:
     """PR-IU: supermovie-narration Remotion mode docs must match runtime wiring."""
     import re
@@ -24437,6 +24521,8 @@ def main() -> int:
         test_supermovie_se_asset_path_docs_match_sequence_contract_lint,
         # PR-IT (supermovie-se rotation docs stay synced with style matrix/catalog): 1 件
         test_supermovie_se_rotation_docs_match_style_matrix_lint,
+        # PR-JX (supermovie-se input/prerequisite docs stay synced with template data surface): 1 件
+        test_supermovie_se_input_prereq_docs_match_template_data_surface_lint,
         # PR-IU (supermovie-narration mode docs stay synced with runtime wiring): 1 件
         test_supermovie_narration_mode_docs_match_runtime_contract_lint,
         # PR-IV (supermovie-narration output docs stay synced with voicevox paths): 1 件
