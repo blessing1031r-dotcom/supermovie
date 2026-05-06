@@ -15099,6 +15099,39 @@ def test_text_overlay_telop_config_ssot_contract_lint() -> None:
     )
 
 
+def test_telop_legacy_template_selection_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    telop_file = template_root / "src" / "テロップテンプレート" / "Telop.tsx"
+    assert telop_file.is_file(), "template/src/テロップテンプレート/Telop.tsx not found"
+    raw = telop_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    for pattern, desc in [
+        (r"const\s+getNegativeTemplate\s*=\s*\(\s*id:\s*number\s*\)\s*=>\s*\{[\s\S]*?return\s+id\s*%\s*2\s*===\s*0\s*\?\s*template4_negative\s*:\s*template4_negative_v2\s*;", "warning style alternates template4_negative/template4_negative_v2 by id parity"),
+        (r"const\s+getEmphasisTemplate\s*=\s*\(\s*id:\s*number\s*\)\s*=>\s*\{[\s\S]*?return\s+id\s*%\s*2\s*===\s*0\s*\?\s*template1_gradient\s*:\s*template6_whiteGradientText\s*;", "emphasis style alternates template1_gradient/template6_whiteGradientText by id parity"),
+        (r"const\s+getTemplateConfig\s*=\s*\(\s*segment:\s*TelopSegment\s*\)\s*=>\s*\{", "getTemplateConfig(segment) helper"),
+        (r"if\s*\(\s*segment\.template\s*===\s*1\s*\)\s*return\s+template1_gradient\s*;", "template 1 maps to template1_gradient"),
+        (r"if\s*\(\s*segment\.template\s*===\s*2\s*\)\s*return\s+template2_purpleStroke\s*;", "template 2 maps to template2_purpleStroke"),
+        (r"if\s*\(\s*segment\.template\s*===\s*3\s*\)\s*return\s+template3_gradientText\s*;", "template 3 maps to template3_gradientText"),
+        (r"if\s*\(\s*segment\.template\s*===\s*4\s*\)\s*return\s+template4_negative\s*;", "template 4 maps to template4_negative"),
+        (r"if\s*\(\s*segment\.template\s*===\s*5\s*\)\s*return\s+template4_negative_v2\s*;", "template 5 maps to template4_negative_v2"),
+        (r"if\s*\(\s*segment\.template\s*===\s*6\s*\)\s*return\s+template6_whiteGradientText\s*;", "template 6 maps to template6_whiteGradientText"),
+        (r"case\s+['\"]success['\"]\s*:\s*return\s+template3_gradientText\s*;", "success style maps to template3_gradientText"),
+        (r"case\s+['\"]warning['\"]\s*:\s*return\s+getNegativeTemplate\s*\(\s*segment\.id\s*\)\s*;", "warning style uses getNegativeTemplate(segment.id)"),
+        (r"case\s+['\"]emphasis['\"]\s*:\s*return\s+getEmphasisTemplate\s*\(\s*segment\.id\s*\)\s*;", "emphasis style uses getEmphasisTemplate(segment.id)"),
+        (r"default\s*:\s*return\s+template2_purpleStroke\s*;", "default style maps to template2_purpleStroke"),
+        (r"const\s+baseConfig:\s*TelopStyleConfig\s*=\s*getTemplateConfig\s*\(\s*segment\s*\)\s*;", "Telop renderer uses getTemplateConfig(segment)"),
+    ]:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"Telop.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/テロップテンプレート/Telop.tsx legacy template selection contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_file_coverage_lint() -> None:
     """PR-CM: Every .tsx file in メインテロップ/強調テロップ/ネガティブテロップ dirs must be imported by telopTemplateRegistry.tsx.
     Guards against new/renamed telop templates existing on disk but unreachable from TelopPlayer registry.
@@ -16434,6 +16467,7 @@ def main() -> int:
         test_main_video_base_video_fit_contract_lint,
         test_main_video_narration_mode_ssot_contract_lint,
         test_text_overlay_telop_config_ssot_contract_lint,
+        test_telop_legacy_template_selection_contract_lint,
         test_telop_template_registry_file_coverage_lint,
         test_telop_template_registry_metadata_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
