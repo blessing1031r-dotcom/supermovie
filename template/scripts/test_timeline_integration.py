@@ -17979,6 +17979,100 @@ def test_supermovie_transcribe_audio_extract_docs_match_file_path_contract_lint(
     )
 
 
+def test_supermovie_transcribe_engine_config_docs_match_project_config_contract_lint() -> None:
+    """PR-KD: transcribe engine/venv docs must match project-config contract."""
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    transcribe_skill_path = repo_root / "skills" / "supermovie-transcribe" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    readme_path = repo_root / "README.md"
+    assert transcribe_skill_path.is_file(), "skills/supermovie-transcribe/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert readme_path.is_file(), "README.md not found"
+
+    skill_text = transcribe_skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    readme_text = readme_path.read_text(encoding="utf-8")
+    skill_config_match = re.search(
+        r"### 6-4\. 環境設定の保存\s*`project-config\.json` に追記:\s*```json\n([\s\S]*?)\n```",
+        skill_text,
+    )
+    claude_config_match = re.search(
+        r"### project-config\.json\s*```json\n([\s\S]*?)\n```",
+        claude_text,
+    )
+    assert skill_config_match is not None, "supermovie-transcribe project-config transcribe block not found"
+    assert claude_config_match is not None, "CLAUDE.md project-config.json schema block not found"
+    skill_config = json.loads(skill_config_match.group(1))
+    claude_config = json.loads(claude_config_match.group(1))
+
+    expected_transcribe = {
+        "os": "darwin-arm64",
+        "engine": "mlx-whisper",
+        "model": "large-v3",
+        "language": "ja",
+        "venv": ".venv",
+    }
+    errors: list[str] = []
+    if skill_config.get("transcribe") != expected_transcribe:
+        errors.append(f"supermovie-transcribe project-config sample drift: {skill_config.get('transcribe')!r}")
+    if claude_config.get("transcribe") != expected_transcribe:
+        errors.append(f"CLAUDE.md project-config transcribe sample drift: {claude_config.get('transcribe')!r}")
+
+    required_detection_snippets = {
+        "os detection": 'OS=$(uname -s)          # Darwin or Linux or MINGW*(Windows)',
+        "chip detection": 'CHIP=$(uname -m)      # arm64 = Apple Silicon, x86_64 = Intel',
+        "mlx import probe": 'python3 -c "import mlx_whisper" 2>/dev/null && HAS_MLX=true || HAS_MLX=false',
+        "faster import probe": 'python3 -c "from faster_whisper import WhisperModel" 2>/dev/null && HAS_FASTER=true || HAS_FASTER=false',
+        "mlx installed path": "if Mac Apple Silicon && HAS_MLX:",
+        "mlx install path": "elif Mac Apple Silicon && !HAS_MLX:",
+        "faster installed path": "elif HAS_FASTER:",
+        "faster install fallback": "else:\n  → faster-whisper をインストールして実行",
+        "assemblyai speaker rule": "※ 話者分離が必要（speakers >= 2）の場合のみ AssemblyAI",
+        "one speaker local": "→ 1人 → ローカルWhisper（無料）",
+        "two speaker assembly": "→ 2人以上 → AssemblyAI（話者分離）",
+        "speakers arg skip": "- `$ARGUMENTS` に `--speakers N` がある → 話者数は聞かない",
+        "previous config skip": "- `project-config.json` に前回設定がある → 全てスキップ",
+    }
+    required_venv_snippets = {
+        "python prerequisite": "- [ ] Python 3.9+ がインストール済み",
+        "venv create guard": 'if [ ! -d "<PROJECT>/.venv" ]; then',
+        "venv create command": 'python3 -m venv "<PROJECT>/.venv"',
+        "venv activate": 'source "<PROJECT>/.venv/bin/activate"',
+        "pip upgrade": '"<PROJECT>/.venv/bin/pip" install --upgrade pip',
+        "mlx install": '"<PROJECT>/.venv/bin/pip" install mlx-whisper',
+        "faster install": '"<PROJECT>/.venv/bin/pip" install faster-whisper',
+        "mlx verify": '"<PROJECT>/.venv/bin/python3" -c "import mlx_whisper; print(\'OK\')"',
+        "faster verify": '"<PROJECT>/.venv/bin/python3" -c "from faster_whisper import WhisperModel; print(\'OK\')"',
+        "mlx fallback": "mlx-whisper インストール失敗（Intel Macの場合）\n  → faster-whisper にフォールバック",
+        "cuda fallback": "faster-whisper CUDA エラー（Windows）\n  → device='cpu', compute_type='int8' にフォールバック",
+        "model fallback": "モデルダウンロード失敗\n  → large-v3 → medium にダウングレード",
+        "memory fallback": "メモリ不足（8GB未満のマシン）\n  → medium → small にダウングレード",
+    }
+    required_claude_readme_snippets = {
+        "workflow engine note": "/supermovie-transcribe        ← 文字起こし（ローカルWhisper or AssemblyAI）",
+        "assemblyai scope": "- AssemblyAI は `supermovie-transcribe` の話者分離時のみ使用",
+        "venv path": "| Python仮想環境 | `<PROJECT>/.venv/` |",
+        "readme assemblyai optional": "- AssemblyAI APIキー（話者分離が必要な場合のみ。1人の場合はローカルWhisperで無料）",
+    }
+    for name, snippet in required_detection_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-transcribe engine detection docs missing {name}: {snippet}")
+    for name, snippet in required_venv_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-transcribe venv docs missing {name}: {snippet}")
+    for name, snippet in required_claude_readme_snippets.items():
+        if snippet not in claude_text and snippet not in readme_text:
+            errors.append(f"CLAUDE/README transcribe engine contract missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-transcribe engine/venv docs / project-config contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_transcript_fix_output_schema_docs_match_claude_transcript_contract_lint() -> None:
     """PR-JL: supermovie-transcript-fix output docs must match CLAUDE transcript contract."""
     import json
@@ -24945,6 +25039,8 @@ def main() -> int:
         test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema_lint,
         # PR-KC (supermovie-transcribe audio extraction docs stay synced with file path contract): 1 件
         test_supermovie_transcribe_audio_extract_docs_match_file_path_contract_lint,
+        # PR-KD (supermovie-transcribe engine/venv docs stay synced with project-config contract): 1 件
+        test_supermovie_transcribe_engine_config_docs_match_project_config_contract_lint,
         # PR-JL (supermovie-transcript-fix output docs stay synced with CLAUDE transcript contract): 1 件
         test_supermovie_transcript_fix_output_schema_docs_match_claude_transcript_contract_lint,
         # PR-JM (supermovie-cut VAD result docs stay synced with CLAUDE path contract): 1 件
