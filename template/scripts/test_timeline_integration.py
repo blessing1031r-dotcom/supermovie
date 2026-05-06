@@ -12055,6 +12055,58 @@ def test_observability_v0_status_enumeration_completeness_lint() -> None:
         )
 
 
+def test_observability_caller_import_order_canonical_lint() -> None:
+    """PR-S2: V1_CALLER_SCRIPTS 7 scripts の from _observability import (...) block が
+    原名 (as alias 前) alphabetical order であることを AST audit で検証。
+
+    2-part validation:
+    (1) 各 script の _observability ImportFrom aliases が原名 sorted list と一致
+    (2) docs §Script Coverage Matrix section に import order contract keyword presence
+    """
+    import ast
+    import re
+
+    scripts_dir = Path(__file__).parent
+
+    order_errors: list[str] = []
+    for script_name in V1_CALLER_SCRIPTS:
+        src = (scripts_dir / script_name).read_text()
+        tree = ast.parse(src)
+
+        obs_import: ast.ImportFrom | None = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "_observability":
+                obs_import = node
+                break
+
+        assert obs_import is not None, f"{script_name}: from _observability import not found"
+
+        names = [alias.name for alias in obs_import.names]
+        expected = sorted(names)
+        if names != expected:
+            order_errors.append(
+                f"{script_name}:{obs_import.lineno}: import order violation: "
+                f"got {names}, expected {expected}"
+            )
+
+    assert not order_errors, "_observability import order violations:\n" + "\n".join(order_errors)
+
+    # (2) docs §Script Coverage Matrix keyword presence
+    obs_doc = scripts_dir.parent.parent / "docs" / "OBSERVABILITY.md"
+    doc_text = obs_doc.read_text()
+    section_m = re.search(
+        r"^### Script Coverage Matrix[^\n]*\n(?P<body>.*?)(?=^## |^### )",
+        doc_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert section_m, "docs: §Script Coverage Matrix section not found"
+    section_body = section_m.group("body")
+    for keyword in ("import order", "_observability", "alphabetical"):
+        assert keyword in section_body, (
+            f"docs §Script Coverage Matrix: missing keyword {keyword!r}"
+        )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12225,6 +12277,8 @@ def main() -> int:
         test_observability_emit_json_local_wrapper_positional_type_contract_lint,
         # PR-S3 (per-script v0_status enumeration completeness audit): 1 件
         test_observability_v0_status_enumeration_completeness_lint,
+        # PR-S2 (caller _observability import order canonical audit): 1 件
+        test_observability_caller_import_order_canonical_lint,
     ]
     failed = []
     for t in tests:
