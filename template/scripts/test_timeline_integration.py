@@ -12287,10 +12287,11 @@ def test_npm_script_package_json_runbook_contract_lint() -> None:
     scripts: dict[str, str] = pkg.get("scripts", {})
 
     # (1) test composite must include all 3 CI-safe components
+    # use "npm run X" token to avoid substring false-positive (e.g. "notlint" or "prelint")
     test_cmd = scripts.get("test", "")
-    for required in ("test:timeline", "test:react", "lint"):
-        assert required in test_cmd, (
-            f"package.json: 'test' script missing required component {required!r} — "
+    for required_token in ("npm run lint", "test:timeline", "test:react"):
+        assert required_token in test_cmd, (
+            f"package.json: 'test' script missing required component {required_token!r} — "
             f"current: {test_cmd!r}"
         )
 
@@ -12311,7 +12312,7 @@ def test_npm_script_package_json_runbook_contract_lint() -> None:
     release_note = scripts_dir.parent.parent / "docs" / "PHASE3_RELEASE_NOTE.md"
     assert release_note.exists(), f"docs/PHASE3_RELEASE_NOTE.md not found"
     note_text = release_note.read_text()
-    for keyword in ("test:timeline", "test:react", "visual-smoke"):
+    for keyword in ("test:timeline", "test:react", "visual-smoke", "render"):
         assert keyword in note_text, (
             f"docs/PHASE3_RELEASE_NOTE.md: separation keyword {keyword!r} not found"
         )
