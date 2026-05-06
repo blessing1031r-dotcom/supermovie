@@ -548,6 +548,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 247 | `template/src/MainVideo.tsx` が `useNarrationMode()` を 1 回だけ呼び、戻り値を `const narrationMode` に集約することを lint (`test_main_video_single_narration_hook_call_contract_lint`、Codex 推奨 PR-GE)。Narration watcher の二重登録回避 contract を保護 | PR-GE |
 | 248 | `template` 配下の JS/TS test-like files (`*.test.*` / `*.spec.*`) が `vitest.config.ts` の `include: ['src/**/*.test.{ts,tsx}']` から外れないことを lint (`test_vitest_react_test_files_match_include_contract_lint`、Codex consult 推奨 PR-GF)。React/Vitest test file inventory discovery contract を保護 | PR-GF |
 | 249 | `template/src/Root.tsx` の最初の import が `import "./index.css";` であり、global CSS side-effect entrypoint を component/config import より前に保持することを lint (`test_root_css_import_first_contract_lint`、Codex 推奨 PR-GG)。Root global CSS import order contract を保護 | PR-GG |
+| 250 | `template/src/Narration/useNarrationMode*.test.tsx` 各 file が `import { useNarrationMode } from "./useNarrationMode";` より前に `vi.mock("remotion", ...)` を宣言することを lint (`test_vitest_use_narration_mode_tests_mock_remotion_before_sut_import_lint`、Codex consult 推奨 PR-GH)。useNarrationMode React tests の Remotion mock isolation/order contract を保護 | PR-GH |
 
 ## Test Requirements
 
