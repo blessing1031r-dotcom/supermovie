@@ -13565,6 +13565,60 @@ def test_plugin_json_optional_metadata_shape_lint() -> None:
     assert errors == [], "plugin.json optional metadata shape lint failed:\n" + "\n".join(errors)
 
 
+def test_skill_frontmatter_allowed_tools_canonical_order_lint() -> None:
+    """PR-AT: allowed-tools tokens in every skills/*/SKILL.md frontmatter must appear
+    in canonical order: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion.
+    Subsets are allowed; all tokens must come from step-93 allowlist and maintain relative order.
+    """
+    import re
+
+    CANONICAL_ORDER: list[str] = [
+        "Read", "Write", "Edit", "Bash", "Glob", "Grep", "Agent", "AskUserQuestion"
+    ]
+    canonical_index: dict[str, int] = {t: i for i, t in enumerate(CANONICAL_ORDER)}
+
+    repo_root = Path(__file__).parents[2]
+    skills_root = repo_root / "skills"
+    errors: list[str] = []
+
+    for skill_path in sorted(skills_root.iterdir()):
+        if not skill_path.is_dir():
+            continue
+        skill_md = skill_path / "SKILL.md"
+        if not skill_md.is_file():
+            continue
+
+        content = skill_md.read_text(encoding="utf-8")
+        fm_m = re.match(r"^---\s*\n(.*?)^---\s*$", content, re.MULTILINE | re.DOTALL)
+        if not fm_m:
+            continue
+
+        fm_block = fm_m.group(1)
+        at_line = None
+        for line in fm_block.splitlines():
+            if line.startswith("allowed-tools:"):
+                at_line = line
+                break
+
+        if at_line is None:
+            continue
+
+        raw = at_line[len("allowed-tools:"):].strip()
+        tokens = [t.strip() for t in raw.split(",") if t.strip()]
+
+        # Only validate tokens that are in the canonical list; unknown tokens are step-93's domain
+        known_tokens = [t for t in tokens if t in canonical_index]
+        indices = [canonical_index[t] for t in known_tokens]
+
+        if indices != sorted(indices):
+            errors.append(
+                f"{skill_path.name}/SKILL.md: allowed-tools known tokens out of canonical order: "
+                f"{known_tokens!r} (canonical: {CANONICAL_ORDER!r})"
+            )
+
+    assert errors == [], "allowed-tools canonical order lint failed:\n" + "\n".join(errors)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13789,6 +13843,8 @@ def main() -> int:
         test_skill_frontmatter_keyset_and_no_duplicate_keys_lint,
         # PR-AS (plugin.json optional metadata shape lint): 1 件
         test_plugin_json_optional_metadata_shape_lint,
+        # PR-AT (SKILL.md frontmatter allowed-tools canonical order lint): 1 件
+        test_skill_frontmatter_allowed_tools_canonical_order_lint,
     ]
     failed = []
     for t in tests:
