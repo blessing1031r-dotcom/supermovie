@@ -17629,6 +17629,36 @@ def test_telop_player_canonical_imports_contract_lint() -> None:
     )
 
 
+def test_telop_player_public_export_surface_contract_lint() -> None:
+    """PR-HO: TelopPlayer module must export only the TelopPlayer component."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    telop_player = template_root / "src" / "テロップテンプレート" / "TelopPlayer.tsx"
+    assert telop_player.is_file(), "template/src/テロップテンプレート/TelopPlayer.tsx not found"
+    raw = telop_player.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/テロップテンプレート/TelopPlayer.tsx must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*(?:\*|\{)""", text, re.MULTILINE), (
+        "template/src/テロップテンプレート/TelopPlayer.tsx must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    expected = {"TelopPlayer"}
+    assert exported == expected, (
+        "template/src/テロップテンプレート/TelopPlayer.tsx public export surface drift: "
+        f"expected {sorted(expected)}, got {sorted(exported)}"
+    )
+
+
 def test_telop_player_active_segment_range_and_subtitle_item_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -20297,6 +20327,8 @@ def main() -> int:
         # PR-CP (TelopPlayer bridges telopData to registry templates lint): 1 件
         test_telop_player_bridges_telop_data_to_registry_templates,
         test_telop_player_canonical_imports_contract_lint,
+        # PR-HO (TelopPlayer module exports only the TelopPlayer component): 1 件
+        test_telop_player_public_export_surface_contract_lint,
         test_telop_player_active_segment_range_and_subtitle_item_contract_lint,
         # PR-CQ (useNarrationMode.ts watches mode constants + narrationData files lint): 1 件
         test_narration_watch_uses_mode_constants_and_data_files,
