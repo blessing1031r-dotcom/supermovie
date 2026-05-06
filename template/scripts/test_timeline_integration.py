@@ -12323,6 +12323,59 @@ def test_npm_script_package_json_runbook_contract_lint() -> None:
     )
 
 
+def test_plugin_manifest_marketplace_contract_lint() -> None:
+    """PR-X: 4-part lint verifying .claude-plugin/ manifest integrity.
+    (1) plugin.json required fields: name, version, skills path
+    (2) skills path resolves to existing dir; every skill subdir has SKILL.md
+    (3) marketplace.json plugins[0].name matches plugin.json name, source="."
+    (4) name consistency: plugin.json name == marketplace.json plugins[0].name
+    """
+    import json
+    repo_root = Path(__file__).parents[2]
+    plugin_dir = repo_root / ".claude-plugin"
+    assert plugin_dir.is_dir(), f".claude-plugin/ not found at {plugin_dir}"
+
+    # (1) plugin.json required fields
+    plugin_path = plugin_dir / "plugin.json"
+    assert plugin_path.exists(), ".claude-plugin/plugin.json not found"
+    plugin = json.loads(plugin_path.read_text())
+    for field in ("name", "version", "skills"):
+        assert field in plugin, f"plugin.json: required field {field!r} missing"
+    plugin_name: str = plugin["name"]
+    skills_rel: str = plugin["skills"]
+
+    # (2) skills path exists; every skill subdir has SKILL.md
+    # skills_rel is relative to repo root (not plugin_dir)
+    skills_dir = (repo_root / skills_rel).resolve()
+    assert skills_dir.is_dir(), (
+        f"plugin.json skills path {skills_rel!r} does not resolve to a directory: {skills_dir}"
+    )
+    skill_subdirs = [p for p in skills_dir.iterdir() if p.is_dir()]
+    assert skill_subdirs, f"skills dir {skills_dir} has no subdirectories"
+    missing_skill_md = [p.name for p in skill_subdirs if not (p / "SKILL.md").exists()]
+    assert not missing_skill_md, (
+        f"skill directories missing SKILL.md: {missing_skill_md}"
+    )
+
+    # (3) marketplace.json plugins[0] structure
+    marketplace_path = plugin_dir / "marketplace.json"
+    assert marketplace_path.exists(), ".claude-plugin/marketplace.json not found"
+    marketplace = json.loads(marketplace_path.read_text())
+    plugins_list = marketplace.get("plugins", [])
+    assert plugins_list, "marketplace.json: 'plugins' list is empty"
+    first_plugin = plugins_list[0]
+    assert first_plugin.get("source") == ".", (
+        f"marketplace.json plugins[0].source must be '.' — got {first_plugin.get('source')!r}"
+    )
+
+    # (4) name consistency
+    market_name = first_plugin.get("name", "")
+    assert market_name == plugin_name, (
+        f"name mismatch: plugin.json name={plugin_name!r} vs "
+        f"marketplace.json plugins[0].name={market_name!r}"
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12503,6 +12556,8 @@ def main() -> int:
         test_observability_artifact_path_root_priority_policy_doc_lint,
         # PR-W (npm script runbook contract lint): 1 件
         test_npm_script_package_json_runbook_contract_lint,
+        # PR-X (plugin manifest + marketplace contract lint): 1 件
+        test_plugin_manifest_marketplace_contract_lint,
     ]
     failed = []
     for t in tests:
