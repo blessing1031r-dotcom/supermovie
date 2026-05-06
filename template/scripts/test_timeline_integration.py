@@ -15965,6 +15965,36 @@ def test_main_video_named_export_contract_lint() -> None:
     )
 
 
+def test_main_video_public_export_surface_contract_lint() -> None:
+    """PR-HR: MainVideo module must export only the MainVideo component."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    main_video_path = template_root / "src" / "MainVideo.tsx"
+    assert main_video_path.is_file(), "template/src/MainVideo.tsx not found"
+    raw = main_video_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/MainVideo.tsx must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*(?:\*|\{)""", text, re.MULTILINE), (
+        "template/src/MainVideo.tsx must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    expected = {"MainVideo"}
+    assert exported == expected, (
+        "template/src/MainVideo.tsx public export surface drift: "
+        f"expected {sorted(expected)}, got {sorted(exported)}"
+    )
+
+
 def test_main_video_imports_remotion_primitives_lint() -> None:
     import re
 
@@ -20337,6 +20367,8 @@ def main() -> int:
         test_main_video_imports_video_config_lint,
         # PR-GN (MainVideo stays a named React.FC export for Root import): 1 件
         test_main_video_named_export_contract_lint,
+        # PR-HR (MainVideo module exports only the MainVideo component): 1 件
+        test_main_video_public_export_surface_contract_lint,
         test_main_video_imports_remotion_primitives_lint,
         test_scripts_required_files_executable_lint,
         test_sm_claude_entrypoint_executable_lint,
