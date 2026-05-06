@@ -14868,6 +14868,48 @@ def test_vitest_setup_files_resolve_lint() -> None:
     )
 
 
+def test_vitest_react_test_discovery_contract_lint() -> None:
+    import json
+    import re
+
+    template_root = Path(__file__).parents[1]
+    config_path = template_root / "vitest.config.ts"
+    assert config_path.is_file(), "template/vitest.config.ts not found"
+    raw = config_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    pkg = json.loads((template_root / "package.json").read_text(encoding="utf-8"))
+    scripts = pkg.get("scripts", {})
+    errors: list[str] = []
+    checks = [
+        (
+            r"""import\s*\{\s*defineConfig\s*\}\s*from\s*['"]vitest/config['"]""",
+            "defineConfig import from vitest/config",
+        ),
+        (r"\benvironment\s*:\s*['\"]jsdom['\"]", "test.environment = 'jsdom'"),
+        (r"\bglobals\s*:\s*true\b", "test.globals = true"),
+        (
+            r"\bsetupFiles\s*:\s*\[\s*['\"]\.\/vitest\.setup\.ts['\"]\s*\]",
+            "test.setupFiles = ['./vitest.setup.ts']",
+        ),
+        (
+            r"\binclude\s*:\s*\[\s*['\"]src/\*\*/\*\.test\.\{ts,tsx\}['\"]\s*\]",
+            "test.include = ['src/**/*.test.{ts,tsx}']",
+        ),
+    ]
+    for pattern, desc in checks:
+        if not re.search(pattern, text):
+            errors.append(f"vitest.config.ts: missing {desc}")
+    expected_script = "vitest run --config vitest.config.ts"
+    actual_script = scripts.get("test:react")
+    if actual_script != expected_script:
+        errors.append(
+            f"package.json scripts.test:react must be {expected_script!r}, got {actual_script!r}"
+        )
+    assert errors == [], (
+        "template Vitest React test discovery contract drift:\n" + "\n".join(errors)
+    )
+
+
 def test_eslint_config_no_explicit_any_contract_lint() -> None:
     """PR-BV: template/eslint.config.mjs must enforce @typescript-eslint/no-explicit-any as "error".
     Catches accidental removal or downgrade to "warn"/"off" of the any-free contract.
@@ -18660,6 +18702,8 @@ def main() -> int:
         test_static_file_public_relative_contract_lint,
         test_template_component_barrel_exports_contract_lint,
         test_vitest_setup_files_resolve_lint,
+        # PR-GB (Vitest React discovery config + npm script lint): 1 件
+        test_vitest_react_test_discovery_contract_lint,
         test_eslint_config_no_explicit_any_contract_lint,
         test_remotion_config_contract_lint,
         test_package_json_remotion_version_parity_lint,
