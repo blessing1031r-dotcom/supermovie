@@ -15916,6 +15916,56 @@ def test_narration_mode_invalidate_resets_cached_mode() -> None:
     )
 
 
+def test_narration_mode_static_file_lookup_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    mode_file = template_root / "src" / "Narration" / "mode.ts"
+    assert mode_file.is_file(), "template/src/Narration/mode.ts not found"
+    raw = mode_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    remotion_import = re.search(r"""import\s*\{([^}]*)\}\s*from\s*['"]remotion['"]""", text)
+    if not remotion_import:
+        errors.append("mode.ts: no import from 'remotion' found")
+    elif not re.search(r"\bgetStaticFiles\b", remotion_import.group(1)):
+        errors.append("mode.ts: getStaticFiles must be imported from 'remotion'")
+    for pattern, desc in [
+        (r"""import\s*\{\s*narrationData\s*\}\s*from\s*['"]\.\/narrationData['"]\s*;""", "narrationData import from ./narrationData"),
+        (r"""import\s+type\s*\{\s*NarrationSegment\s*\}\s*from\s*['"]\.\/types['"]\s*;""", "NarrationSegment type import from ./types"),
+        (r"""export\s+const\s+NARRATION_LEGACY_FILE\s*=\s*['"]narration\.wav['"]\s*;""", "legacy narration filename constant"),
+        (r"""export\s+const\s+NARRATION_READY_FILE\s*=\s*['"]narration\.ready\.json['"]\s*;""", "ready sentinel filename constant"),
+        (
+            r"const\s+names\s*=\s*new\s+Set\s*\(\s*getStaticFiles\s*\(\s*\)\.map\s*\(\s*\(\s*f\s*\)\s*=>\s*f\.name\s*\)\s*\)\s*;",
+            "getStaticFiles names are materialized into a Set",
+        ),
+        (
+            r"narrationData\.every\s*\(\s*\(\s*seg\s*\)\s*=>\s*names\.has\s*\(\s*seg\.file\s*\)\s*\)",
+            "chunks mode requires every segment file to exist in names Set",
+        ),
+        (
+            r"names\.has\s*\(\s*NARRATION_LEGACY_FILE\s*\)",
+            "legacy mode checks NARRATION_LEGACY_FILE in names Set",
+        ),
+        (
+            r"_modeCache\s*=\s*\{\s*kind:\s*['\"]chunks['\"]\s*,\s*segments:\s*narrationData\s*\}\s*;",
+            "chunks assignment uses narrationData",
+        ),
+        (
+            r"_modeCache\s*=\s*\{\s*kind:\s*['\"]legacy['\"]\s*,\s*file:\s*NARRATION_LEGACY_FILE\s*\}\s*;",
+            "legacy assignment uses NARRATION_LEGACY_FILE",
+        ),
+        (r"_modeCache\s*=\s*\{\s*kind:\s*['\"]none['\"]\s*\}\s*;", "none assignment fallback"),
+        (r"return\s+_modeCache\s*;", "getNarrationMode returns cached mode"),
+    ]:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"mode.ts: missing {desc}")
+    assert errors == [], (
+        "template/src/Narration/mode.ts static-file lookup contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_template_narration_data_exports_typed_empty_array_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -16837,6 +16887,7 @@ def main() -> int:
         test_title_uses_sequence_local_frame_without_startframe_offset_lint,
         test_slide_segment_schema_contract_lint,
         test_narration_mode_invalidate_resets_cached_mode,
+        test_narration_mode_static_file_lookup_contract_lint,
         test_template_narration_data_exports_typed_empty_array_lint,
         test_insert_image_segment_schema_contract_lint,
         test_narration_segment_required_fields_contract_lint,
