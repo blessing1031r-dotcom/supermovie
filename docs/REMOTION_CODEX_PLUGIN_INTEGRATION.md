@@ -27,6 +27,7 @@ SuperMovie-owned skills:
 - `skills/supermovie-image-gen/SKILL.md`
 - `skills/supermovie-init/SKILL.md`
 - `skills/supermovie-narration/SKILL.md`
+- `skills/supermovie-remotion-bridge/SKILL.md`
 - `skills/supermovie-se/SKILL.md`
 - `skills/supermovie-skill-creator/SKILL.md`
 - `skills/supermovie-slides/SKILL.md`
@@ -95,8 +96,9 @@ Success criteria:
 
 - `python3 template/scripts/test_timeline_integration.py` passes locally.
 - fork/main can carry the doc and lint without touching `origin`.
-- A later branch can add a `supermovie-remotion-bridge` Codex skill only if this
-  docs-only boundary remains stable.
+- `skills/supermovie-remotion-bridge/SKILL.md` is a docs-only advisory router.
+  A later branch can expand `supermovie-remotion-bridge` only if this boundary
+  remains stable.
 
 ## Non-Goals
 

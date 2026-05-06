@@ -34,6 +34,7 @@ claude --plugin-dir ~/.claude/plugins/supermovie
 | 画像生成 | `/supermovie-image-gen` | Gemini APIで図解・画像を自動生成・配置 |
 | SE配置 | `/supermovie-se` | テロップ+画像分析 → 効果音自動配置 |
 | テロップ作成 | `/supermovie-telop-creator` | 新テロップスタイルをデザイン |
+| Remotion橋渡し | `/supermovie-remotion-bridge` | official Remotion plugin を advisory reference として使う変更前チェック |
 | スキル追加 | `/supermovie-skill-creator` | 新しいスキルを設計・追加 |
 
 #### クイックスタート

@@ -20227,6 +20227,79 @@ def test_remotion_bridge_note_in_remotion_facing_skills_lint() -> None:
     )
 
 
+def test_supermovie_remotion_bridge_skill_docs_contract_lint() -> None:
+    """PR-KY: supermovie-remotion-bridge advisory skill must preserve integration boundaries."""
+
+    repo_root = Path(__file__).parents[2]
+    skill_path = repo_root / "skills" / "supermovie-remotion-bridge" / "SKILL.md"
+    readme_path = repo_root / "README.md"
+    plan_path = repo_root / "docs" / "REMOTION_CODEX_PLUGIN_INTEGRATION.md"
+    obs_path = repo_root / "docs" / "OBSERVABILITY.md"
+    for path in (skill_path, readme_path, plan_path, obs_path):
+        assert path.is_file(), f"{path.relative_to(repo_root)} not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    readme_text = readme_path.read_text(encoding="utf-8")
+    plan_text = plan_path.read_text(encoding="utf-8")
+    obs_text = obs_path.read_text(encoding="utf-8")
+
+    errors: list[str] = []
+    required_skill_snippets = {
+        "name": "name: supermovie-remotion-bridge",
+        "trigger": "「Remotion bridge」「remotion-best-practices」「official Remotion」と言われたときに使用。",
+        "tools": "allowed-tools: Read, Glob, Grep, Agent",
+        "h1": "# SuperMovie Remotion Bridge — official Remotion advisory router",
+        "purpose": "この skill は SuperMovie の各 phase を実行しない。",
+        "source table": "| Pipeline order / generated data schema / file path | SuperMovie |",
+        "advisory owner": "| Remotion component hygiene / media primitive review | official `remotion-best-practices` advisory |",
+        "upstream optional": "| upstream PR / maintainer contact | optional_later |",
+        "scope heading": "## Phase 1: Scope Check",
+        "advisory heading": "## Phase 2: Advisory Loading",
+        "contract heading": "## Phase 3: SuperMovie Contract Review",
+        "output heading": "## Phase 4: Output Format",
+        "no upstream": "- no upstream PR",
+        "no contact": "- no source author / maintainer contact",
+        "quality gate": "- python3 template/scripts/test_timeline_integration.py",
+        "official unavailable": "official Remotion skill が利用できない",
+    }
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-remotion-bridge missing {name}: {snippet}")
+
+    required_readme_snippets = {
+        "command": "`/supermovie-remotion-bridge`",
+        "label": "Remotion橋渡し",
+        "description": "official Remotion plugin を advisory reference として使う変更前チェック",
+    }
+    for name, snippet in required_readme_snippets.items():
+        if snippet not in readme_text:
+            errors.append(f"README missing remotion bridge {name}: {snippet}")
+
+    required_plan_snippets = {
+        "skill path": "`skills/supermovie-remotion-bridge/SKILL.md`",
+        "advisory router": "docs-only advisory router",
+        "future expansion": "A later branch can expand `supermovie-remotion-bridge` only if this boundary",
+    }
+    for name, snippet in required_plan_snippets.items():
+        if snippet not in plan_text:
+            errors.append(f"integration plan missing remotion bridge {name}: {snippet}")
+
+    required_obs_snippets = {
+        "step": "| 371 | `skills/supermovie-remotion-bridge/SKILL.md`",
+        "test name": "test_supermovie_remotion_bridge_skill_docs_contract_lint",
+        "pr code": "PR-KY",
+        "advisory": "advisory router",
+    }
+    for name, snippet in required_obs_snippets.items():
+        if snippet not in obs_text:
+            errors.append(f"OBSERVABILITY step 371 missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-remotion-bridge skill / integration boundary docs drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -27027,6 +27100,8 @@ def main() -> int:
         test_remotion_codex_plugin_integration_plan_docs_contract_lint,
         # PR-KX (Remotion-facing skills carry official remotion-best-practices bridge note): 1 件
         test_remotion_bridge_note_in_remotion_facing_skills_lint,
+        # PR-KY (supermovie-remotion-bridge advisory skill preserves integration boundary): 1 件
+        test_supermovie_remotion_bridge_skill_docs_contract_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
