@@ -17463,6 +17463,90 @@ def test_supermovie_subtitles_template_id_mapping_matches_registry_lint() -> Non
     )
 
 
+def test_supermovie_subtitles_budoux_docs_match_build_telop_cli_lint() -> None:
+    """PR-JG: supermovie-subtitles BudouX docs must match build_telop_data.py."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    subtitles_skill_path = repo_root / "skills" / "supermovie-subtitles" / "SKILL.md"
+    build_telop_path = template_root / "scripts" / "build_telop_data.py"
+    assert subtitles_skill_path.is_file(), "skills/supermovie-subtitles/SKILL.md not found"
+    assert build_telop_path.is_file(), "template/scripts/build_telop_data.py not found"
+
+    skill_text = subtitles_skill_path.read_text(encoding="utf-8")
+    build_text = build_telop_path.read_text(encoding="utf-8")
+    phase2_match = re.search(
+        r"## Phase 2: 意味分割 \(BudouX deterministic \+ LLM optional plan\)[\s\S]*?"
+        r"## Phase 3: BudouX改行処理",
+        skill_text,
+    )
+    call_budoux_match = re.search(
+        r"def call_budoux\(seg_texts: list\[str\]\) -> list\[list\[str\]\]:[\s\S]*?"
+        r"(?=\n\n# ---------------- VAD / cut)",
+        build_text,
+    )
+    main_pos = build_text.find("def main():")
+    assert phase2_match is not None, "supermovie-subtitles Phase 2 BudouX docs not found"
+    assert call_budoux_match is not None, "build_telop_data.py call_budoux() not found"
+    assert main_pos != -1, "build_telop_data.py main() not found"
+    docs_text = phase2_match.group(0)
+    call_budoux_text = call_budoux_match.group(0)
+    main_text = build_text[main_pos:]
+
+    required_doc_snippets = {
+        "budoux first": "BudouX first、LLM は optional な補正レイヤー",
+        "command": "`python3 <PROJECT>/scripts/build_telop_data.py`",
+        "budoux script": "`template/scripts/budoux_split.mjs` 経由",
+        "phrase grouping": "segment を文節列に分解 → max_chars 以内で連結 → telop 単位",
+        "baseline flag": "`--baseline` フラグで Phase 1 旧ロジック",
+        "script cli": "`scripts/budoux_split.mjs --in input.json --out phrases.json`",
+        "fallback advantage": "BudouXフォールバックの利点",
+    }
+    required_code_snippets = {
+        "usage baseline": "python3 scripts/build_telop_data.py [--baseline]",
+        "budoux splitter": "def split_segment_text_budoux(",
+        "legacy splitter": "def split_segment_text_legacy(",
+        "call budoux function": "def call_budoux(seg_texts: list[str]) -> list[list[str]]:",
+        "budoux script path": 'script = proj / "scripts" / "budoux_split.mjs"',
+        "budoux subprocess": "subprocess.run(",
+        "budoux in arg": '"--in", fin_path',
+        "budoux out arg": '"--out", fout_path',
+        "baseline argparse": 'ap.add_argument("--baseline", action="store_true"',
+        "baseline branch": "if args.baseline:",
+        "default budoux call": "phrases_list = call_budoux([s[\"text\"] for s in segments])",
+        "budoux split call": "parts, parts_phrases = split_segment_text_budoux(s[\"text\"], phrases_list[i], MAX_CHARS)",
+        "fallback warning": "WARN: BudouX 失敗 → legacy fallback",
+        "fallback split": "parts = split_segment_text_legacy(s[\"text\"], MAX_CHARS)",
+        "mode label": 'mode_label = "baseline" if args.baseline else "BudouX"',
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in docs_text:
+            errors.append(f"supermovie-subtitles BudouX docs missing {name}: {snippet}")
+    for name, snippet in required_code_snippets.items():
+        if snippet not in build_text:
+            errors.append(f"build_telop_data.py missing {name}: {snippet}")
+
+    script_pos = call_budoux_text.find('script = proj / "scripts" / "budoux_split.mjs"')
+    subprocess_pos = call_budoux_text.find("subprocess.run(")
+    read_pos = call_budoux_text.find('Path(fout_path).read_text(encoding="utf-8")')
+    if script_pos == -1 or subprocess_pos == -1 or read_pos == -1 or not script_pos < subprocess_pos < read_pos:
+        errors.append("call_budoux() must resolve budoux_split.mjs before subprocess and read output after it")
+
+    baseline_pos = main_text.find("if args.baseline:")
+    budoux_call_pos = main_text.find("phrases_list = call_budoux([s[\"text\"] for s in segments])")
+    fallback_pos = main_text.find("WARN: BudouX 失敗 → legacy fallback")
+    if baseline_pos == -1 or budoux_call_pos == -1 or fallback_pos == -1 or not baseline_pos < budoux_call_pos < fallback_pos:
+        errors.append("main() must keep --baseline separate from default BudouX path and legacy fallback")
+
+    assert errors == [], (
+        "supermovie-subtitles BudouX docs / build_telop_data CLI contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -22975,6 +23059,8 @@ def main() -> int:
         test_supermovie_init_telop_style_choices_match_registry_lint,
         # PR-HZ (supermovie-subtitles style/templateId table stays synced with registry): 1 件
         test_supermovie_subtitles_template_id_mapping_matches_registry_lint,
+        # PR-JG (supermovie-subtitles BudouX docs stay synced with build_telop_data CLI): 1 件
+        test_supermovie_subtitles_budoux_docs_match_build_telop_cli_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
