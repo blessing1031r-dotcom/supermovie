@@ -18042,6 +18042,70 @@ def test_supermovie_narration_fps_docs_match_voicevox_resolution_lint() -> None:
     )
 
 
+def test_supermovie_narration_engine_docs_match_require_engine_contract_lint() -> None:
+    """PR-IY: supermovie-narration engine docs must match --require-engine behavior."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-narration" / "SKILL.md"
+    voicevox_path = template_root / "scripts" / "voicevox_narration.py"
+    assert skill_path.is_file(), "skills/supermovie-narration/SKILL.md not found"
+    assert voicevox_path.is_file(), "template/scripts/voicevox_narration.py not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    voicevox_text = voicevox_path.read_text(encoding="utf-8")
+    design_match = re.search(r"## 設計起点[\s\S]*?## ワークフロー", skill_text)
+    phase1_match = re.search(r"## Phase 1: VOICEVOX engine 起動確認[\s\S]*?## Phase 2:", skill_text)
+    engine_row_match = re.search(r"\|\s*engine 不在\s*\|\s*([^|]+?)\s*\|", skill_text)
+    branch_match = re.search(
+        r"ok,\s*info\s*=\s*check_engine\(\)[\s\S]*?print\(f['\"]VOICEVOX engine OK",
+        voicevox_text,
+    )
+    assert design_match is not None, "supermovie-narration design section not found"
+    assert phase1_match is not None, "supermovie-narration Phase 1 engine docs not found"
+    assert engine_row_match is not None, "supermovie-narration engine error row not found"
+    assert branch_match is not None, "voicevox_narration.py engine branch not found"
+    docs_text = "\n".join([design_match.group(0), phase1_match.group(0), engine_row_match.group(1)])
+    branch_text = branch_match.group(0)
+
+    required_doc_snippets = {
+        "optional skip design": "engine 不在で skip (`--require-engine` 指定時のみ exit non-zero)",
+        "local engine port": "localhost:50021",
+        "version healthcheck": "`/version` で自動確認、不在なら skip",
+        "require engine command": "python3 <PROJECT>/scripts/voicevox_narration.py --require-engine",
+        "skip exit docs": "INFO ログ + exit 0 (skip)",
+        "strict exit docs": "`--require-engine` 時のみ exit 4",
+    }
+    required_code_snippets = {
+        "engine base": 'ENGINE_BASE = "http://127.0.0.1:50021"',
+        "version healthcheck": 'http_request("GET", "/version")',
+        "require arg": 'ap.add_argument("--require-engine", action="store_true"',
+        "strict status": 'return emit_json("engine_unavailable_strict", 4, info=info)',
+        "skip status": 'return emit_json("engine_skipped", 0, info=info)',
+        "skip human stdout": "narration generation skipped",
+        "asset gate skip explanation": "<NarrationAudio />",
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in skill_text and snippet not in docs_text:
+            errors.append(f"supermovie-narration engine docs missing {name}: {snippet}")
+    for name, snippet in required_code_snippets.items():
+        if snippet not in voicevox_text:
+            errors.append(f"voicevox_narration.py missing {name}: {snippet}")
+
+    strict_pos = branch_text.find('return emit_json("engine_unavailable_strict", 4, info=info)')
+    skip_pos = branch_text.find('return emit_json("engine_skipped", 0, info=info)')
+    if strict_pos == -1 or skip_pos == -1 or not strict_pos < skip_pos:
+        errors.append("voicevox_narration.py engine branch must evaluate strict failure before skip success")
+
+    assert errors == [], (
+        "supermovie-narration engine docs / require-engine contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -22395,6 +22459,8 @@ def main() -> int:
         test_supermovie_narration_input_docs_match_collect_chunks_lint,
         # PR-IX (supermovie-narration FPS docs stay synced with voicevox resolution): 1 件
         test_supermovie_narration_fps_docs_match_voicevox_resolution_lint,
+        # PR-IY (supermovie-narration engine docs stay synced with --require-engine): 1 件
+        test_supermovie_narration_engine_docs_match_require_engine_contract_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
