@@ -18295,6 +18295,117 @@ def test_supermovie_slides_frame_conversion_docs_match_build_slide_data_lint() -
     )
 
 
+def test_supermovie_slides_plan_schema_docs_match_script_contract_lint() -> None:
+    """PR-IQ: supermovie-slides slide_plan schema docs must match scripts."""
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-slides" / "SKILL.md"
+    generate_path = template_root / "scripts" / "generate_slide_plan.py"
+    build_path = template_root / "scripts" / "build_slide_data.py"
+    assert skill_path.is_file(), "skills/supermovie-slides/SKILL.md not found"
+    assert generate_path.is_file(), "template/scripts/generate_slide_plan.py not found"
+    assert build_path.is_file(), "template/scripts/build_slide_data.py not found"
+
+    def plan_version(source: str, filename: str) -> str:
+        match = re.search(r"^PLAN_VERSION\s*=\s*[\"']([^\"']+)[\"']", source, re.MULTILINE)
+        assert match is not None, f"{filename} PLAN_VERSION not found"
+        return match.group(1)
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    generate_text = generate_path.read_text(encoding="utf-8")
+    build_text = build_path.read_text(encoding="utf-8")
+    schema_match = re.search(
+        r"### slide_plan\.json schema\s*```json\n([\s\S]*?)\n```",
+        skill_text,
+    )
+    assert schema_match is not None, "supermovie-slides slide_plan.json schema block not found"
+    schema_example = json.loads(schema_match.group(1))
+    first_slide = schema_example["slides"][0]
+    first_bullet = first_slide["bullets"][0]
+    expected_slide_keys = [
+        "id",
+        "startWordIndex",
+        "endWordIndex",
+        "title",
+        "subtitle",
+        "bullets",
+        "align",
+        "videoLayer",
+    ]
+
+    max_bullets_match = re.search(r"^MAX_BULLETS_PER_SLIDE\s*=\s*(\d+)\b", build_text, re.MULTILINE)
+    assert max_bullets_match is not None, "build_slide_data.py MAX_BULLETS_PER_SLIDE not found"
+    max_bullets = int(max_bullets_match.group(1))
+    allowed_align_match = re.search(r"^ALLOWED_ALIGN\s*=\s*\(([^)]*)\)", build_text, re.MULTILINE)
+    allowed_layer_match = re.search(r"^ALLOWED_VIDEO_LAYER\s*=\s*\(([^)]*)\)", build_text, re.MULTILINE)
+    assert allowed_align_match is not None, "build_slide_data.py ALLOWED_ALIGN not found"
+    assert allowed_layer_match is not None, "build_slide_data.py ALLOWED_VIDEO_LAYER not found"
+    allowed_align = sorted(re.findall(r"[\"']([^\"']+)[\"']", allowed_align_match.group(1)))
+    allowed_layers = sorted(re.findall(r"[\"']([^\"']+)[\"']", allowed_layer_match.group(1)))
+
+    generate_version = plan_version(generate_text, "generate_slide_plan.py")
+    build_version = plan_version(build_text, "build_slide_data.py")
+    validation_match = re.search(
+        r"### validation ルール \(build_slide_data\.py\)\s*([\s\S]*?)invalid 時のデフォルト挙動:",
+        skill_text,
+    )
+    assert validation_match is not None, "supermovie-slides validation rules block not found"
+    validation_text = validation_match.group(1)
+
+    prompt_required_snippets = {
+        "word index required": "word index で slide 範囲を返す (startWordIndex / endWordIndex 必須)",
+        "word range": "startWordIndex <= endWordIndex",
+        "overlap": "前 slide の endWordIndex < 次 slide の startWordIndex",
+        "id ascending": "id は 1 から昇順",
+        "title": "title は {title_max} 文字以内、必須、空不可",
+        "bullets": "bullets は最大 {max_bullets} 個、各 bullet text は {bullet_max} 文字以内",
+        "align": 'align は "center" or "left" のみ',
+        "videoLayer": 'videoLayer は "visible" / "dimmed" / "hidden" のみ (省略可)',
+        "json only": "## 出力 (JSON のみ、コードフェンス不要)",
+    }
+    validation_required_snippets = {
+        "version": f"`version` 完全一致 (`{build_version}`)",
+        "slides": "`slides` が配列、`id` 昇順",
+        "word index": "`0 <= startWordIndex <= endWordIndex < len(words)`",
+        "overlap": "隣接 slide の word range が overlap しない",
+        "title": "`title` 非空 + format 別 max 文字数以内",
+        "bullets": f"`bullets` ≤ {max_bullets}、各 `text` ≤ format 別 max",
+        "align/videoLayer": '`align` ∈ {"center","left"}、`videoLayer` ∈ {"visible","dimmed","hidden"}',
+    }
+
+    errors: list[str] = []
+    if schema_example["version"] != generate_version or schema_example["version"] != build_version:
+        errors.append(
+            "slide_plan version drift: "
+            f"docs={schema_example['version']}, generate={generate_version}, build={build_version}"
+        )
+    if list(first_slide.keys()) != expected_slide_keys:
+        errors.append(f"slide_plan slide key order drift: expected {expected_slide_keys}, got {list(first_slide.keys())}")
+    if list(first_bullet.keys()) != ["text", "emphasis"]:
+        errors.append(f"slide_plan bullet key order drift: expected ['text', 'emphasis'], got {list(first_bullet.keys())}")
+    if sorted({first_slide["align"]} | set(allowed_align)) != allowed_align:
+        errors.append(f"slide_plan docs align sample must use one of {allowed_align}, got {first_slide['align']!r}")
+    if sorted({first_slide["videoLayer"]} | set(allowed_layers)) != allowed_layers:
+        errors.append(f"slide_plan docs videoLayer sample must use one of {allowed_layers}, got {first_slide['videoLayer']!r}")
+    for key in ["version", "slides"] + expected_slide_keys:
+        if f'"{key}"' not in generate_text:
+            errors.append(f"generate_slide_plan.py prompt missing slide_plan key: {key}")
+    for name, snippet in prompt_required_snippets.items():
+        if snippet not in generate_text:
+            errors.append(f"generate_slide_plan.py prompt missing {name}: {snippet}")
+    for name, snippet in validation_required_snippets.items():
+        if snippet not in validation_text:
+            errors.append(f"supermovie-slides validation docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-slides slide_plan schema docs / script contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
     """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
     import re
@@ -21773,6 +21884,8 @@ def main() -> int:
         test_supermovie_slides_command_docs_match_script_cli_lint,
         # PR-IP (supermovie-slides frame conversion docs stay synced with build_slide_data): 1 件
         test_supermovie_slides_frame_conversion_docs_match_build_slide_data_lint,
+        # PR-IQ (supermovie-slides slide_plan schema docs stay synced with scripts): 1 件
+        test_supermovie_slides_plan_schema_docs_match_script_contract_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
