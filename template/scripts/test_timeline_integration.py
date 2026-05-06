@@ -18824,6 +18824,36 @@ def test_telop_segment_template_id_and_animation_contract_lint() -> None:
     )
 
 
+def test_telop_types_public_export_surface_contract_lint() -> None:
+    """PR-HJ: telopTypes module must export only TelopSegment."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    types_file = template_root / "src" / "テロップテンプレート" / "telopTypes.ts"
+    assert types_file.is_file(), "template/src/テロップテンプレート/telopTypes.ts not found"
+    raw = types_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/テロップテンプレート/telopTypes.ts must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*(?:\*|\{)""", text, re.MULTILINE), (
+        "template/src/テロップテンプレート/telopTypes.ts must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    expected = {"TelopSegment"}
+    assert exported == expected, (
+        "template/src/テロップテンプレート/telopTypes.ts public export surface drift: "
+        f"expected {sorted(expected)}, got {sorted(exported)}"
+    )
+
+
 def test_telop_config_types_export_style_shape_and_slide_direction_union() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -20155,6 +20185,8 @@ def main() -> int:
         test_title_data_toframe_uses_video_config_fps_lint,
         test_telop_segment_schema_contract_lint,
         test_telop_segment_template_id_and_animation_contract_lint,
+        # PR-HJ (telopTypes module exports only the TelopSegment type): 1 件
+        test_telop_types_public_export_surface_contract_lint,
         test_telop_config_types_export_style_shape_and_slide_direction_union,
         test_sound_effect_schema_and_se_data_export_lint,
         # PR-HA (SEPlayer module exports only the SoundEffect type): 1 件
