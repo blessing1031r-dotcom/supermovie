@@ -12114,7 +12114,8 @@ def test_observability_status_map_reverse_direction_coverage_lint() -> None:
     PR-S3 forward direction との関係:
     - forward (PR-S3): 全 emit v0_status が STATUS_MAP に登録済
     - reverse (PR-BM'): STATUS_MAP の全 key が scripts に str literal として出現
-    → 双方向で STATUS_MAP ↔ scripts の bijection を保証
+    → reverse coverage (orphan detection): STATUS_MAP が scripts を over-specify しないことを保証
+    (注: 全 str Constants スコープは emit call site より広いため bijection ではなく subset 保証)
 
     2-part validation:
     (1) STATUS_MAP の全 key が V1_CALLER_SCRIPTS の何れかで str Constant として出現
