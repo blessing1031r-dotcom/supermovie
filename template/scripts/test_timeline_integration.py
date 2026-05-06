@@ -17795,6 +17795,61 @@ def test_claude_cut_data_schema_matches_supermovie_cut_skill_lint() -> None:
     )
 
 
+def test_supermovie_slides_schema_docs_match_slide_segment_contract_lint() -> None:
+    """PR-II: supermovie-slides SlideSegment shorthand must match Slides/types.ts."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-slides" / "SKILL.md"
+    types_path = template_root / "src" / "Slides" / "types.ts"
+    assert skill_path.is_file(), "skills/supermovie-slides/SKILL.md not found"
+    assert types_path.is_file(), "template/src/Slides/types.ts not found"
+
+    types_text = types_path.read_text(encoding="utf-8")
+    interface_match = re.search(r"\bexport\s+interface\s+SlideSegment\s*\{([\s\S]*?)\}", types_text)
+    assert interface_match is not None, "Slides/types.ts: export interface SlideSegment not found"
+    implementation_fields = [
+        (name, optional)
+        for name, optional in re.findall(r"^\s*(\w+)(\?)?\s*:", interface_match.group(1), re.MULTILINE)
+    ]
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    skill_match = re.search(
+        r"`SlideSegment` schema \(`src/Slides/types\.ts`\):\s*```typescript\s*\{([^}]+)\}\s*```",
+        skill_text,
+    )
+    assert skill_match is not None, "supermovie-slides SKILL.md SlideSegment schema code block not found"
+    documented_fields = []
+    for raw_item in skill_match.group(1).split(","):
+        item = raw_item.strip()
+        assert item, "supermovie-slides SlideSegment schema contains an empty field entry"
+        documented_fields.append((item.removesuffix("?"), "?" if item.endswith("?") else ""))
+
+    expected_fields = [
+        ("id", ""),
+        ("startFrame", ""),
+        ("endFrame", ""),
+        ("title", ""),
+        ("subtitle", "?"),
+        ("bullets", "?"),
+        ("align", "?"),
+        ("backgroundColor", "?"),
+        ("textColor", "?"),
+        ("videoLayer", "?"),
+    ]
+    errors: list[str] = []
+    if implementation_fields != expected_fields:
+        errors.append(f"Slides/types.ts SlideSegment field drift: expected {expected_fields}, got {implementation_fields}")
+    if documented_fields != implementation_fields:
+        errors.append(f"supermovie-slides SlideSegment docs drift: expected {implementation_fields}, got {documented_fields}")
+
+    assert errors == [], (
+        "supermovie-slides SlideSegment schema docs / implementation contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
     """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
     import re
@@ -21257,6 +21312,8 @@ def main() -> int:
         test_claude_insert_image_schema_matches_image_segment_contract_lint,
         # PR-IH (CLAUDE.md cutData CutSegment schema stays synced with supermovie-cut): 1 件
         test_claude_cut_data_schema_matches_supermovie_cut_skill_lint,
+        # PR-II (supermovie-slides SlideSegment schema docs stay synced with implementation): 1 件
+        test_supermovie_slides_schema_docs_match_slide_segment_contract_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
