@@ -17557,6 +17557,60 @@ def test_telop_template_components_canonical_imports_contract_lint() -> None:
     )
 
 
+def test_telop_template_components_public_export_surface_contract_lint() -> None:
+    """PR-HX: telop template components export only subtitle types and one component."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    telop_dirs = ("メインテロップ", "強調テロップ", "ネガティブテロップ")
+    checked = 0
+    errors: list[str] = []
+    for dir_name in telop_dirs:
+        dir_path = template_root / "src" / dir_name
+        if not dir_path.is_dir():
+            errors.append(f"template/src/{dir_name}: directory not found")
+            continue
+        for tsx_file in sorted(dir_path.glob("*.tsx")):
+            checked += 1
+            rel = tsx_file.relative_to(template_root)
+            raw = tsx_file.read_text(encoding="utf-8")
+            text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+            text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+            if re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE):
+                errors.append(f"{rel}: must not use a default export")
+            if re.search(r"""^\s*export\s*(?:\*|\{)""", text, re.MULTILINE):
+                errors.append(f"{rel}: must not re-export additional symbols")
+            exported = set(
+                re.findall(
+                    r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+                    text,
+                    re.MULTILINE,
+                )
+            )
+            component_exports = sorted(exported - {"SubtitleItem", "SubtitleData"})
+            if len(component_exports) != 1:
+                errors.append(
+                    f"{rel}: expected exactly one exported component besides SubtitleItem/SubtitleData, "
+                    f"got {component_exports}"
+                )
+                continue
+            component = component_exports[0]
+            expected = {"SubtitleItem", "SubtitleData", component}
+            if exported != expected:
+                errors.append(f"{rel}: public export surface drift: expected {sorted(expected)}, got {sorted(exported)}")
+            if not re.search(
+                rf"export\s+const\s+{re.escape(component)}\s*:\s*React\.FC\s*<\s*{re.escape(component)}Props\s*>\s*=",
+                text,
+            ):
+                errors.append(f"{rel}: exported component must be React.FC<{component}Props>")
+    if checked != 30:
+        errors.append(f"expected 30 telop template components, checked {checked}")
+    assert errors == [], (
+        "telop template component public export surface drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_sequence_components_are_data_driven_from_local_arrays() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -20564,6 +20618,8 @@ def main() -> int:
         test_telop_template_components_subtitle_type_surface_contract_lint,
         test_telop_template_components_fade_scale_animation_contract_lint,
         test_telop_template_components_canonical_imports_contract_lint,
+        # PR-HX (telop template component files expose only subtitle types + component): 1 件
+        test_telop_template_components_public_export_surface_contract_lint,
         # PR-CO (sequence components are data-driven from local arrays lint): 1 件
         test_sequence_components_are_data_driven_from_local_arrays,
         # PR-FZ (sequence components return Fragment-wrapped data maps lint): 1 件
