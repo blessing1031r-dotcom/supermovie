@@ -16451,6 +16451,35 @@ def test_slide_content_render_contract_lint() -> None:
     )
 
 
+def test_title_canonical_imports_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    title_file = template_root / "src" / "Title" / "Title.tsx"
+    assert title_file.is_file(), "template/src/Title/Title.tsx not found"
+    raw = title_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    remotion_import = re.search(r"""import\s*\{(?P<body>[^}]*)\}\s*from\s*['"]remotion['"]""", text)
+    errors: list[str] = []
+    if remotion_import is None:
+        errors.append("Title.tsx: no named import from remotion found")
+    else:
+        remotion_body = remotion_import.group("body")
+        for sym in ("useCurrentFrame", "interpolate", "spring", "useVideoConfig", "Sequence"):
+            if not re.search(rf"\b{sym}\b", remotion_body):
+                errors.append(f"Title.tsx: {sym} not imported from remotion")
+    checks = [
+        (r"""import\s*\{\s*titleData\s*\}\s*from\s*['"]\.\/titleData['"]""", "titleData from ./titleData"),
+        (r"""import\s*\{\s*TELOP_CONFIG\s*\}\s*from\s*['"]\.\.\/videoConfig['"]""", "TELOP_CONFIG from ../videoConfig"),
+    ]
+    errors.extend(desc for pattern, desc in checks if not re.search(pattern, text))
+    assert errors == [], (
+        "template/src/Title/Title.tsx import contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_title_uses_sequence_local_frame_without_startframe_offset_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17878,6 +17907,7 @@ def main() -> int:
         test_slide_uses_sequence_local_frame_without_startframe_offset,
         test_slide_style_defaults_and_alignment_contract_lint,
         test_slide_content_render_contract_lint,
+        test_title_canonical_imports_contract_lint,
         test_title_uses_sequence_local_frame_without_startframe_offset_lint,
         test_title_visual_style_contract_lint,
         test_slide_segment_schema_contract_lint,
