@@ -13409,6 +13409,34 @@ def test_skill_frontmatter_description_trigger_phrase_lint() -> None:
     )
 
 
+def test_plugin_json_skills_path_resolves_to_skill_dirs_lint() -> None:
+    """PR-AQ: plugin.json skills path must be './skills/', resolve to an existing directory,
+    and every subdirectory under skills/ must contain a SKILL.md file.
+    """
+    import json
+
+    repo_root = Path(__file__).parents[2]
+    manifest_path = repo_root / ".claude-plugin" / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    skills_value = manifest.get("skills")
+    assert skills_value == "./skills/", (
+        f"plugin.json 'skills' must be './skills/', got {skills_value!r}"
+    )
+
+    # skills path is relative to repo root, not to manifest parent (.claude-plugin/)
+    skills_dir = (repo_root / skills_value).resolve()
+    assert skills_dir.is_dir(), (
+        f"plugin.json skills path '{skills_value}' resolves to {skills_dir} which is not a directory"
+    )
+
+    missing = [
+        p.name for p in sorted(skills_dir.iterdir())
+        if p.is_dir() and not (p / "SKILL.md").is_file()
+    ]
+    assert missing == [], f"skill dirs missing SKILL.md: {missing}"
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13627,6 +13655,8 @@ def main() -> int:
         test_plugin_docs_no_merge_conflict_markers_lint,
         # PR-AP (SKILL.md frontmatter description trigger phrase lint): 1 件
         test_skill_frontmatter_description_trigger_phrase_lint,
+        # PR-AQ (plugin.json skills path integrity and skill dirs have SKILL.md lint): 1 件
+        test_plugin_json_skills_path_resolves_to_skill_dirs_lint,
     ]
     failed = []
     for t in tests:
