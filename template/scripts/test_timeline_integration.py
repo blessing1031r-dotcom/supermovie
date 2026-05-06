@@ -15352,6 +15352,85 @@ def test_telop_svg_text_defs_filter_gradient_contract_lint() -> None:
     )
 
 
+def test_telop_background_text_css_gradient_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    telop_file = template_root / "src" / "テロップテンプレート" / "Telop.tsx"
+    assert telop_file.is_file(), "template/src/テロップテンプレート/Telop.tsx not found"
+    raw = telop_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    branch_match = re.search(
+        r"if\s*\(\s*background\.enabled\s*\)\s*\{(?P<body>[\s\S]*?)\n\s*\}\s*\n\s*const\s+strokeGradientId",
+        text,
+        re.DOTALL,
+    )
+    if branch_match is None:
+        errors.append("Telop.tsx: missing background.enabled CSS text branch before SVG branch")
+        branch = ""
+    else:
+        branch = branch_match.group("body")
+    for pattern, desc in [
+        (r"const\s+fillGradient\s*=\s*font\.fillGradient\s*;", "fillGradient from font"),
+        (r"const\s+hasFillGradient\s*=\s*fillGradient\?\.enabled\s*;", "hasFillGradient optional access"),
+        (r"const\s+textStyle:\s*React\.CSSProperties\s*=\s*\{", "textStyle typed as React.CSSProperties"),
+        (r"fontSize:\s*font\.size", "textStyle fontSize uses font.size"),
+        (r"fontWeight:\s*font\.weight", "textStyle fontWeight uses font.weight"),
+        (r"fontFamily:\s*font\.family", "textStyle fontFamily uses font.family"),
+        (r"fontStyle:\s*font\.style", "textStyle fontStyle uses font.style"),
+        (r"margin:\s*0", "textStyle margin is 0"),
+        (r"textAlign:\s*['\"]center['\"]", "textStyle centers text"),
+        (r"lineHeight:\s*font\.lineHeight", "textStyle lineHeight uses font.lineHeight"),
+        (r"letterSpacing:\s*font\.letterSpacing", "textStyle letterSpacing uses font.letterSpacing"),
+        (
+            r"textShadow:\s*`\s*\$\{textShadow\.offsetX\}px\s+\$\{textShadow\.offsetY\}px\s+"
+            r"\$\{textShadow\.blur\}px\s+\$\{textShadow\.color\}\s*`",
+            "textStyle textShadow uses config textShadow fields",
+        ),
+        (r"whiteSpace:\s*['\"]pre-line['\"]", "textStyle preserves line breaks with pre-line"),
+        (
+            r"if\s*\(\s*hasFillGradient\s*\)\s*\{\s*Object\.assign\s*\(\s*textStyle\s*,\s*\{[\s\S]*?"
+            r"background:\s*`linear-gradient\(90deg,\s*\$\{fillGradient\.start\}\s*0%,\s*\$\{fillGradient\.end\}\s*100%\)`[\s\S]*?"
+            r"WebkitBackgroundClip:\s*['\"]text['\"][\s\S]*?"
+            r"WebkitTextFillColor:\s*['\"]transparent['\"][\s\S]*?"
+            r"backgroundClip:\s*['\"]text['\"][\s\S]*?\}\s*\)\s*;",
+            "fillGradient branch applies CSS gradient text clipping",
+        ),
+        (
+            r"\}\s*else\s*\{\s*textStyle\.color\s*=\s*font\.color\s*;\s*\}",
+            "non-gradient branch falls back to font.color",
+        ),
+        (r"position:\s*['\"]absolute['\"]", "outer wrapper uses absolute position"),
+        (r"bottom:\s*position\.bottom", "outer wrapper uses position.bottom"),
+        (r"left:\s*0\s*,[\s\S]*?right:\s*0", "outer wrapper spans left/right"),
+        (r"display:\s*['\"]flex['\"]", "outer wrapper uses flex"),
+        (r"justifyContent:\s*['\"]center['\"]", "outer wrapper centers horizontally"),
+        (r"alignItems:\s*['\"]center['\"]", "outer wrapper centers vertically"),
+        (r"padding:\s*position\.containerPadding", "outer wrapper uses position.containerPadding"),
+        (r"opacity\s*,", "outer wrapper uses computed opacity"),
+        (
+            r"transform:\s*`\s*translate\(\$\{translateX\}px,\s*\$\{translateY\}px\)\s*`",
+            "outer wrapper uses computed translateX/Y",
+        ),
+        (r"zIndex:\s*200", "outer wrapper zIndex stays above thumbnails"),
+        (r"background:\s*background\.gradient", "background container uses background.gradient"),
+        (r"padding:\s*background\.padding", "background container uses background.padding"),
+        (r"borderRadius:\s*background\.borderRadius", "background container uses background.borderRadius"),
+        (r"maxWidth:\s*position\.maxWidth", "background container uses position.maxWidth"),
+        (r"backdropFilter:\s*background\.backdropFilter", "background container uses background.backdropFilter"),
+        (r"boxShadow:\s*background\.boxShadow", "background container uses background.boxShadow"),
+        (r"border:\s*background\.border", "background container uses background.border"),
+        (r"<p\s+style=\{textStyle\}>\s*\{segment\.text\}\s*</p>", "segment.text renders through textStyle paragraph"),
+    ]:
+        if not re.search(pattern, branch, re.DOTALL):
+            errors.append(f"Telop.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/テロップテンプレート/Telop.tsx background CSS text contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_file_coverage_lint() -> None:
     """PR-CM: Every .tsx file in メインテロップ/強調テロップ/ネガティブテロップ dirs must be imported by telopTemplateRegistry.tsx.
     Guards against new/renamed telop templates existing on disk but unreachable from TelopPlayer registry.
@@ -16692,6 +16771,7 @@ def main() -> int:
         test_telop_render_timing_and_slide_transform_contract_lint,
         test_telop_char_by_char_text_contract_lint,
         test_telop_svg_text_defs_filter_gradient_contract_lint,
+        test_telop_background_text_css_gradient_contract_lint,
         test_telop_template_registry_file_coverage_lint,
         test_telop_template_registry_metadata_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
