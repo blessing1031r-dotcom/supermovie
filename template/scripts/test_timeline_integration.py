@@ -20838,6 +20838,81 @@ def test_supermovie_init_videoconfig_ssot_docs_match_template_contract_lint() ->
     )
 
 
+def test_supermovie_init_preflight_source_schema_docs_match_script_contract_lint() -> None:
+    """PR-JT: supermovie-init preflight source.* docs must match preflight_video.py."""
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    init_skill_path = repo_root / "skills" / "supermovie-init" / "SKILL.md"
+    preflight_path = template_root / "scripts" / "preflight_video.py"
+    assert init_skill_path.is_file(), "skills/supermovie-init/SKILL.md not found"
+    assert preflight_path.is_file(), "template/scripts/preflight_video.py not found"
+
+    init_text = init_skill_path.read_text(encoding="utf-8")
+    preflight_text = preflight_path.read_text(encoding="utf-8")
+
+    errors: list[str] = []
+    for snippet in (
+        "project-config.json `source.*` に nested で書き込まれる",
+        "`raw` / `display` (rotation 適用後の表示解像度)",
+        "`rotation.raw` / `rotation.normalized` / `rotation.source`",
+        "Display Matrix / tags.rotate / root.rotation 全走査",
+        "`aspect` / `sar` / `dar` / `inferred_format`",
+        "16/9, 9/16, 1/1 を ±3% 許容",
+        "`fps.r_frame_rate` / `fps.avg_frame_rate` / `fps.vfr_metadata_suspect`",
+        "`codec.name` / `codec.pix_fmt` / `codec.field_order`",
+        "`color.transfer` / `color.primaries` / `color.hdr_suspect` / `color.dovi`",
+        "`streams.video` / `streams.audio` / `streams.subtitle` / `streams.data`",
+        "`risks` (= 検出された罠キー配列)",
+    ):
+        if snippet not in init_text:
+            errors.append(f"supermovie-init preflight source docs missing snippet: {snippet}")
+
+    for snippet in (
+        'project-config.json source.* schema (nested)',
+        'FORMAT_TOLERANCE = 0.03',
+        '"raw": {"width": raw_w, "height": raw_h}',
+        '"display": {"width": display_w, "height": display_h}',
+        '"rotation": {',
+        '"raw": raw_rotation',
+        '"normalized": rotation_normalized',
+        '"source": rotation_source',
+        '"aspect": round(aspect, 6)',
+        '"sar": sar',
+        '"dar": dar',
+        '"inferred_format": inferred_format',
+        'return {"r_frame_rate": r, "avg_frame_rate": a, "vfr_metadata_suspect": suspect}',
+        '"fps": {**fps, "render_fps": int(round(eval_fps(fps["r_frame_rate"])))}',
+        '"codec": {',
+        '"name": video.get("codec_name")',
+        '"pix_fmt": video.get("pix_fmt")',
+        '"field_order": video.get("field_order")',
+        '"color": {',
+        '"transfer": video.get("color_transfer")',
+        '"primaries": video.get("color_primaries")',
+        '"hdr_suspect": hdr_suspect',
+        '"dovi": dovi',
+        '"streams": {',
+        '"video": len(video_streams)',
+        '"audio": len(audio_streams)',
+        '"subtitle": len(subtitle_streams)',
+        '"data": len(data_streams)',
+        'source["risks"] = risks',
+        'cfg["source"] = source',
+        'cfg["resolution"] = {',
+        '"width": source["display"]["width"]',
+        '"height": source["display"]["height"]',
+        'cfg["format"] = chosen_format',
+    ):
+        if snippet not in preflight_text:
+            errors.append(f"preflight_video.py missing source schema/write-config snippet: {snippet}")
+
+    assert errors == [], (
+        "supermovie-init preflight source schema docs / script contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_public_export_surface_contract_lint() -> None:
     """PR-HM: telopTemplateRegistry module must expose only canonical registry API."""
     import re
@@ -24237,6 +24312,8 @@ def main() -> int:
         test_supermovie_init_project_config_telop_style_defaults_match_claude_lint,
         # PR-JS (supermovie-init videoConfig SSoT docs stay synced with template): 1 件
         test_supermovie_init_videoconfig_ssot_docs_match_template_contract_lint,
+        # PR-JT (supermovie-init preflight source.* docs stay synced with script): 1 件
+        test_supermovie_init_preflight_source_schema_docs_match_script_contract_lint,
         # PR-HM (telopTemplateRegistry module exports only canonical registry API): 1 件
         test_telop_template_registry_public_export_surface_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
