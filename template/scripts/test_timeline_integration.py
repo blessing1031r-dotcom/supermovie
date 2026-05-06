@@ -22321,6 +22321,97 @@ def test_supermovie_image_gen_plan_hearing_docs_match_candidate_contract_lint() 
     )
 
 
+def test_supermovie_image_gen_prompt_templates_match_type_and_aspect_contract_lint() -> None:
+    """PR-KR: supermovie-image-gen prompt templates must match type/aspect contract."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-image-gen" / "SKILL.md"
+    types_path = template_root / "src" / "InsertImage" / "types.ts"
+    assert skill_path.is_file(), "skills/supermovie-image-gen/SKILL.md not found"
+    assert types_path.is_file(), "template/src/InsertImage/types.ts not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    types_text = types_path.read_text(encoding="utf-8")
+    type_match = re.search(r"\btype\s*:\s*([^;]+);", types_text)
+    assert type_match is not None, "InsertImage/types.ts ImageSegment.type union not found"
+    allowed_types = set(re.findall(r"'([^']+)'", type_match.group(1)))
+
+    aspect_match = re.search(
+        r"### 3-1\. フォーマット別アスペクト比\s*([\s\S]*?)### 3-2\.",
+        skill_text,
+    )
+    prompt_match = re.search(
+        r"### 3-2\. タイプ別プロンプトテンプレート\s*([\s\S]*?)### 3-3\.",
+        skill_text,
+    )
+    command_match = re.search(
+        r"### 3-3\. 生成実行\s*```bash\n([\s\S]*?)\n```",
+        skill_text,
+    )
+    assert aspect_match is not None, "supermovie-image-gen aspect table section not found"
+    assert prompt_match is not None, "supermovie-image-gen prompt template section not found"
+    assert command_match is not None, "supermovie-image-gen generation command section not found"
+    aspect_text = aspect_match.group(1)
+    prompt_text = prompt_match.group(1)
+    command_text = command_match.group(1)
+
+    templates = {
+        typ: body.strip()
+        for typ, _label, body in re.findall(
+            r"^\*\*([a-z]+)（([^）]+)）:\*\*\s*```\n([\s\S]*?)\n```",
+            prompt_text,
+            re.MULTILINE,
+        )
+    }
+    expected_templates = {
+        "infographic": [
+            "Create a clean, modern infographic with the following content:",
+            "Style: minimalist, dark background (#1a1a2e), bright accent colors,",
+            "no text (text will be overlaid separately),",
+            "aspect ratio: [format], high contrast for video overlay",
+        ],
+        "photo": [
+            "Photorealistic image of [内容].",
+            "Style: cinematic lighting, shallow depth of field,",
+            "professional stock photo quality,",
+            "aspect ratio: [format]",
+        ],
+        "overlay": [
+            "Dark, moody background image representing [内容].",
+            "Style: abstract, dark tones with subtle color accents,",
+            "suitable as a video overlay with text on top,",
+            "aspect ratio: [format]",
+        ],
+    }
+
+    errors: list[str] = []
+    if set(templates) != allowed_types:
+        errors.append(f"supermovie-image-gen prompt template type drift: expected {sorted(allowed_types)}, got {sorted(templates)}")
+    for typ, snippets in expected_templates.items():
+        template = templates.get(typ, "")
+        for snippet in snippets:
+            if snippet not in template:
+                errors.append(f"supermovie-image-gen {typ} prompt template missing snippet: {snippet}")
+    for fmt, aspect in (("youtube", "16:9"), ("short", "9:16"), ("square", "1:1")):
+        if f"| `{fmt}` | `{aspect}` |" not in aspect_text:
+            errors.append(f"supermovie-image-gen aspect docs missing {fmt} -> {aspect}")
+    for snippet in (
+        "project-config.json の `format` に連動:",
+        "-a <アスペクト比>",
+        "--prompt \"<プロンプト>\"",
+    ):
+        haystack = aspect_text if snippet.startswith("project-config") else command_text
+        if snippet not in haystack:
+            errors.append(f"supermovie-image-gen prompt/aspect handoff missing snippet: {snippet}")
+
+    assert errors == [], (
+        "supermovie-image-gen prompt templates / type-aspect contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_slides_validation_docs_match_build_slide_data_lint() -> None:
     """PR-IM: supermovie-slides validation docs must match build_slide_data guards."""
     import re
@@ -26495,6 +26586,8 @@ def main() -> int:
         test_supermovie_image_gen_content_analysis_docs_match_image_segment_type_contract_lint,
         # PR-KQ (supermovie-image-gen plan hearing docs stay synced with candidate schema): 1 件
         test_supermovie_image_gen_plan_hearing_docs_match_candidate_contract_lint,
+        # PR-KR (supermovie-image-gen prompt templates stay synced with type/aspect contract): 1 件
+        test_supermovie_image_gen_prompt_templates_match_type_and_aspect_contract_lint,
         # PR-IM (supermovie-slides validation docs stay synced with build_slide_data guards): 1 件
         test_supermovie_slides_validation_docs_match_build_slide_data_lint,
         # PR-IN (supermovie-slides tone style docs stay synced with build_slide_data): 1 件
