@@ -15448,6 +15448,79 @@ def test_text_overlay_telop_config_ssot_contract_lint() -> None:
     )
 
 
+def test_telop_canonical_imports_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    telop_file = template_root / "src" / "テロップテンプレート" / "Telop.tsx"
+    assert telop_file.is_file(), "template/src/テロップテンプレート/Telop.tsx not found"
+    raw = telop_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    remotion_import = re.search(r"""import\s*\{(?P<body>[^}]*)\}\s*from\s*['"]remotion['"]""", text)
+    if remotion_import is None:
+        errors.append("Telop.tsx: no named import from remotion found")
+    else:
+        remotion_body = remotion_import.group("body")
+        for sym in ("useCurrentFrame", "interpolate", "spring", "useVideoConfig"):
+            if not re.search(rf"\b{sym}\b", remotion_body):
+                errors.append(f"Telop.tsx: {sym} not imported from remotion")
+    checks = [
+        (
+            r"""import\s+type\s*\{\s*TelopSegment\s*\}\s*from\s*['"]\.\/telopTypes['"]""",
+            "type TelopSegment from ./telopTypes",
+        ),
+        (
+            r"""import\s*\{\s*TELOP_CONFIG\s*\}\s*from\s*['"]\.\.\/videoConfig['"]""",
+            "TELOP_CONFIG from ../videoConfig",
+        ),
+    ]
+    errors.extend(desc for pattern, desc in checks if not re.search(pattern, text))
+    config_import = re.search(
+        r"""import\s+type\s*\{(?P<body>[^}]*)\}\s*from\s*['"]\.\/telopConfigTypes['"]""",
+        text,
+    )
+    if config_import is None:
+        errors.append("Telop.tsx: no type import from ./telopConfigTypes found")
+    else:
+        config_body = config_import.group("body")
+        for sym in ("TelopAnimationConfig", "TelopStyleConfig"):
+            if not re.search(rf"\b{sym}\b", config_body):
+                errors.append(f"Telop.tsx: {sym} not imported from ./telopConfigTypes")
+    styles_import = re.search(
+        r"""import\s*\{(?P<body>[^}]*)\}\s*from\s*['"]\.\/telopStyles['"]""",
+        text,
+    )
+    if styles_import is None:
+        errors.append("Telop.tsx: no named import from ./telopStyles found")
+    else:
+        styles_body = styles_import.group("body")
+        for sym in (
+            "template1_gradient",
+            "template2_purpleStroke",
+            "template3_gradientText",
+            "template4_negative",
+            "template4_negative_v2",
+            "template6_whiteGradientText",
+            "animation_none",
+            "animation_slideIn",
+            "animation_fadeOnly",
+            "animation_slideFromLeft",
+            "animation_fadeBlurFromBottom",
+            "animation_slideLeftFadeBlur",
+            "animation_fadeFromRight",
+            "animation_fadeFromLeft",
+            "animation_charByChar",
+        ):
+            if not re.search(rf"\b{sym}\b", styles_body):
+                errors.append(f"Telop.tsx: {sym} not imported from ./telopStyles")
+    assert errors == [], (
+        "template/src/テロップテンプレート/Telop.tsx import contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_legacy_template_selection_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17968,6 +18041,7 @@ def main() -> int:
         test_main_video_narration_mode_ssot_contract_lint,
         test_main_video_base_volume_none_branch_contract_lint,
         test_text_overlay_telop_config_ssot_contract_lint,
+        test_telop_canonical_imports_contract_lint,
         test_telop_legacy_template_selection_contract_lint,
         test_telop_legacy_animation_selection_contract_lint,
         test_telop_render_timing_and_slide_transform_contract_lint,
