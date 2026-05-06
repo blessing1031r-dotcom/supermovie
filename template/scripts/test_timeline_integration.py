@@ -13279,6 +13279,56 @@ def test_skill_frontmatter_argument_hint_shape_lint() -> None:
     )
 
 
+def test_skill_frontmatter_name_plugin_namespace_lint() -> None:
+    """PR-AN: every skills/*/SKILL.md frontmatter name must equal its directory name
+    and start with the plugin name prefix from .claude-plugin/plugin.json.
+    Only the YAML frontmatter block is inspected; body templates are ignored.
+    """
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    plugin = json.loads((repo_root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    plugin_name: str = plugin["name"]
+    skills_dir = repo_root / "skills"
+    errors: list[str] = []
+
+    for skill_path in sorted(skills_dir.iterdir()):
+        if not skill_path.is_dir():
+            continue
+        skill_md = skill_path / "SKILL.md"
+        if not skill_md.exists():
+            continue
+
+        content = skill_md.read_text(encoding="utf-8")
+        fm_m = re.match(r"^---\s*$\n(.*?)^---\s*$", content, re.MULTILINE | re.DOTALL)
+        if not fm_m:
+            errors.append(f"{skill_path.name}/SKILL.md: no YAML frontmatter found")
+            continue
+
+        name_m = re.search(r"^name:\s+(\S+)\s*$", fm_m.group(1), re.MULTILINE)
+        if not name_m:
+            errors.append(f"{skill_path.name}/SKILL.md: frontmatter missing 'name' field")
+            continue
+
+        name = name_m.group(1)
+        if name != skill_path.name:
+            errors.append(
+                f"{skill_path.name}/SKILL.md: frontmatter name {name!r} != "
+                f"directory name {skill_path.name!r}"
+            )
+        if not name.startswith(f"{plugin_name}-"):
+            errors.append(
+                f"{skill_path.name}/SKILL.md: name {name!r} must start with "
+                f"'{plugin_name}-' (plugin namespace prefix)"
+            )
+
+    assert not errors, (
+        f"SKILL.md name/namespace violations ({len(errors)}):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13491,6 +13541,8 @@ def main() -> int:
         test_claude_terms_table_canonical_pairs_lint,
         # PR-AM (SKILL.md frontmatter argument-hint shape lint): 1 件
         test_skill_frontmatter_argument_hint_shape_lint,
+        # PR-AN (SKILL.md frontmatter name == dir name + plugin namespace prefix lint): 1 件
+        test_skill_frontmatter_name_plugin_namespace_lint,
     ]
     failed = []
     for t in tests:
