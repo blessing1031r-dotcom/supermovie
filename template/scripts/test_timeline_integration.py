@@ -18232,6 +18232,69 @@ def test_supermovie_slides_command_docs_match_script_cli_lint() -> None:
     )
 
 
+def test_supermovie_slides_frame_conversion_docs_match_build_slide_data_lint() -> None:
+    """PR-IP: supermovie-slides frame conversion docs must match build_slide_data."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-slides" / "SKILL.md"
+    script_path = template_root / "scripts" / "build_slide_data.py"
+    assert skill_path.is_file(), "skills/supermovie-slides/SKILL.md not found"
+    assert script_path.is_file(), "template/scripts/build_slide_data.py not found"
+
+    script_text = script_path.read_text(encoding="utf-8")
+    script_required_patterns = {
+        "timeline helper import": r"ms_to_playback_frame\s+as\s+_msf_raw",
+        "FPS wrapper": (
+            r"def\s+ms_to_playback_frame\s*\(\s*ms:\s*int,\s*cut_segments:\s*list\[dict\]\s*\)"
+            r"\s*->\s*int\s*\|\s*None:\s*[\s\S]*?return\s+_msf_raw\s*\(\s*ms,\s*FPS,\s*cut_segments\s*\)"
+        ),
+        "topic start conversion": r"pb_start\s*=\s*ms_to_playback_frame\s*\(\s*first\[\s*[\"']start[\"']\s*\],\s*cut_segments\s*\)",
+        "topic end conversion": r"pb_end\s*=\s*ms_to_playback_frame\s*\(\s*last\[\s*[\"']end[\"']\s*\],\s*cut_segments\s*\)",
+        "segment start conversion": r"pb_start\s*=\s*ms_to_playback_frame\s*\(\s*seg\[\s*[\"']start[\"']\s*\],\s*cut_segments\s*\)",
+        "segment end conversion": r"pb_end\s*=\s*ms_to_playback_frame\s*\(\s*seg\[\s*[\"']end[\"']\s*\],\s*cut_segments\s*\)",
+        "plan word start conversion": r"ms_start\s*=\s*words\[sw\]\.get\s*\(\s*[\"']start[\"']\s*,\s*0\s*\)",
+        "plan word end conversion": r"ms_end\s*=\s*words\[ew\]\.get\s*\(\s*[\"']end[\"']\s*,\s*0\s*\)",
+        "cut total source": r"cut_total\s*=\s*cut_segments\[-1\]\[\s*[\"']playbackEnd[\"']\s*\]\s*if\s*cut_segments\s*else\s*None",
+        "cut total clamp": r"pb_end\s*=\s*min\s*\(\s*pb_end,\s*cut_total\s*\)",
+    }
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    frame_section_match = re.search(
+        r"frame 計算:\s*([\s\S]*?)トーン別の見た目:",
+        skill_text,
+    )
+    assert frame_section_match is not None, "supermovie-slides frame calculation section not found"
+    design_section_match = re.search(
+        r"### 設計の根拠\s*([\s\S]*?)## 完了時の報告フォーマット",
+        skill_text,
+    )
+    assert design_section_match is not None, "supermovie-slides frame conversion design rationale not found"
+    docs_text = frame_section_match.group(1) + "\n" + design_section_match.group(1)
+    expected_doc_snippets = {
+        "cutData conversion": "transcript の word.start (ms) → cutData 経由で playback frame に変換",
+        "no cut fallback": "cutData が存在しない場合は単純に `ms / 1000 * FPS`",
+        "plan frame owner": "**LLM 経路は word index ベースの plan を返し、frame は build script が変換する**",
+        "no LLM frames": "LLM に frame を返させない理由",
+        "word index conversion": "word index → frame 変換",
+        "timeline inputs": "cutData / VAD 適用、playback timeline 計算",
+    }
+
+    errors: list[str] = []
+    for name, pattern in script_required_patterns.items():
+        if not re.search(pattern, script_text):
+            errors.append(f"build_slide_data.py frame conversion implementation missing: {name}")
+    for name, snippet in expected_doc_snippets.items():
+        if snippet not in docs_text and snippet not in skill_text:
+            errors.append(f"supermovie-slides frame conversion docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-slides frame conversion docs / build_slide_data contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
     """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
     import re
@@ -21708,6 +21771,8 @@ def main() -> int:
         test_supermovie_slides_tone_style_docs_match_build_slide_data_lint,
         # PR-IO (supermovie-slides command docs stay synced with slide script CLI): 1 件
         test_supermovie_slides_command_docs_match_script_cli_lint,
+        # PR-IP (supermovie-slides frame conversion docs stay synced with build_slide_data): 1 件
+        test_supermovie_slides_frame_conversion_docs_match_build_slide_data_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
