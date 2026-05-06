@@ -19121,6 +19121,35 @@ def test_slide_data_exports_typed_empty_array_lint() -> None:
     )
 
 
+def test_slide_data_public_export_surface_contract_lint() -> None:
+    """PR-HF: slideData module must export only the slideData array."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    data_file = template_root / "src" / "Slides" / "slideData.ts"
+    assert data_file.is_file(), "template/src/Slides/slideData.ts not found"
+    raw = data_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/Slides/slideData.ts must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*\{""", text, re.MULTILINE), (
+        "template/src/Slides/slideData.ts must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    assert exported == {"slideData"}, (
+        "template/src/Slides/slideData.ts public export surface drift: "
+        f"expected ['slideData'], got {sorted(exported)}"
+    )
+
+
 def test_slide_data_placeholder_empty_array_contract_lint() -> None:
     import re
 
@@ -20047,6 +20076,8 @@ def main() -> int:
         test_title_segment_schema_and_title_data_typed_export_contract_lint,
         test_title_data_placeholder_empty_array_and_toframe_export_contract_lint,
         test_slide_data_exports_typed_empty_array_lint,
+        # PR-HF (slideData module exports only the slideData array): 1 件
+        test_slide_data_public_export_surface_contract_lint,
         test_slide_data_placeholder_empty_array_contract_lint,
         test_insert_image_data_typed_export_and_toframe_fps_contract_lint,
         test_insert_image_data_placeholder_empty_array_and_toframe_export_contract_lint,
