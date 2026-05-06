@@ -564,6 +564,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 263 | `template/src/Title/index.ts` の public export surface が `TitleSequence` / `TitleSegment` に限定され、default export を持たないことを lint (`test_title_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GU)。Title barrel の API surface creep を保護 | PR-GU |
 | 264 | `template/src/InsertImage/index.ts` の public export surface が `InsertImage` / `ImageSequence` / `ImageSegment` に限定され、default export を持たないことを lint (`test_insert_image_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GV)。InsertImage barrel の API surface creep を保護 | PR-GV |
 | 265 | `template/src/Narration/index.ts` の public export surface が `NarrationAudio` / `NarrationAudioWithMode` / `narrationData` / `getNarrationMode` / `invalidateNarrationMode` / `NARRATION_LEGACY_FILE` / `useNarrationMode` / `NarrationSegment` / `NarrationMode` に限定され、default export を持たないことを lint (`test_narration_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GW)。Narration barrel の API surface creep を保護 | PR-GW |
+| 266 | `template/src/テロップテンプレート/index.tsx` の public export surface が `Telop` / `TelopPlayer` / `telopData` / `TOTAL_FRAMES` / `FPS` / `TelopSegment` / `subtitleConfig` に限定され、default export を持たないことを lint (`test_telop_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GX)。Telop barrel の API surface creep を保護 | PR-GX |
 
 ## Test Requirements
 

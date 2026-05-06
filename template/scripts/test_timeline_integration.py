@@ -15084,6 +15084,64 @@ def test_narration_barrel_public_export_surface_contract_lint() -> None:
     )
 
 
+def test_telop_barrel_public_export_surface_contract_lint() -> None:
+    """PR-GX: Telop barrel must expose only the stable telop API."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    barrel_path = template_root / "src" / "テロップテンプレート" / "index.tsx"
+    assert barrel_path.is_file(), "template/src/テロップテンプレート/index.tsx not found"
+    raw = barrel_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/テロップテンプレート/index.tsx must not use a default export"
+    )
+    expected = {
+        ("value", "./Telop"): {"Telop"},
+        ("value", "./TelopPlayer"): {"TelopPlayer"},
+        ("value", "./telopData"): {"telopData", "TOTAL_FRAMES", "FPS"},
+        ("type", "./telopTypes"): {"TelopSegment"},
+        ("value", "./telopStyles"): {"subtitleConfig"},
+    }
+    export_block_re = re.compile(
+        r"""export\s+(?P<kind>type\s+)?\{(?P<body>[^}]*)\}\s*from\s*['"](?P<source>[^'"]+)['"]\s*;""",
+        re.DOTALL,
+    )
+    actual: dict[tuple[str, str], set[str]] = {}
+    errors: list[str] = []
+    for match in export_block_re.finditer(text):
+        kind = "type" if match.group("kind") else "value"
+        source = match.group("source")
+        names = {
+            token.strip().split(" as ", 1)[0].strip()
+            for token in match.group("body").replace("\n", " ").split(",")
+            if token.strip()
+        }
+        actual.setdefault((kind, source), set()).update(names)
+    leftovers = export_block_re.sub("", text)
+    unsupported = [line.strip() for line in leftovers.splitlines() if line.strip()]
+    if unsupported:
+        errors.append(f"unsupported Telop barrel content: {unsupported}")
+    missing_keys = sorted(set(expected) - set(actual))
+    extra_keys = sorted(set(actual) - set(expected))
+    if missing_keys:
+        errors.append(f"missing Telop barrel export source(s): {missing_keys}")
+    if extra_keys:
+        errors.append(f"extra Telop barrel export source(s): {extra_keys}")
+    for key, names in expected.items():
+        exported = actual.get(key, set())
+        if exported != names:
+            errors.append(
+                f"Telop barrel export drift for {key}: "
+                f"expected {sorted(names)}, got {sorted(exported)}"
+            )
+    assert errors == [], (
+        "template/src/テロップテンプレート/index.tsx public export surface drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_vitest_setup_files_resolve_lint() -> None:
     """PR-BU: vitest.config.ts setupFiles entries must resolve to existing files.
     Catches renamed/moved setup files that silently break 'npm run test:react'.
@@ -19646,6 +19704,8 @@ def main() -> int:
         test_insert_image_barrel_public_export_surface_contract_lint,
         # PR-GW (Narration barrel exports only the stable narration API): 1 件
         test_narration_barrel_public_export_surface_contract_lint,
+        # PR-GX (Telop barrel exports only the stable telop API): 1 件
+        test_telop_barrel_public_export_surface_contract_lint,
         test_vitest_setup_files_resolve_lint,
         # PR-GB (Vitest React discovery config + npm script lint): 1 件
         test_vitest_react_test_discovery_contract_lint,
