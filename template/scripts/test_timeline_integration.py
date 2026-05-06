@@ -18279,6 +18279,95 @@ def test_supermovie_transcript_fix_output_schema_docs_match_claude_transcript_co
     )
 
 
+def test_supermovie_transcript_fix_completion_handoff_docs_match_cut_handoff_contract_lint() -> None:
+    """PR-KF: transcript-fix completion/map docs must match cut handoff."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    transcript_fix_skill_path = repo_root / "skills" / "supermovie-transcript-fix" / "SKILL.md"
+    cut_skill_path = repo_root / "skills" / "supermovie-cut" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    assert transcript_fix_skill_path.is_file(), "skills/supermovie-transcript-fix/SKILL.md not found"
+    assert cut_skill_path.is_file(), "skills/supermovie-cut/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+
+    transcript_fix_text = transcript_fix_skill_path.read_text(encoding="utf-8")
+    cut_text = cut_skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    completion_match = re.search(
+        r"## 完了時の報告フォーマット\s*```([\s\S]*?)```\s*\n---\n\n## エラーハンドリング",
+        transcript_fix_text,
+    )
+    integration_match = re.search(
+        r"## 連携マップ\s*```([\s\S]*?)```\s*$",
+        transcript_fix_text,
+    )
+    assert completion_match is not None, "supermovie-transcript-fix completion report block not found"
+    assert integration_match is not None, "supermovie-transcript-fix integration map block not found"
+    completion_text = completion_match.group(1)
+    integration_text = integration_match.group(1)
+
+    errors: list[str] = []
+    required_completion_snippets = {
+        "done heading": "✅ 文字起こし修正完了",
+        "summary heading": "📊 修正サマリー:",
+        "dict summary": "辞書修正: <N>箇所（完全一致<n> + 部分一致<n>）",
+        "llm summary": "LLM修正: <N>箇所",
+        "filler summary": "フィラー除去: <N>個（保持: <n>個）",
+        "rate summary": "修正率: <X>%（全<total>ワード中）",
+        "main fixes": "📝 主な修正:",
+        "fixed save": "transcript_fixed.json（修正済み）",
+        "corrections save": "transcript_corrections.json（修正履歴）",
+        "confirm next step": "→ transcript_fixed.json を確認",
+        "cut next step": "→ /supermovie-cut で不要区間カット",
+    }
+    required_integration_snippets = {
+        "transcribe": "/supermovie-transcribe        ← 文字起こし（ローカル無料）",
+        "raw transcript": "↓ transcript.json",
+        "current step": "/supermovie-transcript-fix    ← ★ここ: 誤字修正（辞書 + Claude LLM）",
+        "fixed transcript": "↓ transcript_fixed.json",
+        "cut": "/supermovie-cut               ← 不要区間カット（VAD + LLM分析）",
+        "cut data": "↓ cutData.ts",
+        "subtitles": "/supermovie-subtitles         ← テロップ＆タイトル生成",
+        "slides": "/supermovie-slides            ← スライド生成",
+        "narration": "/supermovie-narration         ← ナレーション生成",
+        "image gen": "/supermovie-image-gen         ← 画像生成 + 配置データ",
+        "se": "/supermovie-se                ← SE自動配置",
+        "preview": "npm run dev                   ← プレビュー",
+    }
+    required_claude_snippets = {
+        "workflow transcript fix": "/supermovie-transcript-fix    ← 誤字修正（辞書 + Claude LLM）",
+        "workflow fixed": "    ↓ transcript_fixed.json",
+        "workflow confirmation": "    ↓ （ユーザー確認ポイント）",
+        "workflow cut": "/supermovie-cut               ← 不要区間カット（VAD + LLM分析）",
+        "fixed transcript path": "| 文字起こし修正済み | `<PROJECT>/transcript_fixed.json` |",
+        "corrections path": "| 修正履歴 | `<PROJECT>/transcript_corrections.json` |",
+        "canonical fixed name": "| `transcript_fixed.json` | transcript_corrected.json |",
+    }
+    required_cut_snippets = {
+        "transcript-fix prerequisite": "- [ ] `/supermovie-transcript-fix` で誤字修正済み",
+        "fixed transcript prerequisite": "- [ ] `transcript_fixed.json` が存在し `words` 配列がある",
+        "missing fixed recovery": "| transcript_fixed.json がない | `/supermovie-transcript-fix` を促す |",
+    }
+    for name, snippet in required_completion_snippets.items():
+        if snippet not in completion_text:
+            errors.append(f"supermovie-transcript-fix completion docs missing {name}: {snippet}")
+    for name, snippet in required_integration_snippets.items():
+        if snippet not in integration_text:
+            errors.append(f"supermovie-transcript-fix integration map missing {name}: {snippet}")
+    for name, snippet in required_claude_snippets.items():
+        if snippet not in claude_text:
+            errors.append(f"CLAUDE workflow/file path docs missing {name}: {snippet}")
+    for name, snippet in required_cut_snippets.items():
+        if snippet not in cut_text:
+            errors.append(f"supermovie-cut handoff docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-transcript-fix completion/handoff docs / cut handoff contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_cut_vad_result_schema_docs_match_claude_path_contract_lint() -> None:
     """PR-JM: supermovie-cut vad_result docs must match VAD runner and CLAUDE path contract."""
     import json
@@ -25128,6 +25217,8 @@ def main() -> int:
         test_supermovie_transcribe_completion_handoff_docs_match_workflow_contract_lint,
         # PR-JL (supermovie-transcript-fix output docs stay synced with CLAUDE transcript contract): 1 件
         test_supermovie_transcript_fix_output_schema_docs_match_claude_transcript_contract_lint,
+        # PR-KF (supermovie-transcript-fix completion/map docs stay synced with cut handoff): 1 件
+        test_supermovie_transcript_fix_completion_handoff_docs_match_cut_handoff_contract_lint,
         # PR-JM (supermovie-cut VAD result docs stay synced with CLAUDE path contract): 1 件
         test_supermovie_cut_vad_result_schema_docs_match_claude_path_contract_lint,
         # PR-JN (supermovie-cut docs stay synced with timeline.py VAD mapping helpers): 1 件
