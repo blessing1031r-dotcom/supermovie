@@ -12261,8 +12261,14 @@ def test_observability_artifact_path_root_priority_policy_doc_lint() -> None:
     )
     assert oq_m, "docs: §Open Questions section not found"
     oq_body = oq_m.group("body")
-    assert "resolved" in oq_body and "artifact path" in oq_body.lower(), (
-        "docs §Open Questions: artifact path item not marked resolved"
+    artifact_path_bullets = [
+        line for line in oq_body.splitlines() if "artifact path" in line.lower()
+    ]
+    assert artifact_path_bullets, (
+        "docs §Open Questions: no bullet containing 'artifact path' found"
+    )
+    assert any("resolved" in line for line in artifact_path_bullets), (
+        "docs §Open Questions: artifact path bullet not marked resolved"
     )
 
 
