@@ -17,8 +17,10 @@ Senior video producer として、文字起こし結果から自動ナレーシ�
 ## Remotion Bridge Note
 
 Remotion の `.tsx` component / Composition / Sequence / Audio / `staticFile` /
-animation / media timing を変更・新規設計する場合だけ、official Remotion
-Codex plugin の `remotion-best-practices` を参照する。
+animation / media timing を変更・新規設計する場合は、まず
+`/supermovie-remotion-bridge` を開く。
+bridge skill の判定で必要な場合だけ、official Remotion Codex plugin の
+`remotion-best-practices` を参照する。
 SuperMovie の schema、file path、Japanese workflow、Python lint gate はこの
 repo を source of truth とする。
 
