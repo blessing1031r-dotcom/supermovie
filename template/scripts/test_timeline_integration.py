@@ -20300,6 +20300,95 @@ def test_supermovie_remotion_bridge_skill_docs_contract_lint() -> None:
     )
 
 
+def test_supermovie_skill_creator_scaffold_docs_match_plugin_skill_lint() -> None:
+    """PR-KZ: supermovie-skill-creator scaffold must match plugin skill lint contracts."""
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    skill_path = repo_root / "skills" / "supermovie-skill-creator" / "SKILL.md"
+    manifest_path = repo_root / ".claude-plugin" / "plugin.json"
+    obs_path = repo_root / "docs" / "OBSERVABILITY.md"
+    for path in (skill_path, manifest_path, obs_path):
+        assert path.is_file(), f"{path.relative_to(repo_root)} not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    obs_text = obs_path.read_text(encoding="utf-8")
+    errors: list[str] = []
+
+    if manifest.get("skills") != "./skills/":
+        errors.append(f"plugin.json skills must be './skills/', got {manifest.get('skills')!r}")
+
+    template_match = re.search(
+        r"```yaml\n---\n(.*?)---\n\n# SuperMovie <Name>",
+        skill_text,
+        re.DOTALL,
+    )
+    if not template_match:
+        errors.append("supermovie-skill-creator missing canonical yaml scaffold block")
+    else:
+        fm_block = template_match.group(1)
+        frontmatter_keys = [
+            line.split(":", 1)[0]
+            for line in fm_block.splitlines()
+            if re.match(r"^[A-Za-z0-9_-]+:", line)
+        ]
+        expected_keys = [
+            "name",
+            "description",
+            "argument-hint",
+            "allowed-tools",
+            "effort",
+        ]
+        if frontmatter_keys != expected_keys:
+            errors.append(
+                "skill creator scaffold frontmatter key order drift: "
+                f"expected {expected_keys}, got {frontmatter_keys}"
+            )
+
+    required_skill_snippets = {
+        "name scaffold": "name: supermovie-<name>",
+        "description block": "description: |",
+        "trigger phrase": "「<トリガーキーワード>」と言われたときに使用。",
+        "argument hint": "argument-hint: <必須引数> [任意引数]",
+        "allowed tools": "allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion",
+        "effort": "effort: medium",
+        "frontmatter checklist": "name, description, argument-hint, allowed-tools, effort が canonical order で全てある",
+        "repo skills mkdir": "mkdir -p skills/supermovie-<name>",
+        "plugin skills root": '`.claude-plugin/plugin.json` の `skills: "./skills/"` が discovery root',
+        "skill path": "`skills/supermovie-<name>/SKILL.md`",
+        "readme sync": "`README.md` のコマンド表に `/supermovie-<name>` を追加",
+        "observability sync": "contract lint を追加した場合は `docs/OBSERVABILITY.md` に行を追加",
+        "quality gate": "`python3 template/scripts/test_timeline_integration.py` が pass する",
+    }
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-skill-creator missing {name}: {snippet}")
+
+    forbidden_skill_snippets = {
+        "legacy claude skills path": ".claude/skills/supermovie-<name>",
+    }
+    for name, snippet in forbidden_skill_snippets.items():
+        if snippet in skill_text:
+            errors.append(f"supermovie-skill-creator still references {name}: {snippet}")
+
+    required_obs_snippets = {
+        "step": "| 372 | `skills/supermovie-skill-creator/SKILL.md`",
+        "test name": "test_supermovie_skill_creator_scaffold_docs_match_plugin_skill_lint",
+        "pr code": "PR-KZ",
+        "skill root": "`skills: \"./skills/\"`",
+    }
+    for name, snippet in required_obs_snippets.items():
+        if snippet not in obs_text:
+            errors.append(f"OBSERVABILITY step 372 missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-skill-creator scaffold / plugin skill contract docs drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -27102,6 +27191,8 @@ def main() -> int:
         test_remotion_bridge_note_in_remotion_facing_skills_lint,
         # PR-KY (supermovie-remotion-bridge advisory skill preserves integration boundary): 1 件
         test_supermovie_remotion_bridge_skill_docs_contract_lint,
+        # PR-KZ (supermovie-skill-creator scaffold follows plugin skill contracts): 1 件
+        test_supermovie_skill_creator_scaffold_docs_match_plugin_skill_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
