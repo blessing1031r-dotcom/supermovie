@@ -16026,6 +16026,74 @@ def test_telop_template_registry_entry_cardinality_contract_lint() -> None:
     )
 
 
+def test_telop_template_registry_component_imports_contract_lint() -> None:
+    import re
+    from collections import Counter
+
+    template_root = Path(__file__).parents[1]
+    registry_path = template_root / "src" / "テロップテンプレート" / "telopTemplateRegistry.tsx"
+    assert registry_path.is_file(), "telopTemplateRegistry.tsx not found"
+    raw = registry_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+    import_rows = re.findall(
+        r"^\s*import\s*\{\s*(\w+)(?:\s+as\s+(\w+))?\s*\}\s*"
+        r"from\s*['\"]\.\./(メインテロップ|強調テロップ|ネガティブテロップ)/([^'\"]+)['\"]\s*;",
+        text,
+        re.MULTILINE,
+    )
+    entry_rows = re.findall(
+        r"^\s*(\w+):\s*\{\s*category:\s*['\"](\w+)['\"]\s*,\s*"
+        r"displayName:\s*['\"]([^'\"]+)['\"]\s*,\s*"
+        r"Component:\s*(\w+)\s+as\s+TelopComponent\s*\}\s*,",
+        text,
+        re.MULTILINE,
+    )
+
+    telop_dirs = ("メインテロップ", "強調テロップ", "ネガティブテロップ")
+    expected_imports: set[tuple[str, str]] = set()
+    for dir_name in telop_dirs:
+        dir_path = template_root / "src" / dir_name
+        if dir_path.is_dir():
+            expected_imports.update((dir_name, path.stem) for path in dir_path.glob("*.tsx"))
+
+    errors: list[str] = []
+    if len(import_rows) != 30:
+        errors.append(f"component import count changed: expected 30, got {len(import_rows)}")
+
+    expected_dir_counts = {"メインテロップ": 12, "強調テロップ": 13, "ネガティブテロップ": 5}
+    dir_counts = Counter(dir_name for _, _, dir_name, _ in import_rows)
+    if dict(dir_counts) != expected_dir_counts:
+        errors.append(
+            f"component import dir counts changed: expected {expected_dir_counts}, got {dict(dir_counts)}"
+        )
+
+    imported_paths = {(dir_name, stem) for _, _, dir_name, stem in import_rows}
+    if imported_paths != expected_imports:
+        missing = sorted(expected_imports - imported_paths)
+        extra = sorted(imported_paths - expected_imports)
+        errors.append(f"component imports mismatch: missing={missing}, extra={extra}")
+
+    local_names = [alias or exported for exported, alias, _, _ in import_rows]
+    duplicate_locals = sorted(name for name, count in Counter(local_names).items() if count > 1)
+    if duplicate_locals:
+        errors.append(f"duplicate component import local names: {duplicate_locals}")
+
+    component_refs = [component_ref for _, _, _, component_ref in entry_rows]
+    if set(component_refs) != set(local_names):
+        missing_refs = sorted(set(local_names) - set(component_refs))
+        unknown_refs = sorted(set(component_refs) - set(local_names))
+        errors.append(
+            f"registry Component refs must match component imports: missing_refs={missing_refs}, unknown_refs={unknown_refs}"
+        )
+
+    assert errors == [], (
+        "telopTemplateRegistry.tsx component import contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_type_surface_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -18376,6 +18444,7 @@ def main() -> int:
         test_telop_template_registry_file_coverage_lint,
         test_telop_template_registry_metadata_contract_lint,
         test_telop_template_registry_entry_cardinality_contract_lint,
+        test_telop_template_registry_component_imports_contract_lint,
         test_telop_template_registry_type_surface_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
