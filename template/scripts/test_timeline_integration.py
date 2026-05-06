@@ -8788,6 +8788,226 @@ def test_observability_path_policy_placeholder_set_docs_code_lint() -> None:
     )
 
 
+def test_observability_trace_context_precedence_semantics_lint() -> None:
+    """`docs/OBSERVABILITY.md §env precedence` table semantic claims ↔
+    `resolve_run_context()` runtime behavior 双方向 lint
+    (Codex 09:01 PR-CG verdict、PR-BI Trace Context env name + cap lint と
+    相補な precedence semantic axis)。
+
+    docs §env precedence は 3 row の precedence claims を持つ:
+      run_id: 設定 + 非空 → そのまま採用、未設定 → `uuid.uuid4().hex`
+              (32 char) auto-generate
+      parent_run_id: 設定 + 非空 → そのまま採用、未設定 → `null`
+                     (auto-generate しない)
+      step_id: 設定 + 非空 → そのまま採用、未設定 → `null`
+               (auto-generate しない)
+    cap: 全 3 field に `MAX_TRACE_CONTEXT_VALUE_LEN = 128` 適用、超過時は
+    `TraceContextError` raise (truncation せず error)。
+    rationale: parent / step を auto-generate しない理由 = 関係性情報なので
+    呼出元 (orchestrator) が明示注入していない時に偽値を作ると trace tree
+    が破綻するため。
+
+    docs §関連 test には PR-E 由来の 3 件:
+      `test_observability_resolve_run_context_uses_env`
+      `test_observability_resolve_run_context_generates_when_missing`
+      `test_observability_resolve_run_context_no_generate`
+
+    PR-BI は env 名 + cap 値の双方向 lint まで止まっており、precedence
+    semantic (run_id auto-gen / parent/step never auto-gen / cap 超過 raise)
+    が docs claims 通りに helper で動いているかは静的に検証されていなかった。
+    drift risk:
+      (a) helper が parent / step を generate_if_missing=True で auto-gen
+          するように改修されると docs rationale (trace tree 破綻防止) が
+          壊れる
+      (b) run_id auto-gen が uuid.uuid4().hex (32 char) でなく別 format
+          (uuid7 / 短縮 hash 等) に変わると downstream parser drift
+      (c) cap 超過時に truncate 動作に変わると docs `TraceContextError raise`
+          contract 違反
+      (d) docs 関連 test 名 が rename / 削除で docs reference 切れ
+
+    本 lint は 5-part validation:
+      1. docs §env precedence section に 3 row precedence claims literal
+         + cap value + rationale text + 関連 test 3 件 docs presence
+      2. helper signature: `resolve_run_context()` 関数存在 + kwargs に
+         `generate_if_missing` 含む (rename / 削除 fail-loud)
+      3. run_id auto-gen: env 全 unset + generate_if_missing=True で
+         呼び、戻り値 run_id が uuid4 hex 32 char 形式 (`re.match(r"^[0-9a-f]{32}$")`) +
+         parent_run_id / step_id は None (parent/step never auto-gen 契約)
+      4. env pass-through: 3 env 全設定 (短い値) で呼び、戻り値 3 field
+         が env そのまま採用される
+      5. cap 違反 raise: env に cap 超過 (129 char) を設定して呼び、
+         `TraceContextError` raise (truncation せず error 契約) を全 3
+         field 個別に検証
+
+    PR-BI Trace Context env name + cap 双方向 lint と相補、本 lint は
+    runtime semantics の docs/code drift 検出という別 axis を fix。
+    """
+    import os as _os_trace
+    import re as _re_trace
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+
+    # part 1: docs §env precedence section literal presence
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    md = obs_md.read_text(encoding="utf-8")
+    section_re = _re_trace.compile(
+        r"^### env precedence[^\n]*\n(?P<body>.*?)"
+        r"(?=^## |^### )",
+        _re_trace.MULTILINE | _re_trace.DOTALL,
+    )
+    sec_match = section_re.search(md)
+    assert sec_match is not None, (
+        "`### env precedence` の section が docs §Trace Context "
+        "Convention に見つからない (heading rename / 構造変更?)"
+    )
+    body = sec_match.group("body")
+
+    DOCS_LITERALS_SECTION = [
+        "SUPERMOVIE_RUN_ID",
+        "SUPERMOVIE_PARENT_RUN_ID",
+        "SUPERMOVIE_STEP_ID",
+        "uuid.uuid4().hex",
+        "32 char",
+        "auto-generate しない",
+        "MAX_TRACE_CONTEXT_VALUE_LEN = 128",
+        "TraceContextError",
+        "trace tree が破綻",
+    ]
+    for lit in DOCS_LITERALS_SECTION:
+        assert lit in body, (
+            f"docs §env precedence section に precedence semantic "
+            f"contract literal '{lit}' が見つからない (precedence / "
+            f"cap / rationale docs spec drift?)"
+        )
+
+    # 関連 test 3 件 docs presence
+    DOCS_RELATED_TESTS = [
+        "test_observability_resolve_run_context_uses_env",
+        "test_observability_resolve_run_context_generates_when_missing",
+        "test_observability_resolve_run_context_no_generate",
+    ]
+    for tname in DOCS_RELATED_TESTS:
+        assert tname in md, (
+            f"docs/OBSERVABILITY.md §関連 test (PR-E) に test name "
+            f"'{tname}' が見つからない (関連 test 列挙削除?)"
+        )
+
+    # part 2: helper signature audit
+    sys.path.insert(
+        0, str(repo_root / "template" / "scripts")
+    )
+    try:
+        import _observability as _obs
+
+        assert hasattr(_obs, "resolve_run_context"), (
+            "`_observability.resolve_run_context` 関数が見つからない "
+            "(rename / 削除 drift?)"
+        )
+        rrc = _obs.resolve_run_context
+        import inspect
+
+        sig = inspect.signature(rrc)
+        param_names = set(sig.parameters.keys())
+        assert "generate_if_missing" in param_names, (
+            f"`resolve_run_context()` kwargs に `generate_if_missing` が "
+            f"見つからない / 実測={sorted(param_names)} (signature drift?)"
+        )
+
+        # part 3-5: in-process behavior audit (env 退避 + 復元)
+        TRACE_ENVS = (
+            "SUPERMOVIE_RUN_ID",
+            "SUPERMOVIE_PARENT_RUN_ID",
+            "SUPERMOVIE_STEP_ID",
+        )
+        saved_env: dict[str, str | None] = {
+            k: _os_trace.environ.get(k) for k in TRACE_ENVS
+        }
+        try:
+            # part 3: env 全 unset + generate_if_missing=True
+            for k in TRACE_ENVS:
+                _os_trace.environ.pop(k, None)
+            ctx = rrc(generate_if_missing=True)
+            run_id = ctx.get("run_id")
+            assert isinstance(run_id, str) and _re_trace.match(
+                r"^[0-9a-f]{32}$", run_id
+            ), (
+                f"resolve_run_context() env 全 unset + "
+                f"generate_if_missing=True で run_id が uuid4 hex 32 char "
+                f"形式でない: {run_id!r} (auto-gen 形式 drift?)"
+            )
+            assert ctx.get("parent_run_id") is None, (
+                f"resolve_run_context() env 全 unset で parent_run_id が "
+                f"None でない: {ctx.get('parent_run_id')!r} "
+                f"(parent never auto-gen 契約 drift / docs rationale "
+                f"'trace tree 破綻防止' 違反?)"
+            )
+            assert ctx.get("step_id") is None, (
+                f"resolve_run_context() env 全 unset で step_id が "
+                f"None でない: {ctx.get('step_id')!r} (step never "
+                f"auto-gen 契約 drift?)"
+            )
+
+            # part 4: env 全設定 (短い値) → そのまま採用
+            for k in TRACE_ENVS:
+                _os_trace.environ.pop(k, None)
+            _os_trace.environ["SUPERMOVIE_RUN_ID"] = "rid-abc"
+            _os_trace.environ["SUPERMOVIE_PARENT_RUN_ID"] = "parent-xyz"
+            _os_trace.environ["SUPERMOVIE_STEP_ID"] = "step-001"
+            ctx = rrc(generate_if_missing=True)
+            assert ctx.get("run_id") == "rid-abc", (
+                f"env SUPERMOVIE_RUN_ID 設定時、run_id は env value "
+                f"そのまま採用すべき: {ctx.get('run_id')!r}"
+            )
+            assert ctx.get("parent_run_id") == "parent-xyz", (
+                f"env SUPERMOVIE_PARENT_RUN_ID 設定時、parent_run_id は "
+                f"env value そのまま採用すべき: "
+                f"{ctx.get('parent_run_id')!r}"
+            )
+            assert ctx.get("step_id") == "step-001", (
+                f"env SUPERMOVIE_STEP_ID 設定時、step_id は env value "
+                f"そのまま採用すべき: {ctx.get('step_id')!r}"
+            )
+
+            # part 5: cap 違反 (129 char) で TraceContextError raise
+            cap = getattr(_obs, "MAX_TRACE_CONTEXT_VALUE_LEN", None)
+            assert isinstance(cap, int) and cap == 128, (
+                f"`_observability.MAX_TRACE_CONTEXT_VALUE_LEN` が int 128 "
+                f"でない / 実測={cap!r} (cap value drift?)"
+            )
+            assert hasattr(_obs, "TraceContextError"), (
+                "`_observability.TraceContextError` exception class が "
+                "見つからない (rename / 削除 drift?)"
+            )
+            TraceContextError = _obs.TraceContextError
+            over_value = "x" * (cap + 1)  # 129 char
+            for env_name in TRACE_ENVS:
+                # 各 field 個別に cap 違反 → raise を検証
+                for k in TRACE_ENVS:
+                    _os_trace.environ.pop(k, None)
+                _os_trace.environ[env_name] = over_value
+                raised = False
+                try:
+                    rrc(generate_if_missing=True)
+                except TraceContextError:
+                    raised = True
+                assert raised, (
+                    f"resolve_run_context() で env {env_name}=129 char "
+                    f"設定時に TraceContextError raise すべき (truncation "
+                    f"せず error 契約、docs §env precedence cap 行 "
+                    f"drift?)"
+                )
+        finally:
+            # env 復元
+            for k, v in saved_env.items():
+                if v is None:
+                    _os_trace.environ.pop(k, None)
+                else:
+                    _os_trace.environ[k] = v
+    finally:
+        sys.path.pop(0)
+
+
 def test_observability_emit_json_disabled_silent_caller_ast_lint() -> None:
     """V1_CALLER_SCRIPTS 7 caller の `_obs_emit_json` 直接 Call (helper alias
     bypass 経路) の 1st positional arg = `args.json_log` Attribute (or 同等
@@ -11388,6 +11608,7 @@ def main() -> int:
         test_observability_provider_notes_routing_docs_code_lint,
         test_observability_emit_json_tail_invariant_caller_ast_lint,
         test_observability_emit_json_disabled_silent_caller_ast_lint,
+        test_observability_trace_context_precedence_semantics_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
