@@ -14790,6 +14790,30 @@ def test_package_json_remotion_version_parity_lint() -> None:
     )
 
 
+def test_package_json_tailwind_v4_dependencies_lint() -> None:
+    import json
+    import re
+
+    template_root = Path(__file__).parents[1]
+    pkg = json.loads((template_root / "package.json").read_text(encoding="utf-8"))
+    deps = pkg.get("dependencies", {})
+    errors: list[str] = []
+    required = ("tailwindcss", "@remotion/tailwind-v4")
+    for name in required:
+        version = deps.get(name)
+        if not isinstance(version, str):
+            errors.append(f"package.json: dependencies.{name} must be present")
+            continue
+        if not re.match(r"^[\^~=>]*4\.", version):
+            errors.append(
+                f"package.json: dependencies.{name} must be Tailwind v4-compatible, got {version!r}"
+            )
+    assert errors == [], (
+        "template/package.json Tailwind v4 dependency contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_videoconfig_required_exports_present_lint() -> None:
     """PR-BY: template/src/videoConfig.ts must export FORMAT, FPS, RESOLUTION, TELOP_CONFIG, VIDEO_FILE.
     Catches accidental removal of any SSoT constant that components depend on.
@@ -17355,6 +17379,7 @@ def main() -> int:
         test_eslint_config_no_explicit_any_contract_lint,
         test_remotion_config_contract_lint,
         test_package_json_remotion_version_parity_lint,
+        test_package_json_tailwind_v4_dependencies_lint,
         test_videoconfig_required_exports_present_lint,
         test_package_json_identity_contract_lint,
         test_template_src_required_directories_lint,
