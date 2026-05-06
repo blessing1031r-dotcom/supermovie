@@ -597,6 +597,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 296 | `CLAUDE.md` の `project-config.json` schema sample にある `telopStyle` 既定値 (`白青テロップver2` / `オレンジグラデーション` / `黒紫グラデ`) が `telopTemplateRegistry.tsx` の displayName / category / templateId と同期することを lint (`test_claude_project_config_telop_style_defaults_match_registry_lint`、Codex 推奨 PR-IB)。全スキル共通 schema sample と registry の drift を保護 | PR-IB |
 | 297 | `skills/supermovie-init/SKILL.md` の `project-config.json` sample が `CLAUDE.md` の全スキル共通 schema sample と同じ `telopStyle` / 基本ヒアリング値を保持し、`telopStyle.{main,emphasis,negative}` が registry category に存在することを lint (`test_supermovie_init_project_config_telop_style_defaults_match_claude_lint`、Codex 推奨 PR-IC)。supermovie-init の生成 sample と共通 schema の drift を保護 | PR-IC |
 | 298 | `skills/supermovie-se/SKILL.md` の `seData.ts` output sample / validation table が `template/src/SoundEffects/SEPlayer.ts` の `SoundEffect` fields と `template/src/SoundEffects/seData.ts` の typed export contract に同期することを lint (`test_supermovie_se_output_schema_docs_match_sound_effect_contract_lint`、Codex 推奨 PR-ID)。supermovie-se の output docs と SE schema の drift を保護 | PR-ID |
+| 299 | `CLAUDE.md` の `seData.ts（SoundEffect型）` schema code block が `template/src/SoundEffects/SEPlayer.ts` の `SoundEffect` field order / optional marker / type と同期することを lint (`test_claude_se_data_schema_matches_sound_effect_contract_lint`、Codex 推奨 PR-IE)。全スキル共通 SE schema と実装型の drift を保護 | PR-IE |
 
 ## Test Requirements
 
