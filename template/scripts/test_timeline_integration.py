@@ -18533,6 +18533,111 @@ def test_supermovie_slides_topic_grouping_docs_match_build_slide_data_lint() -> 
     )
 
 
+def test_supermovie_slides_layer_handoff_docs_match_mainvideo_contract_lint() -> None:
+    """PR-KB: supermovie-slides completion/map docs must match MainVideo layer wiring."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    slides_skill_path = repo_root / "skills" / "supermovie-slides" / "SKILL.md"
+    main_video_path = template_root / "src" / "MainVideo.tsx"
+    slide_sequence_path = template_root / "src" / "Slides" / "SlideSequence.tsx"
+    slides_index_path = template_root / "src" / "Slides" / "index.tsx"
+    slide_data_path = template_root / "src" / "Slides" / "slideData.ts"
+    package_path = template_root / "package.json"
+    for path in (
+        slides_skill_path,
+        main_video_path,
+        slide_sequence_path,
+        slides_index_path,
+        slide_data_path,
+        package_path,
+    ):
+        assert path.is_file(), f"{path.relative_to(repo_root)} not found"
+
+    skill_text = slides_skill_path.read_text(encoding="utf-8")
+    main_video_text = main_video_path.read_text(encoding="utf-8")
+    slide_sequence_text = slide_sequence_path.read_text(encoding="utf-8")
+    slides_index_text = slides_index_path.read_text(encoding="utf-8")
+    slide_data_text = slide_data_path.read_text(encoding="utf-8")
+    package_json = json.loads(package_path.read_text(encoding="utf-8"))
+
+    completion_match = re.search(
+        r"## 完了時の報告フォーマット\s*```([\s\S]*?)```\s*## 連携マップ",
+        skill_text,
+    )
+    integration_match = re.search(
+        r"## 連携マップ\s*```([\s\S]*?)```\s*$",
+        skill_text,
+    )
+    assert completion_match is not None, "supermovie-slides completion report block not found"
+    assert integration_match is not None, "supermovie-slides integration map block not found"
+    completion_text = completion_match.group(1)
+    integration_text = integration_match.group(1)
+
+    errors: list[str] = []
+    required_completion_snippets = {
+        "done heading": "✅ slideData.ts 生成完了",
+        "input segments": "segments: <N>個",
+        "topic groups": "topic groups: <M>個",
+        "output slides": "📝 出力 slides: <K> 個",
+        "save path": "📄 保存先: src/Slides/slideData.ts",
+        "render next": "→ npm run render で動画確認",
+        "image-gen next": "→ supermovie-image-gen でインフォグラフィック追加",
+    }
+    required_integration_snippets = {
+        "source chain": "/supermovie-init / transcribe / transcript-fix / cut / subtitles",
+        "input files": "↓ transcript_fixed.json + cutData.ts",
+        "current step": "/supermovie-slides            ← ★ここ: SlideSegment[] 生成",
+        "slide layer": "↓ slideData.ts → SlideSequence layer (Phase 3-A)",
+        "next skills": "/supermovie-image-gen / se",
+        "render": "npm run render",
+    }
+    for name, snippet in required_completion_snippets.items():
+        if snippet not in completion_text:
+            errors.append(f"supermovie-slides completion docs missing {name}: {snippet}")
+    for name, snippet in required_integration_snippets.items():
+        if snippet not in integration_text:
+            errors.append(f"supermovie-slides integration map missing {name}: {snippet}")
+
+    scripts = package_json.get("scripts", {})
+    if scripts.get("render") != "remotion render MainVideo out/video.mp4":
+        errors.append(f"template/package.json scripts.render drift: {scripts.get('render')!r}")
+    if "import { SlideSequence } from './Slides';" not in main_video_text:
+        errors.append("MainVideo.tsx must import SlideSequence from Slides barrel")
+    if "<SlideSequence />" not in main_video_text:
+        errors.append("MainVideo.tsx must render <SlideSequence />")
+    if "export { SlideSequence } from './SlideSequence';" not in slides_index_text:
+        errors.append("Slides barrel must export SlideSequence")
+    if "export { slideData } from './slideData';" not in slides_index_text:
+        errors.append("Slides barrel must export slideData")
+    if "export const slideData: SlideSegment[] = [" not in slide_data_text:
+        errors.append("slideData.ts must keep typed SlideSegment[] export")
+
+    slide_pos = main_video_text.find("<SlideSequence />")
+    image_pos = main_video_text.find("<ImageSequence />")
+    video_pos = main_video_text.find("<Video")
+    if not (video_pos != -1 and slide_pos != -1 and image_pos != -1 and video_pos < slide_pos < image_pos):
+        errors.append("MainVideo.tsx layer order must remain Video -> SlideSequence -> ImageSequence")
+
+    sequence_required = {
+        "slideData import": "import { slideData } from './slideData';",
+        "map": "slideData.map((segment) =>",
+        "sequence from": "from={segment.startFrame}",
+        "duration": "durationInFrames={segment.endFrame - segment.startFrame}",
+        "slide render": "<Slide segment={segment} />",
+        "phase comment": "Phase 3-A SlideSequence",
+    }
+    for name, snippet in sequence_required.items():
+        if snippet not in slide_sequence_text:
+            errors.append(f"SlideSequence.tsx missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-slides completion/integration docs / MainVideo layer contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -24769,6 +24874,8 @@ def main() -> int:
         test_supermovie_slides_generate_plan_output_docs_match_script_contract_lint,
         # PR-JR (supermovie-slides topic grouping docs stay synced with build_slide_data): 1 件
         test_supermovie_slides_topic_grouping_docs_match_build_slide_data_lint,
+        # PR-KB (supermovie-slides completion/map docs stay synced with MainVideo layer): 1 件
+        test_supermovie_slides_layer_handoff_docs_match_mainvideo_contract_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
