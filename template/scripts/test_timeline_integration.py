@@ -15176,6 +15176,33 @@ def test_telop_template_registry_metadata_contract_lint() -> None:
     )
 
 
+def test_telop_template_registry_lookup_helpers_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    registry_path = template_root / "src" / "テロップテンプレート" / "telopTemplateRegistry.tsx"
+    assert registry_path.is_file(), "telopTemplateRegistry.tsx not found"
+    raw = registry_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    for pattern, desc in [
+        (r"export\s+type\s+TelopCategory\s*=\s*['\"]main['\"]\s*\|\s*['\"]emphasis['\"]\s*\|\s*['\"]negative['\"]\s*;", "TelopCategory main|emphasis|negative union"),
+        (r"export\s+type\s+TelopTemplateId\s*=\s*keyof\s+typeof\s+telopTemplateRegistry\s*;", "TelopTemplateId registry key union"),
+        (r"export\s+function\s+findTemplateIdByDisplayName\s*\(\s*displayName:\s*string\s*\):\s*TelopTemplateId\s*\|\s*undefined\s*\{", "findTemplateIdByDisplayName signature"),
+        (r"findTemplateIdByDisplayName[\s\S]*?Object\.entries\s*\(\s*telopTemplateRegistry\s*\)\s+as\s+\[\s*TelopTemplateId\s*,\s*TelopTemplateEntry\s*\]\[\s*\]", "typed Object.entries in findTemplateIdByDisplayName"),
+        (r"return\s+entries\.find\s*\(\s*\(\s*\[\s*,\s*v\s*\]\s*\)\s*=>\s*v\.displayName\s*===\s*displayName\s*\)\?\.\[0\]\s*;", "displayName lookup returns matched registry key"),
+        (r"export\s+function\s+listTemplatesByCategory\s*\(\s*category:\s*TelopCategory\s*\):\s*TelopTemplateId\[\]\s*\{", "listTemplatesByCategory signature"),
+        (r"listTemplatesByCategory[\s\S]*?Object\.entries\s*\(\s*telopTemplateRegistry\s*\)\s+as\s+\[\s*TelopTemplateId\s*,\s*TelopTemplateEntry\s*\]\[\s*\]", "typed Object.entries in listTemplatesByCategory"),
+        (r"return\s+entries\.filter\s*\(\s*\(\s*\[\s*,\s*v\s*\]\s*\)\s*=>\s*v\.category\s*===\s*category\s*\)\.map\s*\(\s*\(\s*\[\s*k\s*\]\s*\)\s*=>\s*k\s*\)\s*;", "category filter returns registry keys"),
+    ]:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"telopTemplateRegistry.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/テロップテンプレート/telopTemplateRegistry.tsx lookup helper contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_sequence_components_are_data_driven_from_local_arrays() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -16409,6 +16436,7 @@ def main() -> int:
         test_text_overlay_telop_config_ssot_contract_lint,
         test_telop_template_registry_file_coverage_lint,
         test_telop_template_registry_metadata_contract_lint,
+        test_telop_template_registry_lookup_helpers_contract_lint,
         # PR-CO (sequence components are data-driven from local arrays lint): 1 件
         test_sequence_components_are_data_driven_from_local_arrays,
         # PR-CP (TelopPlayer bridges telopData to registry templates lint): 1 件
