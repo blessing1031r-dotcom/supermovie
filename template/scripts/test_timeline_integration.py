@@ -17279,6 +17279,27 @@ def test_image_sequence_wraps_image_segments_in_sequence_frame_ranges_lint() -> 
     )
 
 
+def test_image_sequence_canonical_imports_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    seq_file = template_root / "src" / "InsertImage" / "ImageSequence.tsx"
+    assert seq_file.is_file(), "template/src/InsertImage/ImageSequence.tsx not found"
+    raw = seq_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    checks = [
+        (r"""import\s*\{[^}]*\bSequence\b[^}]*\}\s*from\s*['"]remotion['"]""", "Sequence from remotion"),
+        (r"""import\s*\{[^}]*\bInsertImage\b[^}]*\}\s*from\s*['"]\.\/InsertImage['"]""", "InsertImage from ./InsertImage"),
+        (r"""import\s*\{[^}]*\binsertImageData\b[^}]*\}\s*from\s*['"]\.\/insertImageData['"]""", "insertImageData from ./insertImageData"),
+    ]
+    errors = [desc for pattern, desc in checks if not re.search(pattern, text)]
+    assert errors == [], (
+        "template/src/InsertImage/ImageSequence.tsx import contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_data_typed_export_and_video_config_ssot_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17884,6 +17905,7 @@ def main() -> int:
         test_slide_sequence_canonical_imports_contract_lint,
         test_slide_sequence_wraps_slide_segments_in_sequence_frame_ranges_lint,
         test_image_sequence_wraps_image_segments_in_sequence_frame_ranges_lint,
+        test_image_sequence_canonical_imports_contract_lint,
         test_telop_data_typed_export_and_video_config_ssot_contract_lint,
         test_telop_data_placeholder_empty_array_contract_lint,
         test_se_sequence_wraps_sound_effects_in_sequence_audio_contract_lint,
