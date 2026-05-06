@@ -15658,6 +15658,43 @@ def test_main_video_narration_mode_ssot_contract_lint() -> None:
     )
 
 
+def test_main_video_single_narration_hook_call_contract_lint() -> None:
+    """PR-GE: MainVideo.tsx must call useNarrationMode() exactly once.
+
+    The hook registers narration asset watchers; keep the call centralized in MainVideo and
+    pass the resulting mode to child renderers to avoid duplicate watcher registration.
+    """
+    import re
+
+    template_root = Path(__file__).parents[1]
+    main_video = template_root / "src" / "MainVideo.tsx"
+    assert main_video.is_file(), "template/src/MainVideo.tsx not found"
+    raw = main_video.read_text(encoding="utf-8")
+    text = "\n".join(
+        line for line in raw.splitlines()
+        if not line.lstrip().startswith("//")
+    )
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+    calls = re.findall(r"\buseNarrationMode\s*\(\s*\)", text)
+    errors: list[str] = []
+
+    if len(calls) != 1:
+        errors.append(
+            f"MainVideo.tsx: useNarrationMode() must be called exactly once, found {len(calls)}"
+        )
+
+    if not re.search(r"\bconst\s+narrationMode\s*=\s*useNarrationMode\s*\(\s*\)\s*;", text):
+        errors.append(
+            "MainVideo.tsx: useNarrationMode() must be assigned to const narrationMode"
+        )
+
+    assert errors == [], (
+        "template/src/MainVideo.tsx single narration hook call contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_main_video_base_volume_none_branch_contract_lint() -> None:
     import re
 
@@ -18816,6 +18853,8 @@ def main() -> int:
         test_main_video_layer_order_contract_lint,
         test_main_video_base_video_fit_contract_lint,
         test_main_video_narration_mode_ssot_contract_lint,
+        # PR-GE (MainVideo centralizes useNarrationMode hook call): 1 件
+        test_main_video_single_narration_hook_call_contract_lint,
         test_main_video_base_volume_none_branch_contract_lint,
         test_text_overlay_telop_config_ssot_contract_lint,
         test_telop_canonical_imports_contract_lint,
