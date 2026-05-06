@@ -17900,6 +17900,93 @@ def test_supermovie_narration_output_docs_match_voicevox_paths_lint() -> None:
     )
 
 
+def test_supermovie_narration_input_docs_match_collect_chunks_lint() -> None:
+    """PR-IW: supermovie-narration input docs must match collect_chunks priority."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-narration" / "SKILL.md"
+    voicevox_path = template_root / "scripts" / "voicevox_narration.py"
+    assert skill_path.is_file(), "skills/supermovie-narration/SKILL.md not found"
+    assert voicevox_path.is_file(), "template/scripts/voicevox_narration.py not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    voicevox_text = voicevox_path.read_text(encoding="utf-8")
+    phase2_match = re.search(r"## Phase 2: 入力解決\s*([\s\S]*?)## Phase 3:", skill_text)
+    phase3i_match = re.search(
+        r"\*\*Phase 3-I transcript timing alignment\*\*[\s\S]*?FPS は",
+        skill_text,
+    )
+    collect_match = re.search(r"def collect_chunks\(args, transcript: dict\)[\s\S]*?\n\ndef main", voicevox_text)
+    assert phase2_match is not None, "supermovie-narration input resolution docs not found"
+    assert phase3i_match is not None, "supermovie-narration Phase 3-I timing docs not found"
+    assert collect_match is not None, "voicevox_narration.py collect_chunks block not found"
+    phase2_text = phase2_match.group(1)
+    phase3i_text = phase3i_match.group(0)
+    collect_text = collect_match.group(0)
+
+    required_doc_snippets = {
+        "script priority": "`--script <path>` で plain-text 指定 (1 行 1 chunk)",
+        "script-json priority": "`--script-json <path>` で `{segments: [{text}]}` JSON 指定",
+        "transcript default": "default: `<PROJECT>/transcript_fixed.json` の `segments[].text` を chunk",
+        "transcript timing": "transcript_fixed.json segments[].start/end を chunk metadata に保持",
+        "script timing fallback": "`--script` (timing なし) / `--script-json` (startMs/endMs optional) は",
+        "cumulative fallback": "累積 fallback で Phase 3-H 互換挙動を維持",
+        "transcript missing escape": "transcript_fixed.json 不在 | exit 3 (`--script` で迂回可)",
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        haystack = phase2_text if name in {"script priority", "script-json priority", "transcript default"} else skill_text
+        if snippet not in haystack:
+            errors.append(f"supermovie-narration input docs missing {name}: {snippet}")
+
+    script_idx = collect_text.find("if args.script:")
+    script_json_idx = collect_text.find("if args.script_json:")
+    transcript_idx = collect_text.find("transcript_segments = transcript.get")
+    if not (0 <= script_idx < script_json_idx < transcript_idx):
+        errors.append("collect_chunks must keep input priority --script > --script-json > transcript_fixed.json")
+
+    required_collect_snippets = {
+        "script path resolution": "_resolve_path(args.script).read_text",
+        "script line splitting": "for line in text.splitlines() if line.strip()",
+        "script timing none": '"sourceStartMs": None',
+        "script-json path resolution": "plan = load_json(_resolve_path(args.script_json))",
+        "script-json dict guard": "script-json must be dict",
+        "script-json segments guard": "script-json segments must be list",
+        "script-json start map": '"start": s.get("startMs")',
+        "script-json end map": '"end": s.get("endMs")',
+        "script-json sourceStartMs": '"sourceStartMs": s.get("startMs")',
+        "script-json sourceEndMs": '"sourceEndMs": s.get("endMs")',
+        "transcript segments default": 'transcript.get("segments", [])',
+        "transcript sourceStartMs": '"sourceStartMs": s.get("start")',
+        "transcript sourceEndMs": '"sourceEndMs": s.get("end")',
+        "collect validation": "validate_transcript_segment",
+    }
+    for name, snippet in required_collect_snippets.items():
+        if snippet not in collect_text:
+            errors.append(f"collect_chunks missing {name}: {snippet}")
+
+    required_main_snippets = {
+        "transcript missing guard": "if not transcript_path.exists() and not (args.script or args.script_json):",
+        "transcript missing status": 'return emit_json("transcript_missing", 3)',
+        "transcript optional load": "transcript = load_json(transcript_path) if transcript_path.exists() else {}",
+        "collect call": "chunks = collect_chunks(args, transcript)",
+    }
+    for name, snippet in required_main_snippets.items():
+        if snippet not in voicevox_text:
+            errors.append(f"voicevox_narration.py main missing {name}: {snippet}")
+
+    if "--script-json" not in phase3i_text or "startMs/endMs optional" not in phase3i_text:
+        errors.append("Phase 3-I docs must mention --script-json startMs/endMs optional timing")
+
+    assert errors == [], (
+        "supermovie-narration input docs / collect_chunks contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -22249,6 +22336,8 @@ def main() -> int:
         test_supermovie_narration_mode_docs_match_runtime_contract_lint,
         # PR-IV (supermovie-narration output docs stay synced with voicevox paths): 1 件
         test_supermovie_narration_output_docs_match_voicevox_paths_lint,
+        # PR-IW (supermovie-narration input docs stay synced with collect_chunks): 1 件
+        test_supermovie_narration_input_docs_match_collect_chunks_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
