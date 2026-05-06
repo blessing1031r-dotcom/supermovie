@@ -13675,6 +13675,36 @@ def test_skill_md_h1_title_consistency_lint() -> None:
     assert errors == [], "SKILL.md H1 title consistency lint failed:\n" + "\n".join(errors)
 
 
+def test_plugin_json_top_level_keyset_lint() -> None:
+    """PR-AV: plugin.json top-level keys must be exactly the canonical set
+    (author, description, homepage, keywords, license, name, repository, skills, version)
+    with no extra or missing keys.
+    """
+    import json
+
+    REQUIRED_TOP_KEYS: frozenset[str] = frozenset({
+        "author", "description", "homepage", "keywords",
+        "license", "name", "repository", "skills", "version",
+    })
+
+    repo_root = Path(__file__).parents[2]
+    manifest_path = repo_root / ".claude-plugin" / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    actual_keys = frozenset(manifest.keys())
+
+    extra = actual_keys - REQUIRED_TOP_KEYS
+    missing = REQUIRED_TOP_KEYS - actual_keys
+
+    errors: list[str] = []
+    if extra:
+        errors.append(f"plugin.json has unexpected top-level keys: {sorted(extra)}")
+    if missing:
+        errors.append(f"plugin.json is missing top-level keys: {sorted(missing)}")
+
+    assert errors == [], "plugin.json top-level key-set lint failed:\n" + "\n".join(errors)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13903,6 +13933,8 @@ def main() -> int:
         test_skill_frontmatter_allowed_tools_canonical_order_lint,
         # PR-AU (SKILL.md body H1 title starts with '# SuperMovie ' and contains slug words): 1 件
         test_skill_md_h1_title_consistency_lint,
+        # PR-AV (plugin.json top-level key-set exact match lint): 1 件
+        test_plugin_json_top_level_keyset_lint,
     ]
     failed = []
     for t in tests:
