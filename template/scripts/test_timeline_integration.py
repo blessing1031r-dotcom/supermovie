@@ -15176,6 +15176,42 @@ def test_telop_legacy_animation_selection_contract_lint() -> None:
     )
 
 
+def test_telop_render_timing_and_slide_transform_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    telop_file = template_root / "src" / "テロップテンプレート" / "Telop.tsx"
+    assert telop_file.is_file(), "template/src/テロップテンプレート/Telop.tsx not found"
+    raw = telop_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    for pattern, desc in [
+        (r"\bconst\s+frame\s*=\s*useCurrentFrame\s*\(\s*\)\s*;", "frame from useCurrentFrame()"),
+        (r"\bconst\s+\{\s*fps\s*,\s*width\s*\}\s*=\s*useVideoConfig\s*\(\s*\)\s*;", "fps and width from useVideoConfig()"),
+        (r"\bconst\s+localFrame\s*=\s*frame\s*-\s*segment\.startFrame\s*;", "localFrame = frame - segment.startFrame"),
+        (r"\bconst\s+duration\s*=\s*segment\.endFrame\s*-\s*segment\.startFrame\s*;", "duration = segment.endFrame - segment.startFrame"),
+        (r"\bconst\s+hasAnimation\s*=\s*animation\.fadeInDuration\s*>\s*0\s*\|\|\s*animation\.fadeOutDuration\s*>\s*0\s*;", "hasAnimation fade duration check"),
+        (r"\bconst\s+fadeIn\s*=\s*Math\.min\s*\(\s*animation\.fadeInDuration\s*,\s*duration\s*/\s*3\s*\)\s*;", "fadeIn capped to duration / 3"),
+        (r"\bconst\s+fadeOut\s*=\s*Math\.min\s*\(\s*animation\.fadeOutDuration\s*,\s*duration\s*/\s*3\s*\)\s*;", "fadeOut capped to duration / 3"),
+        (r"\bconst\s+opacity\s*=\s*hasAnimation\s*\?\s*interpolate\s*\(\s*localFrame\s*,\s*\[\s*0\s*,\s*Math\.max\s*\(\s*1\s*,\s*fadeIn\s*\)\s*,\s*duration\s*-\s*Math\.max\s*\(\s*1\s*,\s*fadeOut\s*\)\s*,\s*duration\s*\]\s*,\s*\[\s*0\s*,\s*1\s*,\s*1\s*,\s*0\s*\]", "opacity interpolate over localFrame with fade clamps"),
+        (r"extrapolateLeft:\s*['\"]clamp['\"][\s\S]*?extrapolateRight:\s*['\"]clamp['\"]", "opacity interpolation clamps both sides"),
+        (r"\bconst\s+slideIn\s*=\s*animation\.slideInDistance\s*>\s*0\s*\?\s*spring\s*\(\s*\{[\s\S]*?frame:\s*localFrame\s*,[\s\S]*?fps\s*,[\s\S]*?config:\s*animation\.spring\s*,[\s\S]*?\}\s*\)\s*:\s*1\s*;", "slide spring uses localFrame/fps/animation.spring"),
+        (r"\bconst\s+slideDirection\s*=\s*animation\.slideDirection\s*\|\|\s*['\"]up['\"]\s*;", "slideDirection defaults to up"),
+        (r"\blet\s+translateX\s*=\s*0\s*;\s*let\s+translateY\s*=\s*0\s*;", "translateX/Y initialize to 0"),
+        (r"if\s*\(\s*animation\.slideInDistance\s*>\s*0\s*\)\s*\{[\s\S]*?const\s+slideValue\s*=\s*interpolate\s*\(\s*slideIn\s*,\s*\[\s*0\s*,\s*1\s*\]\s*,\s*\[\s*animation\.slideInDistance\s*,\s*0\s*\]\s*,?\s*\)", "slideValue interpolates slideIn to distance"),
+        (r"case\s+['\"]left['\"]\s*:\s*translateX\s*=\s*-slideValue\s*;\s*break\s*;", "left slide negates translateX"),
+        (r"case\s+['\"]right['\"]\s*:\s*translateX\s*=\s*slideValue\s*;\s*break\s*;", "right slide uses positive translateX"),
+        (r"case\s+['\"]up['\"]\s*:\s*translateY\s*=\s*slideValue\s*;\s*break\s*;", "up slide uses positive translateY"),
+        (r"case\s+['\"]down['\"]\s*:\s*translateY\s*=\s*-slideValue\s*;\s*break\s*;", "down slide negates translateY"),
+    ]:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"Telop.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/テロップテンプレート/Telop.tsx render timing / slide transform contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_file_coverage_lint() -> None:
     """PR-CM: Every .tsx file in メインテロップ/強調テロップ/ネガティブテロップ dirs must be imported by telopTemplateRegistry.tsx.
     Guards against new/renamed telop templates existing on disk but unreachable from TelopPlayer registry.
@@ -16513,6 +16549,7 @@ def main() -> int:
         test_text_overlay_telop_config_ssot_contract_lint,
         test_telop_legacy_template_selection_contract_lint,
         test_telop_legacy_animation_selection_contract_lint,
+        test_telop_render_timing_and_slide_transform_contract_lint,
         test_telop_template_registry_file_coverage_lint,
         test_telop_template_registry_metadata_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
