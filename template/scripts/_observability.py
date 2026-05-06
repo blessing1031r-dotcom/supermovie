@@ -140,7 +140,7 @@ STATUS_MAP = {
 }
 
 
-def map_status(v0_status):
+def map_status(v0_status: str) -> tuple[str, str]:
     """Map v0 status name to (v1_status, v1_category).
 
     Unknown v0 status → ("error", v0_status) defensive default.
@@ -150,11 +150,11 @@ def map_status(v0_status):
     return ("error", v0_status)
 
 
-def _hash16(text):
+def _hash16(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16]
 
 
-def _lexical_redact(s, home):
+def _lexical_redact(s: str, home: str) -> str:
     """resolve なしで abs path を placeholder に変換 (defensive fallback)。
 
     Codex 21:23 PR4 re-review P2 で resolve() 例外時 raw return が漏れる問題 fix。
@@ -200,7 +200,7 @@ _WIN_PATH_RE = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z]:[\\\/][^\s'\"]+)")
 _TILDE_PATH_RE = re.compile(r"(?<![A-Za-z0-9_/=?&])(~[A-Za-z0-9_]*(?:/[A-Za-z0-9._/\-]+)?)")
 
 
-def redact_secret(value, *, last_n=4, mask_char="*"):
+def redact_secret(value: object, *, last_n: int = 4, mask_char: str = "*") -> object:
     """Secret value (API key / token / credential) を contract 通り redact する。
 
     PR-H (Codex 23:18 medium / 23:58 approve): docs/OBSERVABILITY.md §Redaction Rules
@@ -247,7 +247,7 @@ def redact_secret(value, *, last_n=4, mask_char="*"):
     return (mask_char * masked_len) + value[-last_n:]
 
 
-def redact_error_message(msg):
+def redact_error_message(msg: object) -> object:
     """Error message 文字列内の絶対 path token を `_lexical_redact` で安全化する。
 
     PR-G review P1 #2 (Codex 23:25): error=str(e) で abs_path が tail JSON に raw 漏れする
@@ -302,7 +302,7 @@ def redact_error_message(msg):
     return msg
 
 
-def safe_artifact_path(path, *, project_root=None, repo_root=None, unsafe_keep_abs_path=False):
+def safe_artifact_path(path: object, *, project_root: object = None, repo_root: object = None, unsafe_keep_abs_path: bool = False) -> str | None:
     """Convert path to safe form (relative to project/repo root or placeholder).
 
     Returns string. None input → None.
@@ -351,7 +351,7 @@ def safe_artifact_path(path, *, project_root=None, repo_root=None, unsafe_keep_a
     return _lexical_redact(s_expanded, home)
 
 
-def user_content_meta(text):
+def user_content_meta(text: object) -> dict[str, object] | None:
     """Return safe metadata for user content (length + sha256 prefix).
 
     Used in json tail / external log when raw is forbidden.
@@ -367,7 +367,7 @@ def user_content_meta(text):
     }
 
 
-def redact_provider_body(body, *, unsafe_dump=False, max_preview=80):
+def redact_provider_body(body: object, *, unsafe_dump: bool = False, max_preview: int = 80) -> dict[str, object] | None:
     """Redact provider response body.
 
     Default: returns structured summary (length + sha256 + truncated preview).
@@ -396,7 +396,7 @@ def redact_provider_body(body, *, unsafe_dump=False, max_preview=80):
     return {"kind": "summary", "type": type(body).__name__}
 
 
-def _coerce_finite_or_none(v):
+def _coerce_finite_or_none(v: object) -> float | None:
     """Return v if it's a finite real number, else None。
 
     PR-AA (Codex 02:46 verdict AM) defense: NaN / Inf / -Inf / 非数値型を
@@ -419,7 +419,7 @@ def _coerce_finite_or_none(v):
     return None
 
 
-def compute_rate_missing(estimate):
+def compute_rate_missing(estimate: object) -> bool:
     """Cost rate_missing discriminator helper (PR-O、Codex 01:12)。
 
     `estimate is None ⇔ rate_missing=true` の判定式を一箇所に集約 (PR-O)。
@@ -439,10 +439,10 @@ def compute_rate_missing(estimate):
     return _coerce_finite_or_none(estimate) is None
 
 
-def build_cost_payload(estimate, rate_input, rate_output, *,
-                       currency="USD",
-                       tokens_input=None, tokens_output=None,
-                       rate_source="env:SUPERMOVIE_RATE_<PROVIDER>_<DIR>_USD_PER_MTOK"):
+def build_cost_payload(estimate: object, rate_input: object, rate_output: object, *,
+                       currency: str = "USD",
+                       tokens_input: int | None = None, tokens_output: int | None = None,
+                       rate_source: str = "env:SUPERMOVIE_RATE_<PROVIDER>_<DIR>_USD_PER_MTOK") -> dict[str, object]:
     """Nested cost payload builder per docs/OBSERVABILITY.md §Cost JSON Shape (PR-S)。
 
     PR-N で top-level discriminator (estimated_cost_usd_upper_bound / rate_missing 等) を
@@ -554,7 +554,7 @@ LEGACY_COST_EXTRAS_KEYS = (
 )
 
 
-def warn_legacy_cost_extras(payload, *, stream=None):
+def warn_legacy_cost_extras(payload: dict, *, stream: object = None) -> bool:
     """Emit deprecation warning to stderr when nested `cost` and legacy
     top-level cost extras coexist in payload, gated by env.
 
@@ -607,7 +607,7 @@ def warn_legacy_cost_extras(payload, *, stream=None):
     return True
 
 
-def _normalize_redaction_rules(rules):
+def _normalize_redaction_rules(rules: object) -> list[str]:
     """Validate redaction_rules input and return sorted unique str list。
 
     PR-AD (Codex 03:09 verdict AQ-改) defense:
@@ -658,11 +658,11 @@ def _normalize_redaction_rules(rules):
     return sorted(set(rules))
 
 
-def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
-                 cost=None, redaction_rules=None,
-                 duration_ms=None, category_override=None,
-                 run_id=None, parent_run_id=None, step_id=None,
-                 **extra):
+def build_status(*, script: str, v0_status: str, exit_code: int, counts: dict | None = None, artifacts: list | None = None,
+                 cost: dict | None = None, redaction_rules: list | None = None,
+                 duration_ms: int | float | None = None, category_override: str | None = None,
+                 run_id: str | None = None, parent_run_id: str | None = None, step_id: str | None = None,
+                 **extra: object) -> dict[str, object]:
     """Build v1 schema-conforming status payload.
 
     Schema fields per docs/OBSERVABILITY.md §Common Fields.
@@ -929,7 +929,7 @@ def build_status(*, script, v0_status, exit_code, counts=None, artifacts=None,
     return payload
 
 
-def emit_json(enabled, payload):
+def emit_json(enabled: object, payload: dict) -> int:
     """Emit single-line JSON to stdout tail when enabled (--json-log).
 
     Returns exit_code from payload for chained `return emit_json(...)` pattern.
@@ -973,7 +973,7 @@ class TraceContextError(ValueError):
     """env value invalid for trace context (length cap exceeded etc.)."""
 
 
-def _validate_trace_value(name, value):
+def _validate_trace_value(name: str, value: str | None) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
@@ -986,10 +986,10 @@ def _validate_trace_value(name, value):
 
 
 def resolve_run_context(*,
-                        run_id_env=TRACE_RUN_ID_ENV,
-                        parent_env=TRACE_PARENT_RUN_ID_ENV,
-                        step_env=TRACE_STEP_ID_ENV,
-                        generate_if_missing=True):
+                        run_id_env: str = TRACE_RUN_ID_ENV,
+                        parent_env: str = TRACE_PARENT_RUN_ID_ENV,
+                        step_env: str = TRACE_STEP_ID_ENV,
+                        generate_if_missing: bool = True) -> dict[str, str | None]:
     """Resolve run_id / parent_run_id / step_id from env, fallback to uuid4 hex.
 
     precedence:

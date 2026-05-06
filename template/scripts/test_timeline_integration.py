@@ -12167,6 +12167,63 @@ def test_observability_status_map_reverse_direction_coverage_lint() -> None:
         )
 
 
+def test_observability_helper_type_annotation_completeness_lint() -> None:
+    """PR-U: _observability.py の全 module-level function が return type annotation と
+    全 parameter type annotation を持つことを検証する type hint completeness lint。
+
+    将来の annotation 欠落追加を fail-loud 化する regression guard。
+
+    2-part validation:
+    (1) 全 module-level FunctionDef: return annotation + 全 param annotation が存在
+    (2) docs §Emission Contract section に type annotation contract keyword presence
+    """
+    import ast
+    import re
+
+    scripts_dir = Path(__file__).parent
+    src = (scripts_dir / "_observability.py").read_text()
+    tree = ast.parse(src)
+
+    annotation_errors: list[str] = []
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        name = node.name
+        # return annotation
+        if node.returns is None:
+            annotation_errors.append(f"{name}: missing return type annotation")
+        # positional / keyword-only params
+        for arg in node.args.args + node.args.posonlyargs + node.args.kwonlyargs:
+            if arg.annotation is None:
+                annotation_errors.append(f"{name}: param {arg.arg!r} missing type annotation")
+        # *args
+        if node.args.vararg and node.args.vararg.annotation is None:
+            annotation_errors.append(f"{name}: *{node.args.vararg.arg} missing type annotation")
+        # **kwargs
+        if node.args.kwarg and node.args.kwarg.annotation is None:
+            annotation_errors.append(f"{name}: **{node.args.kwarg.arg} missing type annotation")
+
+    assert not annotation_errors, (
+        f"_observability.py module-level functions with missing type annotations "
+        f"({len(annotation_errors)} violation(s)):\n" + "\n".join(annotation_errors)
+    )
+
+    # (2) docs §Emission Contract section keyword presence
+    obs_doc = scripts_dir.parent.parent / "docs" / "OBSERVABILITY.md"
+    doc_text = obs_doc.read_text()
+    section_m = re.search(
+        r"^### Emission Contract[^\n]*\n(?P<body>.*?)(?=^## |^### )",
+        doc_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert section_m, "docs: §Emission Contract section not found"
+    section_body = section_m.group("body")
+    for keyword in ("type annotation", "_observability", "module-level"):
+        assert keyword in section_body, (
+            f"docs §Emission Contract: missing keyword {keyword!r}"
+        )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12341,6 +12398,8 @@ def main() -> int:
         test_observability_caller_import_order_canonical_lint,
         # PR-BM' (STATUS_MAP reverse direction coverage audit): 1 件
         test_observability_status_map_reverse_direction_coverage_lint,
+        # PR-U (helper module type annotation completeness audit): 1 件
+        test_observability_helper_type_annotation_completeness_lint,
     ]
     failed = []
     for t in tests:
