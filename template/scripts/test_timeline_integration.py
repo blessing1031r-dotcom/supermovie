@@ -8788,6 +8788,157 @@ def test_observability_path_policy_placeholder_set_docs_code_lint() -> None:
     )
 
 
+def test_observability_normalize_fixture_recipe_evidence_trail_lint() -> None:
+    """`template/scripts/normalize_fixture.sh` recipe contract ↔
+    `docs/PHASE3_RELEASE_NOTE.md §b1 fixture normalize evidence trail`
+    section bidirectional lint
+    (Codex 09:08 PR-Q1 verdict、Q full ではなく Q-1: fixture e2e smoke
+    evidence + minimal guard、observability follow-up cycle 18 件 docs/code
+    audit に続く runtime fixture-side guard)。
+
+    docs §b1 fixture normalize evidence trail (PHASE3_RELEASE_NOTE.md
+    line 171, 193, 202-215) は b1 fixture (HEVC HDR DoVi 4K) を Remotion
+    互換の H.264 SDR / yuv420p / bt709 / Display Matrix なし に正規化する
+    contract を明記:
+      - script path: `template/scripts/normalize_fixture.sh`
+      - 機能: b1 transcode + remux を idempotent recipe 化、ffprobe gate
+              内蔵 (Display Matrix 不在を fail 条件)
+      - 実行例 + 期待 status: re-run 時 idempotent skip exit 0
+    一方 script 自体は (a) bash shebang、(b) `set -euo pipefail`、
+    (c) `Idempotent: 既に H.264 SDR + Display Matrix なし + risks=[] なら
+    no-op で skip` 契約、(d) ffprobe で `Display Matrix` side_data 検出、
+    (e) 後段 ffprobe gate で post-normalize に Display Matrix 残存なしを
+    検証、と複数 contract を持つ。
+
+    docs と script が drift すると、(a) script path が rename されると
+    docs 実行例の `bash template/scripts/normalize_fixture.sh ...` が壊れ、
+    (b) idempotent skip 削除で re-run 時に毎回 transcode 走り backup
+    file 大量生成、(c) ffprobe gate 削除で Display Matrix 残存 silent
+    成功 → Remotion sideways drawing regression 再発、(d) `set -euo
+    pipefail` 削除で error path 抜け落ち、(e) docs 実行例の expected
+    status 文言が script 動作と食い違うと運用混乱。
+
+    本 lint は 5-part validation:
+      1. `template/scripts/normalize_fixture.sh` ファイル存在 + bash
+         shebang (`#!/usr/bin/env bash` 1 行目) + `set -euo pipefail`
+         safety guard 存在
+      2. script body に必須 contract keyword 6 件 presence:
+         `Display Matrix` (fixture incident core)、`ffprobe`、`idempotent`
+         または `Idempotent`、`exit 0`、`backup` (元 file 退避経路)、
+         `risks=[]` (risks empty 判定)
+      3. docs/PHASE3_RELEASE_NOTE.md §b1 fixture normalize evidence trail
+         section に script path + 機能契約 (`b1 transcode`,
+         `idempotent recipe`, `ffprobe gate`, `Display Matrix` の 4
+         keyword) docs presence
+      4. docs 実行例 fenced code block で `bash template/scripts/normalize_fixture.sh`
+         invocation literal 1 件以上 docs presence (実行例ガイド drift
+         fail-loud)
+      5. script の post ffprobe gate 経路 (`POST_DM` または同等の
+         `Display Matrix` post-check) literal 存在 (Display Matrix
+         残存検証の削除 fail-loud)
+
+    Q full (実 main.mp4 + node_modules + render e2e) ではなく Q-1:
+    fixture recipe + evidence trail の docs/script 双方向 audit に絞る、
+    runtime side の最小 guard。Codex 09:08 PR-Q1 verdict に従う。
+    """
+    import re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+
+    # part 1: script existence + shebang + safety guard
+    script_path = (
+        repo_root / "template" / "scripts" / "normalize_fixture.sh"
+    )
+    assert script_path.exists(), (
+        "`template/scripts/normalize_fixture.sh` recipe script が "
+        "見つからない (fixture normalize bundle 削除 / rename drift?)"
+    )
+    src = script_path.read_text(encoding="utf-8")
+    first_line = src.split("\n", 1)[0] if src else ""
+    assert first_line == "#!/usr/bin/env bash", (
+        f"normalize_fixture.sh の 1 行目が `#!/usr/bin/env bash` でない: "
+        f"{first_line!r} (shebang drift / interpreter 切替 risk?)"
+    )
+    assert "set -euo pipefail" in src, (
+        "normalize_fixture.sh に `set -euo pipefail` safety guard が "
+        "見つからない (error path 抜け / silent success risk?)"
+    )
+
+    # part 2: script body 必須 contract keyword 6 件
+    SCRIPT_KEYWORDS = [
+        "Display Matrix",
+        "ffprobe",
+        "exit 0",
+        "backup",
+        "risks=[]",
+    ]
+    for kw in SCRIPT_KEYWORDS:
+        assert kw in src, (
+            f"normalize_fixture.sh に必須 contract keyword '{kw}' が "
+            f"見つからない (recipe contract drift / 削除 risk?)"
+        )
+    # idempotent 大文字小文字許容 (script body は `Idempotent: ...`
+    # コメント + section 5 で `idempotent skip` なので case-insensitive
+    # 検査)
+    assert re.search(r"[Ii]dempotent", src), (
+        "normalize_fixture.sh に `idempotent` / `Idempotent` keyword が "
+        "見つからない (re-run 時 skip 経路の docs/spec 削除 drift?)"
+    )
+
+    # part 5: post ffprobe gate (Display Matrix 残存検証) literal 存在
+    # 実装は POST_DM 変数経由で `Display Matrix metadata still present`
+    # error message を出す
+    assert "Display Matrix metadata still present" in src or "POST_DM" in src, (
+        "normalize_fixture.sh に post ffprobe gate (Display Matrix "
+        "残存検証経路) literal が見つからない (gate 削除 → 残存 silent "
+        "成功 → Remotion sideways drawing regression 再発 risk?)"
+    )
+
+    # part 3: docs §b1 fixture normalize evidence trail section literal
+    release_note = repo_root / "docs" / "PHASE3_RELEASE_NOTE.md"
+    md = release_note.read_text(encoding="utf-8")
+    section_re = re.compile(
+        r"^## b1 fixture normalize evidence trail[^\n]*\n(?P<body>.*?)"
+        r"(?=^## )",
+        re.MULTILINE | re.DOTALL,
+    )
+    sec_match = section_re.search(md)
+    assert sec_match is not None, (
+        "`## b1 fixture normalize evidence trail` の section が "
+        "PHASE3_RELEASE_NOTE.md に見つからない (heading rename / "
+        "section 削除 drift?)"
+    )
+    body = sec_match.group("body")
+
+    DOCS_LITERALS = [
+        "template/scripts/normalize_fixture.sh",
+        "b1 transcode",
+        "idempotent recipe",
+        "ffprobe gate",
+        "Display Matrix",
+    ]
+    for lit in DOCS_LITERALS:
+        assert lit in body, (
+            f"docs §b1 fixture normalize evidence trail section に "
+            f"contract literal '{lit}' が見つからない (release note ↔ "
+            f"script 機能契約 drift?)"
+        )
+
+    # part 4: docs 実行例 fenced code block invocation literal
+    # bash template/scripts/normalize_fixture.sh の文字列を section 内に
+    # 1 件以上 持つこと (実行例ガイド drift fail-loud)
+    invocation_re = re.compile(
+        r"bash\s+template/scripts/normalize_fixture\.sh"
+    )
+    matches = invocation_re.findall(body)
+    assert matches, (
+        "docs §b1 fixture normalize evidence trail section に実行例 "
+        "`bash template/scripts/normalize_fixture.sh ...` invocation "
+        "literal が見つからない (実行例ガイド削除 / コマンド drift?)"
+    )
+
+
 def test_observability_trace_context_precedence_semantics_lint() -> None:
     """`docs/OBSERVABILITY.md §env precedence` table semantic claims ↔
     `resolve_run_context()` runtime behavior 双方向 lint
@@ -11649,6 +11800,7 @@ def main() -> int:
         test_observability_emit_json_tail_invariant_caller_ast_lint,
         test_observability_emit_json_disabled_silent_caller_ast_lint,
         test_observability_trace_context_precedence_semantics_lint,
+        test_observability_normalize_fixture_recipe_evidence_trail_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
