@@ -15015,6 +15015,54 @@ def test_vitest_use_narration_mode_tests_mock_remotion_before_sut_import_lint() 
     )
 
 
+def test_vitest_use_narration_mode_tests_mock_narration_data_before_sut_import_lint() -> None:
+    """PR-GJ: useNarrationMode React tests must mock narrationData before importing the SUT.
+
+    useNarrationMode and mode.ts import narrationData at module scope, so each test file
+    must declare vi.mock('./narrationData', ...) before importing ./useNarrationMode.
+    """
+    import re
+
+    template_root = Path(__file__).parents[1]
+    test_dir = template_root / "src" / "Narration"
+    target_files = sorted(test_dir.glob("useNarrationMode*.test.tsx"))
+    assert target_files, "template/src/Narration/useNarrationMode*.test.tsx files not found"
+
+    errors: list[str] = []
+    mock_pattern = re.compile(r"""\bvi\.mock\s*\(\s*['"]\.\/narrationData['"]""")
+    sut_import_pattern = re.compile(
+        r"""^import\s*\{\s*useNarrationMode\s*\}\s*from\s*['"]\.\/useNarrationMode['"]\s*;?\s*$""",
+        re.MULTILINE,
+    )
+
+    for path in target_files:
+        raw = path.read_text(encoding="utf-8")
+        text = "\n".join(
+            line for line in raw.splitlines()
+            if not line.lstrip().startswith("//")
+        )
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+        rel = path.relative_to(template_root).as_posix()
+
+        mock_match = mock_pattern.search(text)
+        sut_match = sut_import_pattern.search(text)
+        if not mock_match:
+            errors.append(f"{rel}: missing vi.mock('./narrationData', ...) declaration")
+            continue
+        if not sut_match:
+            errors.append(f"{rel}: missing import {{ useNarrationMode }} from './useNarrationMode'")
+            continue
+        if mock_match.start() > sut_match.start():
+            errors.append(
+                f"{rel}: vi.mock('./narrationData', ...) must appear before useNarrationMode import"
+            )
+
+    assert errors == [], (
+        "template useNarrationMode React test narrationData mock order contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_vitest_use_narration_mode_tests_reset_cache_before_each_lint() -> None:
     """PR-GI: useNarrationMode React tests must reset mode cache in beforeEach.
 
@@ -19008,6 +19056,8 @@ def main() -> int:
         test_vitest_react_test_files_match_include_contract_lint,
         # PR-GH (useNarrationMode React tests mock remotion before SUT import): 1 件
         test_vitest_use_narration_mode_tests_mock_remotion_before_sut_import_lint,
+        # PR-GJ (useNarrationMode React tests mock narrationData before SUT import): 1 件
+        test_vitest_use_narration_mode_tests_mock_narration_data_before_sut_import_lint,
         # PR-GI (useNarrationMode React tests reset mode cache before each test): 1 件
         test_vitest_use_narration_mode_tests_reset_cache_before_each_lint,
         # PR-GD (Vitest setup imports jest-dom/vitest and dependency exists): 1 件
