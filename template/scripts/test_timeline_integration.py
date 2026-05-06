@@ -11819,6 +11819,134 @@ def test_build_slide_data_human_stdout_path_redacted_by_default() -> None:
         _shutil_mod.rmtree(proj, ignore_errors=True)
 
 
+def test_observability_emit_json_local_wrapper_kwargs_type_contract_lint() -> None:
+    """PR-S1: generate_slide_plan / voicevox_narration の local emit_json wrapper
+    signature type annotation + 全 call site での status/exit_code literal type contract audit。
+
+    4-part validation:
+    (1) local emit_json wrapper を持つ scripts が {generate_slide_plan.py, voicevox_narration.py} と set-equal
+    (2) wrapper signature: param[0] = status: str, param[1] = exit_code: int annotation
+    (3) 全 call site: arg[0] (status) が str Constant、arg[1] (exit_code) が int Constant (not bool)
+    (4) docs §Emission Contract section に local wrapper type contract 必須 keyword presence
+    """
+    import ast
+    import re
+
+    scripts_dir = Path(__file__).parent
+    obs_doc = scripts_dir.parent.parent / "docs" / "OBSERVABILITY.md"
+
+    # (1) Find scripts with local emit_json wrapper
+    EXPECTED_WRAPPER_SCRIPTS = {"generate_slide_plan.py", "voicevox_narration.py"}
+    actual_wrapper_scripts = set()
+    for script_name in V1_CALLER_SCRIPTS:
+        src = (scripts_dir / script_name).read_text(encoding="utf-8")
+        tree = ast.parse(src, filename=script_name)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "emit_json":
+                actual_wrapper_scripts.add(script_name)
+                break
+    assert actual_wrapper_scripts == EXPECTED_WRAPPER_SCRIPTS, (
+        f"scripts with local emit_json wrapper mismatch: "
+        f"expected {EXPECTED_WRAPPER_SCRIPTS}, got {actual_wrapper_scripts}"
+    )
+
+    # (2) & (3) For each wrapper script: signature audit + call site audit
+    for script_name in sorted(EXPECTED_WRAPPER_SCRIPTS):
+        src = (scripts_dir / script_name).read_text(encoding="utf-8")
+        tree = ast.parse(src, filename=script_name)
+
+        # Find the local emit_json FunctionDef
+        wrapper_def = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "emit_json":
+                wrapper_def = node
+                break
+        assert wrapper_def is not None, f"{script_name}: local emit_json FunctionDef not found"
+
+        # (2) Signature: param[0] = status: str, param[1] = exit_code: int
+        args_list = wrapper_def.args.args
+        assert len(args_list) >= 2, (
+            f"{script_name}: emit_json wrapper has fewer than 2 positional params, "
+            f"got {[a.arg for a in args_list]}"
+        )
+        p0 = args_list[0]
+        assert p0.arg == "status", (
+            f"{script_name}: emit_json wrapper param[0] expected 'status', got {p0.arg!r}"
+        )
+        assert (isinstance(p0.annotation, ast.Name) and p0.annotation.id == "str"), (
+            f"{script_name}: emit_json wrapper param[0] annotation expected 'str', "
+            f"got {ast.dump(p0.annotation) if p0.annotation else None}"
+        )
+        p1 = args_list[1]
+        assert p1.arg == "exit_code", (
+            f"{script_name}: emit_json wrapper param[1] expected 'exit_code', got {p1.arg!r}"
+        )
+        assert (isinstance(p1.annotation, ast.Name) and p1.annotation.id == "int"), (
+            f"{script_name}: emit_json wrapper param[1] annotation expected 'int', "
+            f"got {ast.dump(p1.annotation) if p1.annotation else None}"
+        )
+
+        # (3) Collect call sites of local emit_json outside the wrapper body
+        wrapper_start = wrapper_def.lineno
+        wrapper_end = wrapper_def.end_lineno
+        call_sites = []
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and
+                    isinstance(node.func, ast.Name) and
+                    node.func.id == "emit_json"):
+                if not (wrapper_start <= node.lineno <= wrapper_end):
+                    call_sites.append(node)
+
+        assert len(call_sites) > 0, (
+            f"{script_name}: no emit_json call sites found outside wrapper definition"
+        )
+
+        for call in call_sites:
+            line = call.lineno
+            # arg[0] (status) must be str Constant
+            assert len(call.args) >= 1, (
+                f"{script_name}:{line}: emit_json call has no positional args"
+            )
+            status_arg = call.args[0]
+            assert (isinstance(status_arg, ast.Constant) and
+                    isinstance(status_arg.value, str) and
+                    not isinstance(status_arg.value, bool)), (
+                f"{script_name}:{line}: emit_json arg[0] (status) expected str literal, "
+                f"got {ast.dump(status_arg)!r}"
+            )
+            # arg[1] (exit_code) must be int Constant, not bool
+            assert len(call.args) >= 2, (
+                f"{script_name}:{line}: emit_json call has fewer than 2 positional args"
+            )
+            exit_code_arg = call.args[1]
+            assert (isinstance(exit_code_arg, ast.Constant) and
+                    isinstance(exit_code_arg.value, int) and
+                    not isinstance(exit_code_arg.value, bool)), (
+                f"{script_name}:{line}: emit_json arg[1] (exit_code) expected int literal "
+                f"(not bool), got {ast.dump(exit_code_arg)!r}"
+            )
+
+    # (4) Docs §Emission Contract section literal presence
+    assert obs_doc.exists(), f"OBSERVABILITY.md not found: {obs_doc}"
+    doc_text = obs_doc.read_text(encoding="utf-8")
+    m = re.search(
+        r"^### Emission Contract[^\n]*\n(?P<body>.*?)(?=^## |^### )",
+        doc_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert m, "OBSERVABILITY.md: '### Emission Contract' section not found"
+    section_body = m.group("body")
+    for keyword in (
+        "emit_json(status: str, exit_code: int",
+        "not bool",
+        "generate_slide_plan",
+        "voicevox_narration",
+    ):
+        assert keyword in section_body, (
+            f"OBSERVABILITY.md §Emission Contract: missing keyword {keyword!r}"
+        )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -11985,6 +12113,8 @@ def main() -> int:
         test_voicevox_narration_summary_path_redacted_by_default,
         # PR-J (stderr path leak audit、Codex 00:22 approve): 1 件
         test_generate_slide_plan_stderr_proj_path_redacted,
+        # PR-S1 (local emit_json wrapper kwargs type contract audit): 1 件
+        test_observability_emit_json_local_wrapper_kwargs_type_contract_lint,
     ]
     failed = []
     for t in tests:
