@@ -12107,6 +12107,65 @@ def test_observability_caller_import_order_canonical_lint() -> None:
         )
 
 
+def test_observability_status_map_reverse_direction_coverage_lint() -> None:
+    """PR-BM': STATUS_MAP の全 key が V1_CALLER_SCRIPTS 7 scripts の str literal として
+    出現することを検証する reverse direction coverage lint。
+
+    PR-S3 forward direction との関係:
+    - forward (PR-S3): 全 emit v0_status が STATUS_MAP に登録済
+    - reverse (PR-BM'): STATUS_MAP の全 key が scripts に str literal として出現
+    → 双方向で STATUS_MAP ↔ scripts の bijection を保証
+
+    2-part validation:
+    (1) STATUS_MAP の全 key が V1_CALLER_SCRIPTS の何れかで str Constant として出現
+    (2) docs §v0 → v1 status mapping section に reverse direction coverage contract keyword presence
+    """
+    import ast
+    import importlib.util
+    import re
+
+    scripts_dir = Path(__file__).parent
+
+    # Load STATUS_MAP
+    spec = importlib.util.spec_from_file_location(
+        "_observability_bm", scripts_dir / "_observability.py"
+    )
+    obs_mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(obs_mod)  # type: ignore[union-attr]
+    status_keys: set[str] = set(obs_mod.STATUS_MAP.keys())
+
+    # Collect all str Constants from all V1_CALLER_SCRIPTS
+    all_str_consts: set[str] = set()
+    for script_name in V1_CALLER_SCRIPTS:
+        src = (scripts_dir / script_name).read_text()
+        tree = ast.parse(src)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                all_str_consts.add(node.value)
+
+    # All STATUS_MAP keys must appear as str literals in at least one script
+    orphaned = status_keys - all_str_consts
+    assert not orphaned, (
+        f"STATUS_MAP keys with no str literal in any V1_CALLER_SCRIPT "
+        f"(orphaned dead entries): {sorted(orphaned)}"
+    )
+
+    # (2) docs §v0 → v1 status mapping section keyword presence
+    obs_doc = scripts_dir.parent.parent / "docs" / "OBSERVABILITY.md"
+    doc_text = obs_doc.read_text()
+    section_m = re.search(
+        r"^### v0 → v1 status mapping[^\n]*\n(?P<body>.*?)(?=^## |^### )",
+        doc_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert section_m, "docs: §v0 → v1 status mapping section not found"
+    section_body = section_m.group("body")
+    for keyword in ("reverse direction", "STATUS_MAP", "orphaned"):
+        assert keyword in section_body, (
+            f"docs §v0 → v1 status mapping: missing keyword {keyword!r}"
+        )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12279,6 +12338,8 @@ def main() -> int:
         test_observability_v0_status_enumeration_completeness_lint,
         # PR-S2 (caller _observability import order canonical audit): 1 件
         test_observability_caller_import_order_canonical_lint,
+        # PR-BM' (STATUS_MAP reverse direction coverage audit): 1 件
+        test_observability_status_map_reverse_direction_coverage_lint,
     ]
     failed = []
     for t in tests:
