@@ -17816,6 +17816,150 @@ def test_supermovie_subtitles_kpi_docs_match_compare_telop_split_contract_lint()
     )
 
 
+def test_supermovie_subtitles_completion_handoff_docs_match_workflow_contract_lint() -> None:
+    """PR-KK: supermovie-subtitles completion docs must match downstream handoff."""
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    subtitles_skill_path = repo_root / "skills" / "supermovie-subtitles" / "SKILL.md"
+    image_gen_skill_path = repo_root / "skills" / "supermovie-image-gen" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    package_path = template_root / "package.json"
+    telop_data_path = template_root / "src" / "テロップテンプレート" / "telopData.ts"
+    title_data_path = template_root / "src" / "Title" / "titleData.ts"
+    assert subtitles_skill_path.is_file(), "skills/supermovie-subtitles/SKILL.md not found"
+    assert image_gen_skill_path.is_file(), "skills/supermovie-image-gen/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert package_path.is_file(), "template/package.json not found"
+    assert telop_data_path.is_file(), "template/src/テロップテンプレート/telopData.ts not found"
+    assert title_data_path.is_file(), "template/src/Title/titleData.ts not found"
+
+    skill_text = subtitles_skill_path.read_text(encoding="utf-8")
+    image_gen_text = image_gen_skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    package_json = json.loads(package_path.read_text(encoding="utf-8"))
+    telop_data_text = telop_data_path.read_text(encoding="utf-8")
+    title_data_text = title_data_path.read_text(encoding="utf-8")
+
+    completion_match = re.search(
+        r"## 完了時の報告フォーマット[\s\S]*?"
+        r"## エラーハンドリング",
+        skill_text,
+    )
+    map_match = re.search(r"## 連携マップ[\s\S]*\Z", skill_text)
+    workflow_match = re.search(
+        r"## 正規ワークフロー（必ずこの順序で実行）\s*```([\s\S]*?)```",
+        claude_text,
+    )
+    assert completion_match is not None, "supermovie-subtitles completion report docs not found"
+    assert map_match is not None, "supermovie-subtitles linkage map docs not found"
+    assert workflow_match is not None, "CLAUDE.md canonical workflow block not found"
+    completion_text = completion_match.group(0)
+    map_text = map_match.group(0)
+    workflow_text = workflow_match.group(1)
+
+    required_completion_snippets = {
+        "completion title": "テロップ＆タイトル生成完了",
+        "telop count": "テロップ: <N>個",
+        "style counts": "normal: <n> / emphasis: <n> / warning: <n> / success: <n>",
+        "line counts": "1行テロップ: <n>個 / 2行テロップ: <n>個",
+        "average chars": "平均文字数: <X>文字/テロップ",
+        "average duration": "平均表示時間: <X>秒/テロップ",
+        "density": "テロップ密度: <X>%",
+        "title count": "タイトル: <N>セグメント",
+        "image next step": "→ /supermovie-image-gen で画像生成",
+        "preview next step": "→ npm run dev でプレビュー確認",
+    }
+    required_output_doc_snippets = {
+        "telop output heading": "### 7-1. telopData.ts 出力",
+        "telop save path": "**保存先:** `src/テロップテンプレート/telopData.ts`",
+        "title output heading": "### 7-2. titleData.ts 出力",
+        "title save path": "**保存先:** `src/Title/titleData.ts`",
+        "telop typed export sample": "export const telopData: TelopSegment[] = [",
+    }
+    required_template_snippets = {
+        "telop generated comment": "// /supermovie-subtitles で自動生成されます",
+        "telop typed export": "export const telopData: TelopSegment[] = [",
+        "telop fps config": "export const FPS = CONFIG_FPS;",
+        "telop total source frames": "export const TOTAL_FRAMES = SOURCE_DURATION_FRAMES;",
+        "title generated comment": "// /supermovie-subtitles で自動生成されます",
+        "title helper": "export const toFrame = (seconds: number) => Math.round(seconds * FPS);",
+        "title typed export": "export const titleData: TitleSegment[] = [",
+    }
+    required_image_gen_prereqs = {
+        "subtitles complete": "- [ ] `/supermovie-subtitles` でテロップ＆タイトル生成済み",
+        "telop data prerequisite": "- [ ] `src/テロップテンプレート/telopData.ts` にデータがある",
+        "title data prerequisite": "- [ ] `src/Title/titleData.ts` にデータがある",
+    }
+    required_workflow_snippets = {
+        "subtitles canonical handoff": "/supermovie-subtitles         ← transcript_fixed.json → telopData.ts + titleData.ts",
+        "subtitles output": "↓                          (BudouX 意味分割 + 30 templates registry)",
+        "slides handoff": "/supermovie-slides            ← Phase 3-A/B/C: SlideSequence + slideData.ts",
+        "image gen handoff": "/supermovie-image-gen         ← テロップ分析 → 画像生成 + insertImageData.ts",
+        "se handoff": "/supermovie-se                ← telopData.ts + insertImageData.ts → seData.ts",
+        "preview command": "npm run dev                   ← Remotion Studioプレビュー",
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_completion_snippets.items():
+        if snippet not in completion_text:
+            errors.append(f"supermovie-subtitles completion docs missing {name}: {snippet}")
+    for name, snippet in required_output_doc_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-subtitles output docs missing {name}: {snippet}")
+    template_checks = {
+        "telop generated comment": (telop_data_text, required_template_snippets["telop generated comment"]),
+        "telop typed export": (telop_data_text, required_template_snippets["telop typed export"]),
+        "telop fps config": (telop_data_text, required_template_snippets["telop fps config"]),
+        "telop total source frames": (telop_data_text, required_template_snippets["telop total source frames"]),
+        "title generated comment": (title_data_text, required_template_snippets["title generated comment"]),
+        "title helper": (title_data_text, required_template_snippets["title helper"]),
+        "title typed export": (title_data_text, required_template_snippets["title typed export"]),
+    }
+    for name, (text, snippet) in template_checks.items():
+        if snippet not in text:
+            errors.append(f"template generated data surface missing {name}: {snippet}")
+    for name, snippet in required_image_gen_prereqs.items():
+        if snippet not in image_gen_text:
+            errors.append(f"supermovie-image-gen prerequisite docs missing {name}: {snippet}")
+    for name, snippet in required_workflow_snippets.items():
+        if snippet not in claude_text:
+            errors.append(f"CLAUDE.md canonical workflow missing {name}: {snippet}")
+
+    if package_json.get("scripts", {}).get("dev") != "remotion studio":
+        errors.append(f"template/package.json scripts.dev drift: {package_json.get('scripts', {}).get('dev')!r}")
+
+    map_order = [
+        map_text.find("/supermovie-subtitles         ← ★ここ: テロップ＆タイトル生成"),
+        map_text.find("↓ telopData.ts + titleData.ts"),
+        map_text.find("/supermovie-slides"),
+        map_text.find("/supermovie-narration"),
+        map_text.find("/supermovie-image-gen"),
+        map_text.find("/supermovie-se"),
+        map_text.find("npm run dev"),
+    ]
+    if any(pos == -1 for pos in map_order) or map_order != sorted(map_order):
+        errors.append("supermovie-subtitles linkage map must keep subtitles -> slides -> narration -> image-gen -> se -> preview order")
+
+    workflow_order = [
+        workflow_text.find("/supermovie-subtitles"),
+        workflow_text.find("/supermovie-slides"),
+        workflow_text.find("/supermovie-narration"),
+        workflow_text.find("/supermovie-image-gen"),
+        workflow_text.find("/supermovie-se"),
+        workflow_text.find("npm run dev"),
+    ]
+    if any(pos == -1 for pos in workflow_order) or workflow_order != sorted(workflow_order):
+        errors.append("CLAUDE.md workflow must keep subtitles -> slides -> narration -> image-gen -> se -> preview order")
+
+    assert errors == [], (
+        "supermovie-subtitles completion handoff docs / workflow contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema_lint() -> None:
     """PR-JK: supermovie-transcribe transcript schema docs must match CLAUDE.md."""
     import json
@@ -25552,6 +25696,8 @@ def main() -> int:
         test_supermovie_subtitles_linebreak_docs_match_insert_linebreak_contract_lint,
         # PR-JI (supermovie-subtitles KPI gate docs stay synced with compare_telop_split): 1 件
         test_supermovie_subtitles_kpi_docs_match_compare_telop_split_contract_lint,
+        # PR-KK (supermovie-subtitles completion/map docs stay synced with downstream handoff): 1 件
+        test_supermovie_subtitles_completion_handoff_docs_match_workflow_contract_lint,
         # PR-JK (supermovie-transcribe output schema docs stay synced with CLAUDE transcript schema): 1 件
         test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema_lint,
         # PR-KC (supermovie-transcribe audio extraction docs stay synced with file path contract): 1 件
