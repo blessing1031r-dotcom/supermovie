@@ -13235,6 +13235,50 @@ def test_claude_terms_table_canonical_pairs_lint() -> None:
     )
 
 
+def test_skill_frontmatter_argument_hint_shape_lint() -> None:
+    """PR-AM: every skills/*/SKILL.md frontmatter argument-hint must consist only of
+    <required> and/or [optional] tokens separated by whitespace.
+    Free-standing bare words or non-token characters are not allowed.
+    Only the YAML frontmatter block is inspected; body placeholders are ignored.
+    """
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    skills_dir = repo_root / "skills"
+    token_re = re.compile(r"<[^<>\n]+>|\[[^\[\]\n]+\]")
+    errors: list[str] = []
+
+    for skill_path in sorted(skills_dir.iterdir()):
+        if not skill_path.is_dir():
+            continue
+        skill_md = skill_path / "SKILL.md"
+        if not skill_md.exists():
+            continue
+
+        content = skill_md.read_text(encoding="utf-8")
+        fm_m = re.match(r"^---\s*$\n(.*?)^---\s*$", content, re.MULTILINE | re.DOTALL)
+        if not fm_m:
+            continue
+
+        hint_m = re.search(r"^argument-hint:\s+(\S.*)$", fm_m.group(1), re.MULTILINE)
+        if not hint_m:
+            continue
+
+        raw = hint_m.group(1).strip()
+        # Remove all recognized tokens, then all whitespace; anything remaining is invalid
+        remainder = re.sub(r"\s+", "", token_re.sub("", raw))
+        if remainder:
+            errors.append(
+                f"{skill_path.name}/SKILL.md: argument-hint {raw!r} "
+                f"contains non-token chars {remainder!r}"
+            )
+
+    assert not errors, (
+        f"SKILL.md argument-hint shape violations ({len(errors)}):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13445,6 +13489,8 @@ def main() -> int:
         test_claude_filepath_table_data_files_lint,
         # PR-AL (CLAUDE.md 用語統一ルール table canonical pairs lint): 1 件
         test_claude_terms_table_canonical_pairs_lint,
+        # PR-AM (SKILL.md frontmatter argument-hint shape lint): 1 件
+        test_skill_frontmatter_argument_hint_shape_lint,
     ]
     failed = []
     for t in tests:
