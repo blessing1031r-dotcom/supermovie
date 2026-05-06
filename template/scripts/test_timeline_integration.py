@@ -14978,6 +14978,19 @@ def test_template_css_entrypoint_side_effects_lint() -> None:
     )
 
 
+def test_template_index_css_tailwind_v4_entrypoint_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    css_path = template_root / "src" / "index.css"
+    assert css_path.is_file(), "template/src/index.css not found"
+    text = css_path.read_text(encoding="utf-8")
+    assert re.search(r"""^\s*@import\s+["']tailwindcss["']\s*;""", text, re.MULTILINE), (
+        "template/src/index.css Tailwind entrypoint contract drift: "
+        "missing @import \"tailwindcss\";"
+    )
+
+
 def test_root_composition_uses_video_config_lint() -> None:
     """PR-CH: Root.tsx must import FPS/SOURCE_DURATION_FRAMES/RESOLUTION from ./videoConfig
     and wire them into <Composition fps/durationInFrames/width/height>.
@@ -17351,6 +17364,7 @@ def main() -> int:
         test_scripts_required_files_executable_lint,
         test_sm_claude_entrypoint_executable_lint,
         test_template_css_entrypoint_side_effects_lint,
+        test_template_index_css_tailwind_v4_entrypoint_lint,
         test_root_composition_uses_video_config_lint,
         test_root_composition_uses_main_video_component_lint,
         test_main_video_staticfile_uses_video_file_lint,
