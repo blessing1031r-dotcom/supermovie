@@ -14400,6 +14400,111 @@ def test_video_config_format_map_parity_lint() -> None:
     assert errors == [], "videoConfig.ts format map parity lint failed:\n" + "\n".join(errors)
 
 
+def test_video_config_format_values_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    vc_path = template_root / "src" / "videoConfig.ts"
+    assert vc_path.is_file(), "template/src/videoConfig.ts not found"
+    text = vc_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("//"))
+
+    def map_body(map_name: str) -> str:
+        match = re.search(
+            rf"const\s+{map_name}\s*=\s*\{{([\s\S]*?)^\}}\s*as\s+const\s*;",
+            text,
+            re.MULTILINE,
+        )
+        assert match, f"videoConfig.ts: {map_name} as const map not found"
+        return match.group(1)
+
+    def format_body(body: str, fmt: str) -> str:
+        single_line = re.search(
+            rf"^  {fmt}:\s*\{{([^}}\n]*)\}}\s*,?",
+            body,
+            re.MULTILINE,
+        )
+        if single_line:
+            return single_line.group(1)
+        match = re.search(
+            rf"^  {fmt}:\s*\{{([\s\S]*?)^  \}}\s*,?",
+            body,
+            re.MULTILINE,
+        )
+        assert match, f"videoConfig.ts: {fmt} entry not found"
+        return match.group(1)
+
+    resolution_body = map_body("RESOLUTION_MAP")
+    telop_body = map_body("TELOP_CONFIG_MAP")
+    expected_resolutions = {
+        "youtube": {"width": "1920", "height": "1080"},
+        "short": {"width": "1080", "height": "1920"},
+        "square": {"width": "1080", "height": "1080"},
+    }
+    expected_telop_values = {
+        "youtube": {
+            "fontSize": "80",
+            "titleFontSize": "42",
+            "maxCharsPerLine": "18",
+            "lineBreakThreshold": "15",
+            "maxCharsPerTelop": "36",
+            "bottomOffset": "100",
+            "titleTop": "40",
+            "titleLeft": "40",
+            "maxWidth": "'85%'",
+            "containerPadding": "'0 60px'",
+            "readingSpeed": "5",
+        },
+        "short": {
+            "fontSize": "56",
+            "titleFontSize": "30",
+            "maxCharsPerLine": "12",
+            "lineBreakThreshold": "10",
+            "maxCharsPerTelop": "24",
+            "bottomOffset": "200",
+            "titleTop": "60",
+            "titleLeft": "30",
+            "maxWidth": "'92%'",
+            "containerPadding": "'0 30px'",
+            "readingSpeed": "4",
+        },
+        "square": {
+            "fontSize": "66",
+            "titleFontSize": "36",
+            "maxCharsPerLine": "15",
+            "lineBreakThreshold": "12",
+            "maxCharsPerTelop": "30",
+            "bottomOffset": "140",
+            "titleTop": "40",
+            "titleLeft": "30",
+            "maxWidth": "'90%'",
+            "containerPadding": "'0 40px'",
+            "readingSpeed": "4.5",
+        },
+    }
+
+    errors: list[str] = []
+    for fmt, dims in expected_resolutions.items():
+        body = format_body(resolution_body, fmt)
+        for key, expected in dims.items():
+            if not re.search(rf"\b{key}\s*:\s*{re.escape(expected)}\b", body):
+                errors.append(f"RESOLUTION_MAP.{fmt}: missing {key}: {expected}")
+    for fmt, values in expected_telop_values.items():
+        body = format_body(telop_body, fmt)
+        for key, expected in values.items():
+            if not re.search(rf"\b{key}\s*:\s*{re.escape(expected)}\s*,?", body):
+                errors.append(f"TELOP_CONFIG_MAP.{fmt}: missing {key}: {expected}")
+    for pattern, desc in [
+        (r"\bexport\s+const\s+RESOLUTION\s*=\s*RESOLUTION_MAP\s*\[\s*FORMAT\s*\]\s*;", "RESOLUTION derives from RESOLUTION_MAP[FORMAT]"),
+        (r"\bexport\s+const\s+TELOP_CONFIG\s*=\s*TELOP_CONFIG_MAP\s*\[\s*FORMAT\s*\]\s*;", "TELOP_CONFIG derives from TELOP_CONFIG_MAP[FORMAT]"),
+    ]:
+        if not re.search(pattern, text):
+            errors.append(f"videoConfig.ts: missing {desc}")
+    assert errors == [], (
+        "template/src/videoConfig.ts format values contract drift:\n" + "\n".join(errors)
+    )
+
+
 def test_package_json_test_timeline_script_path_resolves_lint() -> None:
     """PR-BQ: package.json scripts['test:timeline'] must use python3 and point to an existing file.
     Catches script rename/move drift so CI never silently runs nothing.
@@ -16955,6 +17060,7 @@ def main() -> int:
         test_remotion_entrypoint_coherence_lint,
         # PR-BP (VideoFormat union must match RESOLUTION_MAP and TELOP_CONFIG_MAP keys): 1 件
         test_video_config_format_map_parity_lint,
+        test_video_config_format_values_contract_lint,
         # PR-BQ (package.json test:timeline must use python3 and point to existing file): 1 件
         test_package_json_test_timeline_script_path_resolves_lint,
         # PR-BR (.gitignore must contain required entries for deps/secrets/artifacts): 1 件
