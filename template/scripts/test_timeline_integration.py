@@ -18106,6 +18106,68 @@ def test_supermovie_narration_engine_docs_match_require_engine_contract_lint() -
     )
 
 
+def test_supermovie_narration_synthesis_docs_match_voicevox_api_contract_lint() -> None:
+    """PR-IZ: supermovie-narration synthesis docs must match VOICEVOX API calls."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-narration" / "SKILL.md"
+    voicevox_path = template_root / "scripts" / "voicevox_narration.py"
+    assert skill_path.is_file(), "skills/supermovie-narration/SKILL.md not found"
+    assert voicevox_path.is_file(), "template/scripts/voicevox_narration.py not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    voicevox_text = voicevox_path.read_text(encoding="utf-8")
+    phase3_match = re.search(r"## Phase 3: 合成 \+ 結合[\s\S]*?## Phase 4:", skill_text)
+    command_match = re.search(r"## 実行コマンド[\s\S]*?## 出力", skill_text)
+    error_row_match = re.search(r"\|\s*`/audio_query` HTTP エラー\s*\|\s*([^|]+?)\s*\|", skill_text)
+    assert phase3_match is not None, "supermovie-narration Phase 3 synthesis docs not found"
+    assert command_match is not None, "supermovie-narration command docs not found"
+    assert error_row_match is not None, "supermovie-narration /audio_query error row not found"
+    docs_text = "\n".join([phase3_match.group(0), command_match.group(0), error_row_match.group(1)])
+
+    required_doc_snippets = {
+        "audio_query endpoint": "`POST /audio_query?text=...&speaker=<id>` → query JSON",
+        "synthesis endpoint": "`POST /synthesis?speaker=<id>` body=query → WAV bytes",
+        "default speaker": "speaker=3 = ずんだもんノーマル",
+        "speaker override command": "python3 <PROJECT>/scripts/voicevox_narration.py --speaker 1",
+        "list speakers command": "python3 <PROJECT>/scripts/voicevox_narration.py --list-speakers",
+        "synthesis warning": "chunk skip + WARN",
+        "all chunks fail": "全 chunk 失敗で exit 5",
+    }
+    required_code_snippets = {
+        "default speaker constant": "DEFAULT_SPEAKER = 3",
+        "speaker argparse": 'ap.add_argument("--speaker", type=int, default=DEFAULT_SPEAKER',
+        "list speakers argparse": 'ap.add_argument("--list-speakers", action="store_true")',
+        "speakers endpoint": 'http_request("GET", "/speakers")',
+        "synthesize function": "def synthesize(text: str, speaker: int) -> bytes:",
+        "audio query call": 'http_request("POST", "/audio_query", params={"text": text, "speaker": speaker}, body={})',
+        "synthesis call": 'http_request("POST", "/synthesis", params={"speaker": speaker}, body=aq)',
+        "list speakers status": 'return emit_json("list_speakers", 0)',
+        "speaker forwarded to synthesize": "wav_bytes = synthesize(text, args.speaker)",
+        "synth failure warn": "WARN: synth failed for chunk",
+        "all chunks failed exit": 'return emit_json("no_chunks_succeeded", 5, total=len(chunks))',
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in docs_text:
+            errors.append(f"supermovie-narration synthesis docs missing {name}: {snippet}")
+    for name, snippet in required_code_snippets.items():
+        if snippet not in voicevox_text:
+            errors.append(f"voicevox_narration.py missing {name}: {snippet}")
+
+    synth_match = re.search(r"def synthesize\(text: str, speaker: int\) -> bytes:[\s\S]*?return wav_bytes", voicevox_text)
+    if synth_match is None or synth_match.group(0).find("/audio_query") > synth_match.group(0).find("/synthesis"):
+        errors.append("voicevox_narration.py synthesize() must call /audio_query before /synthesis")
+
+    assert errors == [], (
+        "supermovie-narration synthesis docs / VOICEVOX API contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -22461,6 +22523,8 @@ def main() -> int:
         test_supermovie_narration_fps_docs_match_voicevox_resolution_lint,
         # PR-IY (supermovie-narration engine docs stay synced with --require-engine): 1 件
         test_supermovie_narration_engine_docs_match_require_engine_contract_lint,
+        # PR-IZ (supermovie-narration synthesis docs stay synced with VOICEVOX API): 1 件
+        test_supermovie_narration_synthesis_docs_match_voicevox_api_contract_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
