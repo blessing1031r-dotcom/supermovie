@@ -14919,6 +14919,46 @@ def test_main_video_required_layers_contract_lint() -> None:
     )
 
 
+def test_main_video_layer_order_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    main_video = template_root / "src" / "MainVideo.tsx"
+    assert main_video.is_file(), "template/src/MainVideo.tsx not found"
+    raw = main_video.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    required_order = [
+        "Video",
+        "SlideSequence",
+        "ImageSequence",
+        "TelopPlayer",
+        "TitleSequence",
+        "NarrationAudioWithMode",
+        "BGM",
+        "SESequence",
+    ]
+    errors: list[str] = []
+    positions: dict[str, int] = {}
+    for component in required_order:
+        match = re.search(rf"<{re.escape(component)}\b", text)
+        if not match:
+            errors.append(f"MainVideo.tsx: <{component}> layer not found")
+        else:
+            positions[component] = match.start()
+    for before, after in zip(required_order, required_order[1:]):
+        if before in positions and after in positions and positions[before] >= positions[after]:
+            errors.append(f"MainVideo.tsx: layer order drift — <{before}> must appear before <{after}>")
+    if not re.search(r"<Video\b[^>]*\bvolume=\{\s*\(\s*\)\s*=>\s*baseVolume\s*\}", text, re.DOTALL):
+        errors.append("MainVideo.tsx: base <Video> must keep volume={() => baseVolume}")
+    if not re.search(r"<NarrationAudioWithMode\b[^>]*\bvolume=\{1\.0\}[^>]*\bmode=\{\s*narrationMode\s*\}", text, re.DOTALL):
+        errors.append("MainVideo.tsx: NarrationAudioWithMode must keep volume={1.0} and mode={narrationMode}")
+    if not re.search(r"<BGM\b[^>]*\bvolume=\{0\.08\}", text, re.DOTALL):
+        errors.append("MainVideo.tsx: BGM must keep volume={0.08}")
+    assert errors == [], (
+        "template/src/MainVideo.tsx layer order contract drift:\n" + "\n".join(errors)
+    )
+
+
 def test_main_video_narration_mode_ssot_contract_lint() -> None:
     """PR-CK: MainVideo.tsx must call useNarrationMode(), derive baseVolume from narrationMode.kind,
     bind volume={() => baseVolume} on the base Video, and pass mode={narrationMode} to NarrationAudioWithMode.
@@ -16269,6 +16309,7 @@ def main() -> int:
         test_root_composition_uses_video_config_lint,
         test_main_video_staticfile_uses_video_file_lint,
         test_main_video_required_layers_contract_lint,
+        test_main_video_layer_order_contract_lint,
         test_main_video_narration_mode_ssot_contract_lint,
         test_text_overlay_telop_config_ssot_contract_lint,
         test_telop_template_registry_file_coverage_lint,
