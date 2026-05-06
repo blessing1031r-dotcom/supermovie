@@ -13958,6 +13958,47 @@ def test_skill_directory_name_canonical_slug_lint() -> None:
     )
 
 
+def test_markdown_local_links_resolve_lint() -> None:
+    """PR-BD: Every relative (non-URL, non-anchor) markdown link in README.md,
+    CLAUDE.md, docs/OBSERVABILITY.md, and skills/*/SKILL.md must resolve to an
+    existing file relative to the containing file's directory.
+    Inline code spans (backtick-delimited, no newline) are stripped before
+    checking to avoid false positives from regex-like patterns in documentation.
+    """
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    target_files: list[Path] = [
+        repo_root / "README.md",
+        repo_root / "CLAUDE.md",
+        repo_root / "docs" / "OBSERVABILITY.md",
+    ]
+    for skill_path in sorted((repo_root / "skills").iterdir()):
+        if skill_path.is_dir():
+            skill_md = skill_path / "SKILL.md"
+            if skill_md.is_file():
+                target_files.append(skill_md)
+
+    errors: list[str] = []
+    for fpath in target_files:
+        if not fpath.is_file():
+            continue
+        text = fpath.read_text(encoding="utf-8")
+        # strip fenced code blocks (``` and ~~~) to avoid links in code examples
+        text = re.sub(r"^(?:```|~~~).*?^(?:```|~~~)\s*$", "", text, flags=re.MULTILINE | re.DOTALL)
+        # strip inline code spans (single-line only, to avoid cross-line false positives)
+        text = re.sub(r"`[^`\n]+`", "", text)
+        for target in re.findall(r"!?\[[^\]]+\]\(([^)\s]+)", text):
+            if re.match(r"https?://|mailto:|#", target):
+                continue
+            path_part = target.split("#", 1)[0]
+            if path_part and not (fpath.parent / path_part).exists():
+                rel = fpath.relative_to(repo_root)
+                errors.append(f"{rel}: broken local link '{target}'")
+
+    assert errors == [], "Markdown local link resolution lint failed:\n" + "\n".join(errors)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -14202,6 +14243,8 @@ def main() -> int:
         test_markdown_fence_balanced_lint,
         # PR-BC (skill directory name canonical slug lint): 1 件
         test_skill_directory_name_canonical_slug_lint,
+        # PR-BD (markdown local links resolve lint: README/CLAUDE.md/OBSERVABILITY/SKILL.md): 1 件
+        test_markdown_local_links_resolve_lint,
     ]
     failed = []
     for t in tests:
