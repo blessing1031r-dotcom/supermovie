@@ -594,6 +594,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 293 | `skills/supermovie-init/SKILL.md` の telop style 選択肢 / トーン別 default が `telopTemplateRegistry.tsx` の 30 displayName と category に同期し、`白青テロップver2` → `WhiteBlueTeleopV2` lookup guidance を保持することを lint (`test_supermovie_init_telop_style_choices_match_registry_lint`、Codex 推奨 PR-HY)。supermovie-init の hearing choices と registry の drift を保護 | PR-HY |
 | 294 | `skills/supermovie-subtitles/SKILL.md` の style→templateId mapping table が `telopTemplateRegistry.tsx` の registry key / category / displayName と同期し、`normal/emphasis/warning/success` の templateId 既定値が registry 実体に存在することを lint (`test_supermovie_subtitles_template_id_mapping_matches_registry_lint`、Codex 推奨 PR-HZ)。supermovie-subtitles の deterministic style mapping と registry の drift を保護 | PR-HZ |
 | 295 | `skills/supermovie-se/SKILL.md` のスタイル別SE選択マトリクスが `TelopSegment.style` union (`normal/emphasis/warning/success`) と同期し、各 style の SE候補 / volume / 配置 guidance が素材カタログと一致することを lint (`test_supermovie_se_style_matrix_matches_telop_style_union_lint`、Codex 推奨 PR-IA)。supermovie-se の SE selection docs と telop style schema の drift を保護 | PR-IA |
+| 296 | `CLAUDE.md` の `project-config.json` schema sample にある `telopStyle` 既定値 (`白青テロップver2` / `オレンジグラデーション` / `黒紫グラデ`) が `telopTemplateRegistry.tsx` の displayName / category / templateId と同期することを lint (`test_claude_project_config_telop_style_defaults_match_registry_lint`、Codex 推奨 PR-IB)。全スキル共通 schema sample と registry の drift を保護 | PR-IB |
 
 ## Test Requirements
 
