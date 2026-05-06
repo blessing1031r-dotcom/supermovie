@@ -15430,6 +15430,46 @@ def test_videoconfig_required_exports_present_lint() -> None:
     )
 
 
+def test_videoconfig_public_export_surface_contract_lint() -> None:
+    """PR-GP: videoConfig public exports must stay limited to the SSoT surface.
+
+    Keep internal maps private and prevent default/export creep from turning config internals
+    into template API surface.
+    """
+    import re
+
+    template_root = Path(__file__).parents[1]
+    vc_path = template_root / "src" / "videoConfig.ts"
+    assert vc_path.is_file(), "template/src/videoConfig.ts not found"
+    raw = vc_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/videoConfig.ts must not use a default export"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|type|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    allowed = {
+        "VideoFormat",
+        "FORMAT",
+        "FPS",
+        "SOURCE_DURATION_FRAMES",
+        "VIDEO_FILE",
+        "RESOLUTION",
+        "TELOP_CONFIG",
+    }
+    assert exported == allowed, (
+        "template/src/videoConfig.ts public export surface drift: "
+        f"expected {sorted(allowed)}, got {sorted(exported)}"
+    )
+
+
 def test_videoconfig_source_duration_frames_numeric_export_lint() -> None:
     import re
 
@@ -19293,6 +19333,8 @@ def main() -> int:
         test_package_json_remotion_version_parity_lint,
         test_package_json_tailwind_v4_dependencies_lint,
         test_videoconfig_required_exports_present_lint,
+        # PR-GP (videoConfig public export surface stays limited to SSoT names): 1 件
+        test_videoconfig_public_export_surface_contract_lint,
         test_videoconfig_source_duration_frames_numeric_export_lint,
         test_videoconfig_supermovie_init_block_scalar_exports_lint,
         test_package_json_identity_contract_lint,
