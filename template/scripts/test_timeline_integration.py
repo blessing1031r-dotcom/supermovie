@@ -19190,6 +19190,35 @@ def test_slide_sequence_wraps_slide_segments_in_sequence_frame_ranges_lint() -> 
     )
 
 
+def test_slide_sequence_public_export_surface_contract_lint() -> None:
+    """PR-HC: SlideSequence module must export only the SlideSequence component."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    seq_file = template_root / "src" / "Slides" / "SlideSequence.tsx"
+    assert seq_file.is_file(), "template/src/Slides/SlideSequence.tsx not found"
+    raw = seq_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/Slides/SlideSequence.tsx must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*\{""", text, re.MULTILINE), (
+        "template/src/Slides/SlideSequence.tsx must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    assert exported == {"SlideSequence"}, (
+        "template/src/Slides/SlideSequence.tsx public export surface drift: "
+        f"expected ['SlideSequence'], got {sorted(exported)}"
+    )
+
+
 def test_image_sequence_wraps_image_segments_in_sequence_frame_ranges_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -19961,6 +19990,8 @@ def main() -> int:
         test_insert_image_data_placeholder_empty_array_and_toframe_export_contract_lint,
         test_slide_sequence_canonical_imports_contract_lint,
         test_slide_sequence_wraps_slide_segments_in_sequence_frame_ranges_lint,
+        # PR-HC (SlideSequence module exports only the SlideSequence component): 1 件
+        test_slide_sequence_public_export_surface_contract_lint,
         test_image_sequence_wraps_image_segments_in_sequence_frame_ranges_lint,
         test_image_sequence_canonical_imports_contract_lint,
         test_telop_data_typed_export_and_video_config_ssot_contract_lint,
