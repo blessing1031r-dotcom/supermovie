@@ -12272,6 +12272,56 @@ def test_observability_artifact_path_root_priority_policy_doc_lint() -> None:
     )
 
 
+def test_npm_script_package_json_runbook_contract_lint() -> None:
+    """PR-W: 4-part lint ensuring package.json npm scripts stay in sync with runbook docs.
+    (1) test = lint + test:timeline + test:react (CI-safe composite)
+    (2) visual-smoke and render NOT mixed into test (fixture-dependent gates stay separate)
+    (3) visual-smoke and render exist as standalone scripts
+    (4) docs/PHASE3_RELEASE_NOTE.md separation language present
+    """
+    import json, re
+    scripts_dir = Path(__file__).parent
+    pkg_path = scripts_dir.parent / "package.json"
+    assert pkg_path.exists(), f"package.json not found: {pkg_path}"
+    pkg = json.loads(pkg_path.read_text())
+    scripts: dict[str, str] = pkg.get("scripts", {})
+
+    # (1) test composite must include all 3 CI-safe components
+    test_cmd = scripts.get("test", "")
+    for required in ("test:timeline", "test:react", "lint"):
+        assert required in test_cmd, (
+            f"package.json: 'test' script missing required component {required!r} — "
+            f"current: {test_cmd!r}"
+        )
+
+    # (2) fixture-dependent gates must NOT be embedded in test
+    for forbidden in ("visual-smoke", "render"):
+        assert forbidden not in test_cmd, (
+            f"package.json: 'test' script must not include fixture-dependent {forbidden!r} — "
+            f"current: {test_cmd!r}"
+        )
+
+    # (3) visual-smoke and render must exist as standalone scripts
+    for standalone in ("visual-smoke", "render"):
+        assert standalone in scripts, (
+            f"package.json: standalone script {standalone!r} not found"
+        )
+
+    # (4) docs/PHASE3_RELEASE_NOTE.md separation language
+    release_note = scripts_dir.parent.parent / "docs" / "PHASE3_RELEASE_NOTE.md"
+    assert release_note.exists(), f"docs/PHASE3_RELEASE_NOTE.md not found"
+    note_text = release_note.read_text()
+    for keyword in ("test:timeline", "test:react", "visual-smoke"):
+        assert keyword in note_text, (
+            f"docs/PHASE3_RELEASE_NOTE.md: separation keyword {keyword!r} not found"
+        )
+    assert re.search(r"npm run test\b.*lint.*test:timeline.*test:react|test = lint.*test:timeline.*test:react",
+                     note_text, re.IGNORECASE | re.DOTALL), (
+        "docs/PHASE3_RELEASE_NOTE.md: missing combined description of npm run test "
+        "(expected 'lint + test:timeline + test:react' composite description)"
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12450,6 +12500,8 @@ def main() -> int:
         test_observability_helper_type_annotation_completeness_lint,
         # PR-V (artifact path root priority policy doc lint): 1 件
         test_observability_artifact_path_root_priority_policy_doc_lint,
+        # PR-W (npm script runbook contract lint): 1 件
+        test_npm_script_package_json_runbook_contract_lint,
     ]
     failed = []
     for t in tests:
