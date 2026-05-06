@@ -18430,6 +18430,109 @@ def test_supermovie_slides_generate_plan_output_docs_match_script_contract_lint(
     )
 
 
+def test_supermovie_slides_topic_grouping_docs_match_build_slide_data_lint() -> None:
+    """PR-JR: supermovie-slides topic grouping docs must match build_slide_data."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    slides_skill_path = repo_root / "skills" / "supermovie-slides" / "SKILL.md"
+    build_slide_path = template_root / "scripts" / "build_slide_data.py"
+    assert slides_skill_path.is_file(), "skills/supermovie-slides/SKILL.md not found"
+    assert build_slide_path.is_file(), "template/scripts/build_slide_data.py not found"
+
+    skill_text = slides_skill_path.read_text(encoding="utf-8")
+    build_text = build_slide_path.read_text(encoding="utf-8")
+
+    def int_constant(name: str) -> int:
+        match = re.search(rf"^{name}\s*=\s*(\d+)\b", build_text, re.MULTILINE)
+        assert match is not None, f"build_slide_data.py {name} not found"
+        return int(match.group(1))
+
+    silence_threshold_ms = int_constant("SILENCE_THRESHOLD_MS")
+    max_segments = int_constant("MAX_SEGMENTS_PER_SLIDE")
+    max_bullets = int_constant("MAX_BULLETS_PER_SLIDE")
+    topic_fn_match = re.search(
+        r"def group_topics\(segments: list\[dict\], threshold_ms: int = SILENCE_THRESHOLD_MS\)"
+        r"[\s\S]*?\n\n\ndef style_for_tone",
+        build_text,
+    )
+    topic_mode_match = re.search(
+        r"def build_slides_topic_mode\(segments: list\[dict\], cut_segments: list\[dict\],"
+        r"[\s\S]*?\n\n\ndef build_slides_segment_mode",
+        build_text,
+    )
+    segment_mode_match = re.search(
+        r"def build_slides_segment_mode\(segments: list\[dict\], cut_segments: list\[dict\],"
+        r"[\s\S]*?\n\n\ndef render_slide_data_ts",
+        build_text,
+    )
+    assert topic_fn_match is not None, "build_slide_data.py group_topics block not found"
+    assert topic_mode_match is not None, "build_slide_data.py build_slides_topic_mode block not found"
+    assert segment_mode_match is not None, "build_slide_data.py build_slides_segment_mode block not found"
+    topic_fn_text = topic_fn_match.group(0)
+    topic_mode_text = topic_mode_match.group(0)
+    segment_mode_text = segment_mode_match.group(0)
+
+    errors: list[str] = []
+    threshold_seconds = f"{silence_threshold_ms / 1000:g}"
+    required_topic_fn_snippets = {
+        "threshold default": "threshold_ms: int = SILENCE_THRESHOLD_MS",
+        "empty guard": "if not segments:",
+        "seed first segment": "groups: list[list[dict]] = [[segments[0]]]",
+        "gap calculation": 'gap_ms = cur["start"] - prev["end"]',
+        "silence split": "if gap_ms >= threshold_ms or len(groups[-1]) >= MAX_SEGMENTS_PER_SLIDE:",
+        "new group": "groups.append([cur])",
+        "same group": "groups[-1].append(cur)",
+    }
+    required_topic_mode_snippets = {
+        "group call": "groups = group_topics(segments)",
+        "first last": "first = group[0]",
+        "last": "last = group[-1]",
+        "title source": 'title = truncate(first["text"], title_max)',
+        "subtitle source": 'subtitle = truncate(last["text"], title_max + 6)',
+        "bullet source": "bullets_source = group[1:-1] if len(group) >= 3 else group",
+        "bullet cap": "bullets_source[:MAX_BULLETS_PER_SLIDE]",
+        "visible layer": '"videoLayer": "visible"',
+    }
+    required_segment_mode_snippets = {
+        "segment title": 'title": truncate(seg["text"], title_max)',
+        "segment style": '"align": style["align"]',
+        "segment video layer": '"videoLayer": "visible"',
+    }
+    required_skill_snippets = {
+        "phase heading": "## Phase 2: 話題分割 (deterministic first)",
+        "topic heading": "### 2-1. 話題区間抽出 (mode=topic、推奨)",
+        "threshold": f"隣接 segments の境界が {threshold_seconds} 秒以上の無音",
+        "fallback group size": f"または {max_segments - 1}-{max_segments} segments で 1 group",
+        "topic title": "**title**: 先頭 segment の text",
+        "topic subtitle": "**subtitle**: 任意。",
+        "topic bullets": f"最大 {max_bullets} 個",
+        "segment heading": "### 2-2. segment 単位 (mode=segment、シンプル fallback)",
+        "segment fallback": "1 transcript segment = 1 slide。短い動画や test 用。",
+        "segment bullets": "- bullets なし",
+    }
+    for name, snippet in required_topic_fn_snippets.items():
+        if snippet not in topic_fn_text:
+            errors.append(f"build_slide_data.py group_topics missing {name}: {snippet}")
+    for name, snippet in required_topic_mode_snippets.items():
+        if snippet not in topic_mode_text:
+            errors.append(f"build_slide_data.py topic mode missing {name}: {snippet}")
+    for name, snippet in required_segment_mode_snippets.items():
+        if snippet not in segment_mode_text:
+            errors.append(f"build_slide_data.py segment mode missing {name}: {snippet}")
+    if '"bullets"' in segment_mode_text:
+        errors.append("build_slide_data.py segment mode must not emit bullets")
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-slides topic grouping docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-slides topic grouping docs / build_slide_data.py contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -23964,6 +24067,8 @@ def main() -> int:
         test_supermovie_slides_render_output_docs_match_build_slide_data_lint,
         # PR-JQ (supermovie-slides Phase 3-C output docs stay synced with generate_slide_plan): 1 件
         test_supermovie_slides_generate_plan_output_docs_match_script_contract_lint,
+        # PR-JR (supermovie-slides topic grouping docs stay synced with build_slide_data): 1 件
+        test_supermovie_slides_topic_grouping_docs_match_build_slide_data_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
