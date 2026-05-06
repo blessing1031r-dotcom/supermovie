@@ -18534,6 +18534,110 @@ def test_supermovie_narration_wav_docs_match_header_concat_contract_lint() -> No
     )
 
 
+def test_supermovie_narration_ready_sentinel_contract_lint() -> None:
+    """PR-JF: voicevox publish sentinel must match the TS narration mode watcher."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    voicevox_path = template_root / "scripts" / "voicevox_narration.py"
+    mode_path = template_root / "src" / "Narration" / "mode.ts"
+    hook_path = template_root / "src" / "Narration" / "useNarrationMode.ts"
+    assert voicevox_path.is_file(), "template/scripts/voicevox_narration.py not found"
+    assert mode_path.is_file(), "template/src/Narration/mode.ts not found"
+    assert hook_path.is_file(), "template/src/Narration/useNarrationMode.ts not found"
+
+    voicevox_text = voicevox_path.read_text(encoding="utf-8")
+    mode_text = mode_path.read_text(encoding="utf-8")
+    hook_text = hook_path.read_text(encoding="utf-8")
+    write_ready_match = re.search(
+        r"def write_narration_ready\(chunk_count: int, total_frames: int\) -> None:[\s\S]*?"
+        r"(?=\n\ndef project_load_cut_segments)",
+        voicevox_text,
+    )
+    main_pos = voicevox_text.find("def main():")
+    py_ready_match = re.search(
+        r'NARRATION_READY_JSON = PROJ / "public" / "([^"]+)"',
+        voicevox_text,
+    )
+    ts_ready_match = re.search(
+        r"export const NARRATION_READY_FILE = '([^']+)';",
+        mode_text,
+    )
+    assert write_ready_match is not None, "write_narration_ready() not found"
+    assert main_pos != -1, "voicevox_narration.py main() not found"
+    assert py_ready_match is not None, "NARRATION_READY_JSON path not found"
+    assert ts_ready_match is not None, "NARRATION_READY_FILE constant not found"
+    write_ready_text = write_ready_match.group(0)
+    main_text = voicevox_text[main_pos:]
+
+    required_python_snippets = {
+        "ready path": 'NARRATION_READY_JSON = PROJ / "public" / "narration.ready.json"',
+        "schema version": "SENTINEL_SCHEMA_VERSION = 1",
+        "payload schemaVersion": '"schemaVersion": SENTINEL_SCHEMA_VERSION',
+        "payload status": '"status": "ready"',
+        "payload chunk count": '"chunkCount": chunk_count',
+        "payload total frames": '"totalFrames": total_frames',
+        "payload generatedAtMs": '"generatedAtMs": int(time.time() * 1000)',
+        "atomic write": 'atomic_write_text(NARRATION_READY_JSON, json.dumps(payload, ensure_ascii=False) + "\\n")',
+        "write ready call": "write_narration_ready(len(chunk_paths), total_frames)",
+        "sentinel failure status": '"sentinel_write_fail", 6,',
+        "summary key": '"narration_ready_json": safe_artifact_path(NARRATION_READY_JSON',
+    }
+    required_mode_snippets = {
+        "ready constant": "export const NARRATION_READY_FILE = 'narration.ready.json';",
+        "public path docs": "`public/narration.ready.json`",
+        "dedup docs": "`lastModified` /\n * `sizeInBytes` を signal key",
+    }
+    required_hook_snippets = {
+        "ready import": "NARRATION_READY_FILE,",
+        "watch ready": "const watchReady = watchStaticFile(",
+        "watch ready file": "NARRATION_READY_FILE,",
+        "watch ready sentinel": "makeUpdate(NARRATION_READY_FILE, true),",
+        "null deletion guard": "if (isSentinel && file === null) {",
+        "signal key": "const signal = `${file.lastModified ?? 'na'}:${file.sizeInBytes ?? 'na'}`;",
+        "dedup check": "dedupSignal.get(key) === signal",
+        "dedup store": "dedupSignal.set(key, signal);",
+    }
+
+    errors: list[str] = []
+    if py_ready_match.group(1) != ts_ready_match.group(1):
+        errors.append(
+            "Python NARRATION_READY_JSON basename must match TS NARRATION_READY_FILE: "
+            f"{py_ready_match.group(1)} != {ts_ready_match.group(1)}"
+        )
+    for name, snippet in required_python_snippets.items():
+        if snippet not in voicevox_text:
+            errors.append(f"voicevox_narration.py missing {name}: {snippet}")
+    for name, snippet in required_mode_snippets.items():
+        if snippet not in mode_text:
+            errors.append(f"Narration/mode.ts missing {name}: {snippet}")
+    for name, snippet in required_hook_snippets.items():
+        if snippet not in hook_text:
+            errors.append(f"useNarrationMode.ts missing {name}: {snippet}")
+
+    payload_pos = write_ready_text.find("payload = {")
+    atomic_write_pos = write_ready_text.find("atomic_write_text(NARRATION_READY_JSON")
+    if payload_pos == -1 or atomic_write_pos == -1 or not payload_pos < atomic_write_pos:
+        errors.append("write_narration_ready() must build the ready payload before atomic write")
+
+    concat_pos = main_text.find("concat_wavs_atomic(chunk_paths, out_path)")
+    ready_call_pos = main_text.find("write_narration_ready(len(chunk_paths), total_frames)")
+    summary_pos = main_text.find('"narration_ready_json": safe_artifact_path(NARRATION_READY_JSON')
+    if concat_pos == -1 or ready_call_pos == -1 or summary_pos == -1 or not concat_pos < ready_call_pos < summary_pos:
+        errors.append("main() must write the ready sentinel after narration.wav concat and before summary")
+
+    watch_pos = hook_text.find("const watchReady = watchStaticFile(")
+    legacy_watch_pos = hook_text.find("const watchLegacy = watchStaticFile(")
+    if watch_pos == -1 or legacy_watch_pos == -1 or not watch_pos < legacy_watch_pos:
+        errors.append("useNarrationMode.ts must register the ready sentinel watcher before legacy wav watcher")
+
+    assert errors == [], (
+        "supermovie-narration ready sentinel contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -22901,6 +23005,8 @@ def main() -> int:
         test_supermovie_narration_partial_docs_match_allow_partial_contract_lint,
         # PR-JE (supermovie-narration WAV docs stay synced with header/concat guards): 1 件
         test_supermovie_narration_wav_docs_match_header_concat_contract_lint,
+        # PR-JF (supermovie-narration ready sentinel stays synced between writer and runtime): 1 件
+        test_supermovie_narration_ready_sentinel_contract_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
