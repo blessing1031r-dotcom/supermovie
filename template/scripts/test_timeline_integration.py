@@ -16067,6 +16067,53 @@ def test_telop_template_components_subtitle_data_contract_lint() -> None:
     )
 
 
+def test_telop_template_components_subtitle_type_surface_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    telop_dirs = ("メインテロップ", "強調テロップ", "ネガティブテロップ")
+    required_interfaces = [
+        (
+            r"export\s+interface\s+SubtitleItem\s*\{[\s\S]*?"
+            r"\btext\s*:\s*string\s*;[\s\S]*?"
+            r"\blines\s*:\s*string\[\]\s*;[\s\S]*?"
+            r"\bstart\s*:\s*number\s*;[\s\S]*?"
+            r"\bend\s*:\s*number\s*;[\s\S]*?"
+            r"\bstartFrame\s*:\s*number\s*;[\s\S]*?"
+            r"\bendFrame\s*:\s*number\s*;[\s\S]*?\}",
+            "SubtitleItem text/lines/timing fields",
+        ),
+        (
+            r"export\s+interface\s+SubtitleData\s*\{[\s\S]*?"
+            r"\bfps\s*:\s*number\s*;[\s\S]*?"
+            r"\bsubtitles\s*:\s*SubtitleItem\[\]\s*;[\s\S]*?\}",
+            "SubtitleData fps + subtitles fields",
+        ),
+    ]
+    checked = 0
+    errors: list[str] = []
+    for dir_name in telop_dirs:
+        dir_path = template_root / "src" / dir_name
+        if not dir_path.is_dir():
+            errors.append(f"template/src/{dir_name}: directory not found")
+            continue
+        for tsx_file in sorted(dir_path.glob("*.tsx")):
+            checked += 1
+            rel = tsx_file.relative_to(template_root)
+            raw = tsx_file.read_text(encoding="utf-8")
+            text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+            text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+            for pattern, desc in required_interfaces:
+                if not re.search(pattern, text, re.DOTALL):
+                    errors.append(f"{rel}: missing exported {desc}")
+    if checked != 30:
+        errors.append(f"telop template component count changed: expected 30, got {checked}")
+    assert errors == [], (
+        "telop template component subtitle type surface contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_components_canonical_imports_contract_lint() -> None:
     import re
 
@@ -18197,6 +18244,7 @@ def main() -> int:
         test_telop_template_registry_type_surface_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
+        test_telop_template_components_subtitle_type_surface_contract_lint,
         test_telop_template_components_canonical_imports_contract_lint,
         # PR-CO (sequence components are data-driven from local arrays lint): 1 件
         test_sequence_components_are_data_driven_from_local_arrays,
