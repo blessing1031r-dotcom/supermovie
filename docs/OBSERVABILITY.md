@@ -560,6 +560,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 259 | `template/src/Narration/mode.ts` の public export surface が `NARRATION_LEGACY_FILE` / `NARRATION_READY_FILE` / `NarrationMode` / `getNarrationMode` / `invalidateNarrationMode` に限定され、default export を持たないことを lint (`test_narration_mode_public_export_surface_contract_lint`、Codex 推奨 PR-GQ)。Narration mode SSoT helper の API surface creep を保護 | PR-GQ |
 | 260 | `template/src/Narration/useNarrationMode.ts` の public export surface が `useNarrationMode` だけに限定され、default export を持たないことを lint (`test_use_narration_mode_public_export_surface_contract_lint`、Codex 推奨 PR-GR)。Narration hook module の API surface creep を保護 | PR-GR |
 | 261 | `template/src/Narration/NarrationAudio.tsx` の public export surface が `NarrationAudioWithMode` / `NarrationAudio` に限定され、default export を持たないことを lint (`test_narration_audio_public_export_surface_contract_lint`、Codex 推奨 PR-GS)。Narration audio module の API surface creep を保護 | PR-GS |
+| 262 | `template/src/Slides/index.tsx` の public export surface が `SlideSequence` / `Slide` / `SlideSegment` / `SlideBullet` / `SlideAlignment` / `slideData` に限定され、default export を持たないことを lint (`test_slides_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GT)。Slides barrel の API surface creep を保護 | PR-GT |
 
 ## Test Requirements
 
