@@ -13821,6 +13821,49 @@ def test_marketplace_json_mirrors_plugin_json_lint() -> None:
     assert errors == [], "marketplace.json/plugin.json mirror lint failed:\n" + "\n".join(errors)
 
 
+def test_marketplace_json_plugins_array_shape_lint() -> None:
+    """PR-AZ: marketplace.json plugins array must contain exactly one entry with
+    name=='supermovie', source=='.', and a non-empty description string.
+    """
+    import json
+
+    repo_root = Path(__file__).parents[2]
+    marketplace_path = repo_root / ".claude-plugin" / "marketplace.json"
+    assert marketplace_path.is_file(), "marketplace.json not found in .claude-plugin/"
+    market = json.loads(marketplace_path.read_text(encoding="utf-8"))
+
+    plugins = market.get("plugins")
+    errors: list[str] = []
+
+    if not isinstance(plugins, list):
+        assert False, f"marketplace.json 'plugins' must be a list, got {type(plugins).__name__!r}"
+
+    if len(plugins) != 1:
+        errors.append(
+            f"marketplace.json 'plugins' must have exactly 1 entry, got {len(plugins)}"
+        )
+    else:
+        entry = plugins[0]
+        if not isinstance(entry, dict):
+            errors.append(f"marketplace.json plugins[0] must be an object, got {type(entry).__name__!r}")
+        else:
+            if entry.get("name") != "supermovie":
+                errors.append(
+                    f"marketplace.json plugins[0].name must be 'supermovie', got {entry.get('name')!r}"
+                )
+            if entry.get("source") != ".":
+                errors.append(
+                    f"marketplace.json plugins[0].source must be '.', got {entry.get('source')!r}"
+                )
+            desc = entry.get("description", "")
+            if not isinstance(desc, str) or not desc.strip():
+                errors.append(
+                    f"marketplace.json plugins[0].description must be a non-empty string, got {desc!r}"
+                )
+
+    assert errors == [], "marketplace.json plugins array shape lint failed:\n" + "\n".join(errors)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -14057,6 +14100,8 @@ def main() -> int:
         test_plugin_json_license_file_consistency_lint,
         # PR-AY (marketplace.json owner/version mirrors plugin.json author/version): 1 件
         test_marketplace_json_mirrors_plugin_json_lint,
+        # PR-AZ (marketplace.json plugins array: 1 entry, name/source/description shape): 1 件
+        test_marketplace_json_plugins_array_shape_lint,
     ]
     failed = []
     for t in tests:
