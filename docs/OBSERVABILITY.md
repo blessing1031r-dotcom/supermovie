@@ -515,6 +515,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 214 | `template/src/Slides/types.ts` が `SlideBullet` の `text: string` / `emphasis?: boolean` と `SlideSegment` の `subtitle?: string` / `bullets?: SlideBullet[]` / `align?: SlideAlignment` / `backgroundColor?: string` / `textColor?: string` を保つことを lint (`test_slide_types_bullet_and_optional_fields_contract_lint`、Codex 推奨 PR-EX)。Slide types bullet and optional display fields contract を保護 | PR-EX |
 | 215 | `template/src/Title/titleData.ts` が `TitleSegment` type import、`FPS` import、`export const toFrame = (seconds: number) => Math.round(seconds * FPS);`、コメント除去後の `export const titleData: TitleSegment[] = [];` placeholder を保つことを lint (`test_title_data_placeholder_empty_array_and_toframe_export_contract_lint`、Codex 推奨 PR-EY)。Title data placeholder and toFrame export contract を保護 | PR-EY |
 | 216 | `template/src/Slides/slideData.ts` がコメント除去後に `export const slideData: SlideSegment[] = [];` の empty placeholder を保つことを lint (`test_slide_data_placeholder_empty_array_contract_lint`、Codex 推奨 PR-EZ)。Slide data empty placeholder contract を保護 | PR-EZ |
+| 217 | `template/src/InsertImage/insertImageData.ts` が `export const toFrame = (seconds: number) => Math.round(seconds * FPS);` とコメント除去後の `export const insertImageData: ImageSegment[] = [];` placeholder を保つことを lint (`test_insert_image_data_placeholder_empty_array_and_toframe_export_contract_lint`、Codex 推奨 PR-FA)。InsertImage data placeholder and toFrame export contract を保護 | PR-FA |
 
 ## Test Requirements
 
