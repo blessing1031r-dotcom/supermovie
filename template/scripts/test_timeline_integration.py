@@ -17830,6 +17830,76 @@ def test_supermovie_narration_mode_docs_match_runtime_contract_lint() -> None:
     )
 
 
+def test_supermovie_narration_output_docs_match_voicevox_paths_lint() -> None:
+    """PR-IV: supermovie-narration output docs must match voicevox_narration paths."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-narration" / "SKILL.md"
+    voicevox_path = template_root / "scripts" / "voicevox_narration.py"
+    assert skill_path.is_file(), "skills/supermovie-narration/SKILL.md not found"
+    assert voicevox_path.is_file(), "template/scripts/voicevox_narration.py not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    voicevox_text = voicevox_path.read_text(encoding="utf-8")
+    output_match = re.search(r"## 出力\s*([\s\S]*?)## エラーハンドリング", skill_text)
+    integration_match = re.search(r"## 連携マップ\s*```([\s\S]*?)```", skill_text)
+    assert output_match is not None, "supermovie-narration output section not found"
+    assert integration_match is not None, "supermovie-narration integration map not found"
+    output_text = output_match.group(1)
+    integration_text = integration_match.group(1)
+
+    expected_outputs = {
+        "legacy wav": "<PROJECT>/public/narration.wav",
+        "chunk wav": "<PROJECT>/public/narration/chunk_NNN.wav",
+        "chunk meta": "<PROJECT>/public/narration/chunk_meta.json",
+        "narration data": "<PROJECT>/src/Narration/narrationData.ts",
+    }
+    expected_integration_paths = {
+        "public/narration/chunk_NNN.wav",
+        "public/narration/chunk_meta.json",
+        "src/Narration/narrationData.ts",
+        "public/narration.wav",
+    }
+
+    errors: list[str] = []
+    for name, path in expected_outputs.items():
+        if f"`{path}`" not in output_text:
+            errors.append(f"supermovie-narration output docs missing {name}: {path}")
+    for path in expected_integration_paths:
+        if path not in integration_text:
+            errors.append(f"supermovie-narration integration map missing path: {path}")
+
+    for pattern, desc in (
+        (r"NARRATION_DIR\s*=\s*PROJ\s*/\s*['\"]public['\"]\s*/\s*['\"]narration['\"]", "NARRATION_DIR public/narration"),
+        (r"NARRATION_LEGACY_WAV\s*=\s*PROJ\s*/\s*['\"]public['\"]\s*/\s*['\"]narration\.wav['\"]", "NARRATION_LEGACY_WAV public/narration.wav"),
+        (r"NARRATION_DATA_TS\s*=\s*PROJ\s*/\s*['\"]src['\"]\s*/\s*['\"]Narration['\"]\s*/\s*['\"]narrationData\.ts['\"]", "NARRATION_DATA_TS src/Narration/narrationData.ts"),
+        (r"CHUNK_META_JSON\s*=\s*NARRATION_DIR\s*/\s*['\"]chunk_meta\.json['\"]", "CHUNK_META_JSON narration/chunk_meta.json"),
+        (r"NARRATION_DIR\s*/\s*f['\"]chunk_\{i:03d\}\.wav['\"]", "chunk_NNN.wav write path"),
+        (r"return\s+segments\s*,\s*NARRATION_DATA_TS\s*,\s*CHUNK_META_JSON", "write_narration_data return paths"),
+        (r"concat_wavs_atomic\s*\(\s*chunk_paths\s*,\s*out_path\s*\)", "legacy wav concat output"),
+    ):
+        if not re.search(pattern, voicevox_text):
+            errors.append(f"voicevox_narration.py missing {desc}")
+
+    required_runtime_writes = {
+        "narrationData atomic write": "atomic_write_text(NARRATION_DATA_TS",
+        "chunk meta atomic write": "atomic_write_text(\n        CHUNK_META_JSON",
+        "summary narration_wav": '"narration_wav": safe_artifact_path(out_path',
+        "summary narration_data_ts": '"narration_data_ts": safe_artifact_path(ts_path',
+        "summary chunk_meta_json": '"chunk_meta_json": safe_artifact_path(meta_path',
+    }
+    for name, snippet in required_runtime_writes.items():
+        if snippet not in voicevox_text:
+            errors.append(f"voicevox_narration.py missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-narration output docs / voicevox path contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -22177,6 +22247,8 @@ def main() -> int:
         test_supermovie_se_rotation_docs_match_style_matrix_lint,
         # PR-IU (supermovie-narration mode docs stay synced with runtime wiring): 1 件
         test_supermovie_narration_mode_docs_match_runtime_contract_lint,
+        # PR-IV (supermovie-narration output docs stay synced with voicevox paths): 1 件
+        test_supermovie_narration_output_docs_match_voicevox_paths_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
