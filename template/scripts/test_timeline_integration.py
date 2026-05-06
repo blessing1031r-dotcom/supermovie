@@ -18353,6 +18353,83 @@ def test_supermovie_slides_render_output_docs_match_build_slide_data_lint() -> N
     )
 
 
+def test_supermovie_slides_generate_plan_output_docs_match_script_contract_lint() -> None:
+    """PR-JQ: supermovie-slides Phase 3-C docs must match generate_slide_plan output contract."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    slides_skill_path = repo_root / "skills" / "supermovie-slides" / "SKILL.md"
+    observability_path = repo_root / "docs" / "OBSERVABILITY.md"
+    generate_path = template_root / "scripts" / "generate_slide_plan.py"
+    assert slides_skill_path.is_file(), "skills/supermovie-slides/SKILL.md not found"
+    assert observability_path.is_file(), "docs/OBSERVABILITY.md not found"
+    assert generate_path.is_file(), "template/scripts/generate_slide_plan.py not found"
+
+    skill_text = slides_skill_path.read_text(encoding="utf-8")
+    obs_text = observability_path.read_text(encoding="utf-8")
+    generate_text = generate_path.read_text(encoding="utf-8")
+    success_emit_match = re.search(
+        r"return emit_json\(\s*\n\s*\"success\",\s*0,[\s\S]*?\n\s*\)",
+        generate_text,
+    )
+    assert success_emit_match is not None, "generate_slide_plan.py success emit block not found"
+    success_emit = success_emit_match.group(0)
+
+    errors: list[str] = []
+    required_script_snippets = {
+        "output cli default": 'ap.add_argument("--output", default=str(PROJ / "slide_plan.json"))',
+        "api key skip guard": "if not api_key and not args.dry_run:",
+        "api key skip status": 'return emit_json("api_key_skipped", 0)',
+        "out path": "out_path = Path(args.output)",
+        "plan write": 'out_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")',
+        "safe output": "safe_artifact_path(out_path, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)",
+        "human wrote": 'print(f"wrote: {_safe_out}")',
+        "human slides": 'print(f"slides: {len(plan.get(\'slides\', []))}")',
+        "success model": "model=args.model",
+        "success max tokens": "max_tokens=max_tokens",
+        "success output": "output=str(out_path)",
+    }
+    required_skill_snippets = {
+        "phase command heading": "# Phase 3-C (LLM optional plan、ANTHROPIC_API_KEY 必須):",
+        "generate command": "ANTHROPIC_API_KEY=sk-ant-... python3 <PROJECT>/scripts/generate_slide_plan.py \\",
+        "output arg": "--output <PROJECT>/slide_plan.json",
+        "build handoff": "python3 <PROJECT>/scripts/build_slide_data.py --plan <PROJECT>/slide_plan.json",
+        "phase heading": "## Phase 3-C: LLM optional plan",
+        "word index contract": "LLM 経路は word index ベースの plan を返し、frame は build script が変換する",
+    }
+    required_obs_snippets = {
+        "current surface generate row": "| `generate_slide_plan.py` | ✓ helper 経由 v1",
+        "redaction surface": "HTTP body / LLM raw text default redact、output path safe",
+        "output path gap history": "`generate_slide_plan.py` の output JSON `path` 絶対 path 漏れ",
+        "safe artifact path": "`safe_artifact_path` (`<HOME>` / `<TMP>` / `<ABS>` placeholder)",
+        "dry run legacy": "`generate_slide_plan.py` の dry-run JSON は `--json-log` 強制なし",
+        "two emission pattern": "2-emission pattern",
+    }
+    required_success_emit_snippets = {
+        "status": '"success", 0',
+        "slides count": 'slides=len(plan.get("slides", []))',
+        "output": "output=str(out_path)",
+    }
+    for name, snippet in required_script_snippets.items():
+        if snippet not in generate_text:
+            errors.append(f"generate_slide_plan.py output contract missing {name}: {snippet}")
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-slides Phase 3-C docs missing {name}: {snippet}")
+    for name, snippet in required_obs_snippets.items():
+        if snippet not in obs_text:
+            errors.append(f"OBSERVABILITY generate_slide_plan output contract missing {name}: {snippet}")
+    for name, snippet in required_success_emit_snippets.items():
+        if snippet not in success_emit:
+            errors.append(f"generate_slide_plan.py success emit missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-slides Phase 3-C docs / generate_slide_plan.py output contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -23885,6 +23962,8 @@ def main() -> int:
         test_timeline_transcript_segment_validation_docs_match_schema_contract_lint,
         # PR-JP (supermovie-slides output docs stay synced with build_slide_data render/write): 1 件
         test_supermovie_slides_render_output_docs_match_build_slide_data_lint,
+        # PR-JQ (supermovie-slides Phase 3-C output docs stay synced with generate_slide_plan): 1 件
+        test_supermovie_slides_generate_plan_output_docs_match_script_contract_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
