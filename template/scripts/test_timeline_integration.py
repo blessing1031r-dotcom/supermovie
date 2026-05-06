@@ -20371,6 +20371,78 @@ def test_remotion_facing_skills_route_through_bridge_skill_lint() -> None:
     )
 
 
+def test_remotion_upstream_pr_lifecycle_stays_optional_later_lint() -> None:
+    """PR-LD: upstream PR lifecycle work must stay optional_later / non-goal."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    plan_path = repo_root / "docs" / "REMOTION_CODEX_PLUGIN_INTEGRATION.md"
+    bridge_path = repo_root / "skills" / "supermovie-remotion-bridge" / "SKILL.md"
+    obs_path = repo_root / "docs" / "OBSERVABILITY.md"
+    for path in (plan_path, bridge_path, obs_path):
+        assert path.is_file(), f"{path.relative_to(repo_root)} not found"
+
+    plan_text = plan_path.read_text(encoding="utf-8")
+    bridge_text = bridge_path.read_text(encoding="utf-8")
+    obs_text = obs_path.read_text(encoding="utf-8")
+    errors: list[str] = []
+
+    required_plan_snippets = {
+        "local/fork spike": "only as a local/fork docs-and-lint branch",
+        "no create upstream PR": "Do not create upstream PRs.",
+        "no maintainer contact": "Do not contact upstream maintainers.",
+        "fork main success": "fork/main can carry the doc and lint without touching `origin`.",
+        "upstream lifecycle non-goal": "Opening, closing, or modifying upstream PRs.",
+        "upstream merge non-goal": "Making upstream merge status a completion condition.",
+        "no rewrite history": "Rewriting history, force-pushing, or deleting remote history.",
+    }
+    for name, snippet in required_plan_snippets.items():
+        if snippet not in plan_text:
+            errors.append(f"integration plan missing upstream lifecycle boundary {name}: {snippet}")
+
+    required_bridge_snippets = {
+        "optional table": "| upstream PR / maintainer contact | optional_later |",
+        "no lifecycle ops": "upstream PR 作成・close/reopen・maintainer contact は行わない",
+        "output no upstream PR": "- no upstream PR",
+        "output no contact": "- no source author / maintainer contact",
+        "optional fallback": "upstream 変更が必要に見える | optional_later に分類し、fork/local の docs・lint・patch で代替する",
+    }
+    for name, snippet in required_bridge_snippets.items():
+        if snippet not in bridge_text:
+            errors.append(f"remotion bridge missing upstream lifecycle boundary {name}: {snippet}")
+
+    non_goals_match = re.search(r"## Non-Goals\s*([\s\S]*)\Z", plan_text)
+    if non_goals_match is None:
+        errors.append("integration plan missing Non-Goals section")
+    else:
+        non_goals_text = non_goals_match.group(1)
+        required_non_goal_terms = (
+            "upstream PRs",
+            "upstream merge status",
+            "force-pushing",
+            "remote history",
+        )
+        for term in required_non_goal_terms:
+            if term not in non_goals_text:
+                errors.append(f"integration plan Non-Goals missing term: {term}")
+
+    required_obs_snippets = {
+        "step": "| 376 | `docs/REMOTION_CODEX_PLUGIN_INTEGRATION.md`",
+        "test name": "test_remotion_upstream_pr_lifecycle_stays_optional_later_lint",
+        "pr code": "PR-LD",
+        "optional_later": "optional_later",
+        "close/reopen": "close/reopen",
+    }
+    for name, snippet in required_obs_snippets.items():
+        if snippet not in obs_text:
+            errors.append(f"OBSERVABILITY step 376 missing {name}: {snippet}")
+
+    assert errors == [], (
+        "Remotion upstream PR lifecycle optional_later boundary drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_remotion_bridge_skill_docs_contract_lint() -> None:
     """PR-KY: supermovie-remotion-bridge advisory skill must preserve integration boundaries."""
 
@@ -27422,6 +27494,8 @@ def main() -> int:
         test_supermovie_skill_creator_scaffold_docs_match_plugin_skill_lint,
         # PR-LA (Remotion-facing skills route official guidance through bridge skill): 1 件
         test_remotion_facing_skills_route_through_bridge_skill_lint,
+        # PR-LD (Remotion integration keeps upstream PR lifecycle optional_later): 1 件
+        test_remotion_upstream_pr_lifecycle_stays_optional_later_lint,
         # PR-LB (supermovie-skill-creator quality checklist protects scaffold quality): 1 件
         test_supermovie_skill_creator_quality_checklist_docs_match_scaffold_contract_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
