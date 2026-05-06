@@ -566,6 +566,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 265 | `template/src/Narration/index.ts` の public export surface が `NarrationAudio` / `NarrationAudioWithMode` / `narrationData` / `getNarrationMode` / `invalidateNarrationMode` / `NARRATION_LEGACY_FILE` / `useNarrationMode` / `NarrationSegment` / `NarrationMode` に限定され、default export を持たないことを lint (`test_narration_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GW)。Narration barrel の API surface creep を保護 | PR-GW |
 | 266 | `template/src/テロップテンプレート/index.tsx` の public export surface が `Telop` / `TelopPlayer` / `telopData` / `TOTAL_FRAMES` / `FPS` / `TelopSegment` / `subtitleConfig` に限定され、default export を持たないことを lint (`test_telop_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GX)。Telop barrel の API surface creep を保護 | PR-GX |
 | 267 | `template/src/SoundEffects/BGM.tsx` の public export surface が `BGM` に限定され、default export を持たないことを lint (`test_bgm_public_export_surface_contract_lint`、Codex 推奨 PR-GY)。BGM module の API surface creep を保護 | PR-GY |
+| 268 | `template/src/SoundEffects/SESequence.tsx` の public export surface が `SESequence` に限定され、default export を持たないことを lint (`test_se_sequence_public_export_surface_contract_lint`、Codex 推奨 PR-GZ)。SESequence module の API surface creep を保護 | PR-GZ |
 
 ## Test Requirements
 
