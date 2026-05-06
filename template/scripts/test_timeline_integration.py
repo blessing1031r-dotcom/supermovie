@@ -12616,9 +12616,9 @@ def test_readme_workflow_order_matches_claude_pipeline_lint() -> None:
     """PR-AC: README.md command table order must match CLAUDE.md canonical pipeline order.
     (1) Extract canonical pipeline order from CLAUDE.md ## 正規ワークフロー block.
     (2) Extract /supermovie-* commands from README.md command table rows (| column | /cmd | ...).
-    (3) For each adjacent pair of canonical pipeline steps that both appear in the README table,
-        verify the earlier canonical step appears before the later one in the table.
-    Non-pipeline skills (e.g. telop-creator, skill-creator) are allowed anywhere.
+    (3) Pipeline steps in the README table must appear in monotonically increasing canonical
+        index order (no inversions). Non-pipeline skills (e.g. telop-creator, skill-creator)
+        are filtered out and allowed anywhere.
     """
     import re
 
@@ -12639,6 +12639,7 @@ def test_readme_workflow_order_matches_claude_pipeline_lint() -> None:
         if s not in seen:
             canonical_steps.append(s)
             seen.add(s)
+    assert canonical_steps, "CLAUDE.md: ## 正規ワークフロー block has no /supermovie-* steps"
     canonical_index = {step: i for i, step in enumerate(canonical_steps)}
 
     # (2) Extract commands from README table rows containing /supermovie-
