@@ -15132,6 +15132,50 @@ def test_telop_legacy_template_selection_contract_lint() -> None:
     )
 
 
+def test_telop_legacy_animation_selection_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    telop_file = template_root / "src" / "テロップテンプレート" / "Telop.tsx"
+    assert telop_file.is_file(), "template/src/テロップテンプレート/Telop.tsx not found"
+    raw = telop_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    varied_order = (
+        r"const\s+animations\s*=\s*\[[\s\S]*?"
+        r"animation_fadeOnly[\s\S]*?"
+        r"animation_fadeFromLeft[\s\S]*?"
+        r"animation_fadeOnly[\s\S]*?"
+        r"animation_slideFromLeft[\s\S]*?"
+        r"animation_fadeOnly[\s\S]*?"
+        r"animation_slideLeftFadeBlur[\s\S]*?"
+        r"\]"
+    )
+    for pattern, desc in [
+        (r"const\s+getVariedAnimation\s*=\s*\(\s*id:\s*number\s*\)\s*=>\s*\{", "getVariedAnimation(id) helper"),
+        (varied_order, "fadeOnly variation order"),
+        (r"return\s+animations\s*\[\s*id\s*%\s*animations\.length\s*\]\s*;", "variation selected by id modulo length"),
+        (r"const\s+getAnimationConfig\s*=\s*\(\s*segment:\s*TelopSegment\s*\)\s*=>\s*\{", "getAnimationConfig(segment) helper"),
+        (r"if\s*\(\s*segment\.animation\s*===\s*['\"]slideIn['\"]\s*\)\s*return\s+animation_slideIn\s*;", "slideIn maps to animation_slideIn"),
+        (r"if\s*\(\s*segment\.animation\s*===\s*['\"]fadeOnly['\"]\s*\)\s*return\s+getVariedAnimation\s*\(\s*segment\.id\s*\)\s*;", "fadeOnly maps through getVariedAnimation(segment.id)"),
+        (r"if\s*\(\s*segment\.animation\s*===\s*['\"]slideFromLeft['\"]\s*\)\s*return\s+animation_slideFromLeft\s*;", "slideFromLeft maps to animation_slideFromLeft"),
+        (r"if\s*\(\s*segment\.animation\s*===\s*['\"]fadeBlurFromBottom['\"]\s*\)\s*return\s+animation_fadeBlurFromBottom\s*;", "fadeBlurFromBottom maps to animation_fadeBlurFromBottom"),
+        (r"if\s*\(\s*segment\.animation\s*===\s*['\"]slideLeftFadeBlur['\"]\s*\)\s*return\s+animation_slideLeftFadeBlur\s*;", "slideLeftFadeBlur maps to animation_slideLeftFadeBlur"),
+        (r"if\s*\(\s*segment\.animation\s*===\s*['\"]fadeFromRight['\"]\s*\)\s*return\s+animation_fadeFromRight\s*;", "fadeFromRight maps to animation_fadeFromRight"),
+        (r"if\s*\(\s*segment\.animation\s*===\s*['\"]fadeFromLeft['\"]\s*\)\s*return\s+animation_fadeFromLeft\s*;", "fadeFromLeft maps to animation_fadeFromLeft"),
+        (r"if\s*\(\s*segment\.animation\s*===\s*['\"]charByChar['\"]\s*\)\s*return\s+animation_charByChar\s*;", "charByChar maps to animation_charByChar"),
+        (r"if\s*\(\s*segment\.animation\s*===\s*['\"]none['\"]\s*\)\s*return\s+animation_none\s*;", "none maps to animation_none"),
+        (r"return\s+animation_slideLeftFadeBlur\s*;", "default maps to animation_slideLeftFadeBlur"),
+        (r"const\s+animation:\s*TelopAnimationConfig\s*=\s*getAnimationConfig\s*\(\s*segment\s*\)\s*;", "Telop renderer uses getAnimationConfig(segment)"),
+    ]:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"Telop.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/テロップテンプレート/Telop.tsx legacy animation selection contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_file_coverage_lint() -> None:
     """PR-CM: Every .tsx file in メインテロップ/強調テロップ/ネガティブテロップ dirs must be imported by telopTemplateRegistry.tsx.
     Guards against new/renamed telop templates existing on disk but unreachable from TelopPlayer registry.
@@ -16468,6 +16512,7 @@ def main() -> int:
         test_main_video_narration_mode_ssot_contract_lint,
         test_text_overlay_telop_config_ssot_contract_lint,
         test_telop_legacy_template_selection_contract_lint,
+        test_telop_legacy_animation_selection_contract_lint,
         test_telop_template_registry_file_coverage_lint,
         test_telop_template_registry_metadata_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
