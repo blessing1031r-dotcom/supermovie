@@ -13498,6 +13498,73 @@ def test_skill_frontmatter_keyset_and_no_duplicate_keys_lint() -> None:
     assert errors == [], "SKILL.md frontmatter key-set/duplicate lint failed:\n" + "\n".join(errors)
 
 
+def test_plugin_json_optional_metadata_shape_lint() -> None:
+    """PR-AS: plugin.json optional metadata fields must satisfy shape constraints:
+    - author.name: non-empty string
+    - homepage: non-empty string starting with 'https://'
+    - license: non-empty string
+    - keywords: non-empty list of unique non-empty strings
+    """
+    import json
+
+    repo_root = Path(__file__).parents[2]
+    manifest_path = repo_root / ".claude-plugin" / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    errors: list[str] = []
+
+    # author.name
+    author = manifest.get("author")
+    if not isinstance(author, dict):
+        errors.append(f"plugin.json 'author' must be an object, got {type(author).__name__!r}")
+    else:
+        author_name = author.get("name")
+        if not isinstance(author_name, str) or not author_name.strip():
+            errors.append(
+                f"plugin.json 'author.name' must be a non-empty string, got {author_name!r}"
+            )
+
+    # homepage
+    from urllib.parse import urlparse as _urlparse
+    homepage = manifest.get("homepage")
+    _hp_ok = False
+    if isinstance(homepage, str):
+        _parsed = _urlparse(homepage)
+        _hp_ok = _parsed.scheme == "https" and bool(_parsed.netloc)
+    if not _hp_ok:
+        errors.append(
+            f"plugin.json 'homepage' must be a valid https:// URL with host, got {homepage!r}"
+        )
+
+    # license
+    license_val = manifest.get("license")
+    if not isinstance(license_val, str) or not license_val.strip():
+        errors.append(
+            f"plugin.json 'license' must be a non-empty string, got {license_val!r}"
+        )
+
+    # keywords
+    keywords = manifest.get("keywords")
+    if not isinstance(keywords, list) or len(keywords) == 0:
+        errors.append(
+            f"plugin.json 'keywords' must be a non-empty list, got {keywords!r}"
+        )
+    else:
+        valid_kws: list[str] = []
+        for i, kw in enumerate(keywords):
+            if not isinstance(kw, str) or not kw.strip():
+                errors.append(
+                    f"plugin.json 'keywords[{i}]' must be a non-empty string, got {kw!r}"
+                )
+            else:
+                valid_kws.append(kw)
+        if len(valid_kws) != len(set(valid_kws)):
+            errors.append(
+                f"plugin.json 'keywords' contains duplicate entries: {keywords}"
+            )
+
+    assert errors == [], "plugin.json optional metadata shape lint failed:\n" + "\n".join(errors)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13720,6 +13787,8 @@ def main() -> int:
         test_plugin_json_skills_path_resolves_to_skill_dirs_lint,
         # PR-AR (SKILL.md frontmatter key-set exact match and no duplicate keys lint): 1 件
         test_skill_frontmatter_keyset_and_no_duplicate_keys_lint,
+        # PR-AS (plugin.json optional metadata shape lint): 1 件
+        test_plugin_json_optional_metadata_shape_lint,
     ]
     failed = []
     for t in tests:
