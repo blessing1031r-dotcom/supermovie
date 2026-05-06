@@ -18368,6 +18368,77 @@ def test_supermovie_transcript_fix_completion_handoff_docs_match_cut_handoff_con
     )
 
 
+def test_supermovie_transcript_fix_error_handling_docs_match_validation_contract_lint() -> None:
+    """PR-KG: transcript-fix error docs must match validation/LLM guard contract."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    transcript_fix_skill_path = repo_root / "skills" / "supermovie-transcript-fix" / "SKILL.md"
+    assert transcript_fix_skill_path.is_file(), "skills/supermovie-transcript-fix/SKILL.md not found"
+
+    skill_text = transcript_fix_skill_path.read_text(encoding="utf-8")
+    llm_prompt_match = re.search(
+        r"### 3-2\.[\s\S]*?```([\s\S]*?)```",
+        skill_text,
+    )
+    validation_match = re.search(
+        r"### 5-1\. バリデーション\s*([\s\S]*?)\n### 5-2\. 出力ファイル",
+        skill_text,
+    )
+    error_match = re.search(
+        r"## エラーハンドリング\s*([\s\S]*?)\n---\n\n## 連携マップ",
+        skill_text,
+    )
+    assert llm_prompt_match is not None, "supermovie-transcript-fix LLM prompt block not found"
+    assert validation_match is not None, "supermovie-transcript-fix validation section not found"
+    assert error_match is not None, "supermovie-transcript-fix error handling section not found"
+    llm_prompt_text = llm_prompt_match.group(1)
+    validation_text = validation_match.group(1)
+    error_text = error_match.group(1)
+
+    errors: list[str] = []
+    required_prompt_snippets = {
+        "text-only edit": "各wordの修正は「text」フィールドの書き換えのみ。start/endは絶対に変更しない",
+        "no boundary changes": "wordの追加・削除・分割・結合は禁止。個数を変えない",
+        "unchanged passthrough": "修正不要なwordはそのまま返す",
+        "no semantic additions": "意味を変えない。内容を追加しない",
+        "preserve words": "【保護ワード】は変更禁止: <preserveリスト>",
+        "corrections array": '"corrections": [',
+        "empty corrections": '修正箇所がない場合: { "corrections": [] }',
+    }
+    required_validation_snippets = {
+        "word count": "| word数の一致 | 修正後 == 修正前（フィラー除去分を除く） | 不一致なら元に戻す |",
+        "timestamp order": "| タイムスタンプ順序 | `words[n].start <= words[n+1].start` | ソート |",
+        "start end": "| start < end | 全wordで成立 | 警告のみ |",
+        "blank text": "| テキスト空白なし | `word.text.trim().length > 0` | 空wordを削除 |",
+        "excessive fix rate": "| 修正率チェック | LLM修正が全体の30%以下 | 30%超は過剰修正の警告 + diff表示 |",
+    }
+    required_error_snippets = {
+        "missing transcript": "| transcript.json が存在しない | `/supermovie-transcribe` の実行を促す |",
+        "empty words": "| words 配列が空 | 音声なし動画の可能性を通知 |",
+        "invalid json": "| LLMが不正なJSON返却 | JSONパースエラーをキャッチ → 再試行（最大2回） |",
+        "word count changed": "| LLMがword数を変えた | corrections の index 範囲チェック → 範囲外は無視 |",
+        "excessive llm fixes": "| LLM修正が過剰（30%超） | 警告 + 修正前後のdiff表示、ユーザーに確認 |",
+        "timestamp corruption": "| タイムスタンプ破損 | 元のtranscript.jsonから該当wordを復元 |",
+        "typo dict json": "| typo_dict.json のJSON構文エラー | 構文を修正して再読み込み、修正内容を通知 |",
+        "overlap conflict": "| セグメントのオーバーラップ矛盾 | confidence比較で解決、同一ならindex小を優先 |",
+    }
+    for name, snippet in required_prompt_snippets.items():
+        if snippet not in llm_prompt_text:
+            errors.append(f"supermovie-transcript-fix LLM prompt docs missing {name}: {snippet}")
+    for name, snippet in required_validation_snippets.items():
+        if snippet not in validation_text:
+            errors.append(f"supermovie-transcript-fix validation docs missing {name}: {snippet}")
+    for name, snippet in required_error_snippets.items():
+        if snippet not in error_text:
+            errors.append(f"supermovie-transcript-fix error handling docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-transcript-fix validation/error handling docs drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_cut_vad_result_schema_docs_match_claude_path_contract_lint() -> None:
     """PR-JM: supermovie-cut vad_result docs must match VAD runner and CLAUDE path contract."""
     import json
@@ -25219,6 +25290,8 @@ def main() -> int:
         test_supermovie_transcript_fix_output_schema_docs_match_claude_transcript_contract_lint,
         # PR-KF (supermovie-transcript-fix completion/map docs stay synced with cut handoff): 1 件
         test_supermovie_transcript_fix_completion_handoff_docs_match_cut_handoff_contract_lint,
+        # PR-KG (supermovie-transcript-fix error docs stay synced with validation/LLM guards): 1 件
+        test_supermovie_transcript_fix_error_handling_docs_match_validation_contract_lint,
         # PR-JM (supermovie-cut VAD result docs stay synced with CLAUDE path contract): 1 件
         test_supermovie_cut_vad_result_schema_docs_match_claude_path_contract_lint,
         # PR-JN (supermovie-cut docs stay synced with timeline.py VAD mapping helpers): 1 件
