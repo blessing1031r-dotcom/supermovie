@@ -17019,6 +17019,25 @@ def test_slide_data_exports_typed_empty_array_lint() -> None:
     )
 
 
+def test_slide_data_placeholder_empty_array_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    data_file = template_root / "src" / "Slides" / "slideData.ts"
+    assert data_file.is_file(), "template/src/Slides/slideData.ts not found"
+    raw = data_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert re.search(
+        r"\bexport\s+const\s+slideData\s*:\s*SlideSegment\[\s*\]\s*=\s*\[\s*\]\s*;",
+        text,
+        re.DOTALL,
+    ), (
+        "template/src/Slides/slideData.ts placeholder contract drift: "
+        "slideData must be an empty typed array after comments are stripped"
+    )
+
+
 def test_insert_image_data_typed_export_and_toframe_fps_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17677,6 +17696,7 @@ def main() -> int:
         test_title_segment_schema_and_title_data_typed_export_contract_lint,
         test_title_data_placeholder_empty_array_and_toframe_export_contract_lint,
         test_slide_data_exports_typed_empty_array_lint,
+        test_slide_data_placeholder_empty_array_contract_lint,
         test_insert_image_data_typed_export_and_toframe_fps_contract_lint,
         test_slide_sequence_wraps_slide_segments_in_sequence_frame_ranges_lint,
         test_image_sequence_wraps_image_segments_in_sequence_frame_ranges_lint,
