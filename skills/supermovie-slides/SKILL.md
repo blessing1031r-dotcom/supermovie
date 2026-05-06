@@ -15,6 +15,14 @@ effort: medium
 Senior video editor として、transcript_fixed.json の segments から話題区間を抽出し、
 Remotion `SlideSequence` 用の `SlideSegment[]` データを生成する。
 
+## Remotion Bridge Note
+
+Remotion の `.tsx` component / Composition / Sequence / Audio / `staticFile` /
+animation / media timing を変更・新規設計する場合だけ、official Remotion
+Codex plugin の `remotion-best-practices` を参照する。
+SuperMovie の schema、file path、Japanese workflow、Python lint gate はこの
+repo を source of truth とする。
+
 **前提**: Phase 3-A で SlideSequence / Slide / types / slideData (空) が template に追加済み。
 
 ## ワークフロー概要

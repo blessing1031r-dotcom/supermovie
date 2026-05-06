@@ -14,6 +14,14 @@ effort: medium
 Senior video producer として、文字起こし結果から自動ナレーションを生成し、
 動画の元音声を差し替える形で動画コンテンツの語り直しを行う。
 
+## Remotion Bridge Note
+
+Remotion の `.tsx` component / Composition / Sequence / Audio / `staticFile` /
+animation / media timing を変更・新規設計する場合だけ、official Remotion
+Codex plugin の `remotion-best-practices` を参照する。
+SuperMovie の schema、file path、Japanese workflow、Python lint gate はこの
+repo を source of truth とする。
+
 **前提**: Phase 3-A SlideSequence、Phase 3-B/3-C supermovie-slides 完成後の運用想定。
 
 ## 設計起点
