@@ -18789,6 +18789,103 @@ def test_supermovie_cut_completion_preview_docs_match_subtitles_handoff_lint() -
     )
 
 
+def test_supermovie_cut_error_validation_docs_match_mode_contract_lint() -> None:
+    """PR-KJ: supermovie-cut mode/error docs must match validation contract."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    cut_skill_path = repo_root / "skills" / "supermovie-cut" / "SKILL.md"
+    assert cut_skill_path.is_file(), "skills/supermovie-cut/SKILL.md not found"
+
+    cut_text = cut_skill_path.read_text(encoding="utf-8")
+    severity_match = re.search(
+        r"### 3-2\. severity判定\s*([\s\S]*?)\n---\n\n## Phase 4",
+        cut_text,
+    )
+    hearing_match = re.search(
+        r"### 4-2\. ユーザーに確認\s*```([\s\S]*?)```\s*\n### 4-3\. カットモード選択",
+        cut_text,
+    )
+    mode_match = re.search(
+        r"### 4-3\. カットモード選択\s*([\s\S]*?)\n---\n\n## Phase 5",
+        cut_text,
+    )
+    validation_match = re.search(
+        r"### 6-1\. バリデーション\s*([\s\S]*?)\n### 6-2\. 一時ファイル削除",
+        cut_text,
+    )
+    error_match = re.search(
+        r"## エラーハンドリング\s*([\s\S]*?)\n---\n\n## 連携マップ",
+        cut_text,
+    )
+    assert severity_match is not None, "supermovie-cut severity section not found"
+    assert hearing_match is not None, "supermovie-cut user hearing block not found"
+    assert mode_match is not None, "supermovie-cut mode selection section not found"
+    assert validation_match is not None, "supermovie-cut validation section not found"
+    assert error_match is not None, "supermovie-cut error handling section not found"
+    severity_text = severity_match.group(1)
+    hearing_text = hearing_match.group(1)
+    mode_text = mode_match.group(1)
+    validation_text = validation_match.group(1)
+    error_text = error_match.group(1)
+
+    errors: list[str] = []
+    required_severity_snippets = {
+        "high": "| `high` | 自動カット推奨（言い直し、技術トラブル） |",
+        "medium": "| `medium` | ユーザーに確認（脱線、繰り返し） |",
+        "low": "| `low` | 情報提供のみ（カットしなくてもOK） |",
+    }
+    required_hearing_snippets = {
+        "analysis done": "カット分析が完了しました。",
+        "auto recommendations": "自動カット推奨",
+        "needs confirmation": "確認が必要",
+        "keep ok": "カットしなくてOK",
+        "manual question": "カットする / 残す / 短縮する？",
+        "mode choices": "→ 全て推奨通り / 個別に判断 / 無音カットのみ",
+    }
+    required_mode_snippets = {
+        "auto": "| `auto` | 全推奨カット適用 + medium は保持 |",
+        "aggressive": "| `aggressive` | high + medium 全てカット |",
+        "silence only": "| `silence-only` | 無音カットのみ（内容はカットしない） |",
+        "manual": "| `manual` | 1件ずつ確認 |",
+    }
+    required_validation_snippets = {
+        "duration floor": "| カット後の動画長 | 元の50%以上残っている | 50%未満は警告（カットしすぎ） |",
+        "telop range": "| テロップフレーム | カット後のフレーム範囲内 | 範囲外テロップは削除 |",
+        "audio jump": "| 音声ジャンプ | カット境界で不自然な音声ジャンプがないか | crossfade 0.1秒を挿入 |",
+        "visual jump": "| 映像ジャンプ | カット境界で映像が不自然に飛ばないか | 情報提供（手動確認を促す） |",
+        "cleanup": 'rm -f "<PROJECT>/vad_runner.py" "<PROJECT>/vad_result.json"',
+    }
+    required_error_snippets = {
+        "silero fallback": "| Silero VAD インストール失敗 | transcriptギャップのみで無音検出（VADスキップ） |",
+        "torch install": "| torch がない | `pip install torch torchaudio` を案内 |",
+        "missing transcript fixed": "| transcript_fixed.json がない | `/supermovie-transcript-fix` を促す |",
+        "duration too short": "| カット後の動画が50%未満 | 警告 + カットモードを `silence-only` に変更提案 |",
+        "telop remap drift": "| テロップのフレーム再計算でずれ | cutData.ts のマッピングを再検証 |",
+        "audio sample rate": "| 音声ファイルが16kHzでない | ffmpegで再変換 |",
+    }
+    for name, snippet in required_severity_snippets.items():
+        if snippet not in severity_text:
+            errors.append(f"supermovie-cut severity docs missing {name}: {snippet}")
+    for name, snippet in required_hearing_snippets.items():
+        if snippet not in hearing_text:
+            errors.append(f"supermovie-cut hearing docs missing {name}: {snippet}")
+    for name, snippet in required_mode_snippets.items():
+        if snippet not in mode_text:
+            errors.append(f"supermovie-cut mode docs missing {name}: {snippet}")
+    for name, snippet in required_validation_snippets.items():
+        if snippet not in validation_text and snippet not in cut_text:
+            errors.append(f"supermovie-cut validation docs missing {name}: {snippet}")
+    for name, snippet in required_error_snippets.items():
+        if snippet not in error_text:
+            errors.append(f"supermovie-cut error handling docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-cut mode/validation/error handling docs drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_timeline_transcript_segment_validation_docs_match_schema_contract_lint() -> None:
     """PR-JO: timeline.py transcript segment validation must match transcript schema docs."""
     import json
@@ -25477,6 +25574,8 @@ def main() -> int:
         test_supermovie_cut_timeline_helper_docs_match_vad_mapping_contract_lint,
         # PR-KI (supermovie-cut completion docs stay synced with preview/subtitles handoff): 1 件
         test_supermovie_cut_completion_preview_docs_match_subtitles_handoff_lint,
+        # PR-KJ (supermovie-cut mode/error docs stay synced with validation contract): 1 件
+        test_supermovie_cut_error_validation_docs_match_mode_contract_lint,
         # PR-JO (timeline.py transcript segment validation stays synced with transcript schema docs): 1 件
         test_timeline_transcript_segment_validation_docs_match_schema_contract_lint,
         # PR-JP (supermovie-slides output docs stay synced with build_slide_data render/write): 1 件
