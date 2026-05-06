@@ -12224,6 +12224,48 @@ def test_observability_helper_type_annotation_completeness_lint() -> None:
         )
 
 
+def test_observability_artifact_path_root_priority_policy_doc_lint() -> None:
+    """PR-V: safe_artifact_path() の root 解決優先順序 (project_root > repo_root > placeholder)
+    が docs §Path Policy に正式仕様化されていることを検証する doc lint。
+
+    2-part validation:
+    (1) docs §Path Policy section に root priority policy keyword presence
+        (project_root / repo_root / priority)
+    (2) docs §Open Questions section に artifact path 項目が resolved 済として記録
+        (resolved keyword presence)
+    """
+    import re
+
+    scripts_dir = Path(__file__).parent
+    obs_doc = scripts_dir.parent.parent / "docs" / "OBSERVABILITY.md"
+    doc_text = obs_doc.read_text()
+
+    # (1) §Path Policy section keyword presence
+    section_m = re.search(
+        r"^### Path Policy[^\n]*\n(?P<body>.*?)(?=^## |^### )",
+        doc_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert section_m, "docs: §Path Policy section not found"
+    section_body = section_m.group("body")
+    for keyword in ("project_root", "repo_root", "priority"):
+        assert keyword in section_body, (
+            f"docs §Path Policy: missing keyword {keyword!r}"
+        )
+
+    # (2) §Open Questions section: artifact path item resolved
+    oq_m = re.search(
+        r"^## Open Questions[^\n]*\n(?P<body>[\s\S]*)",
+        doc_text,
+        re.MULTILINE,
+    )
+    assert oq_m, "docs: §Open Questions section not found"
+    oq_body = oq_m.group("body")
+    assert "resolved" in oq_body and "artifact path" in oq_body.lower(), (
+        "docs §Open Questions: artifact path item not marked resolved"
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12400,6 +12442,8 @@ def main() -> int:
         test_observability_status_map_reverse_direction_coverage_lint,
         # PR-U (helper module type annotation completeness audit): 1 件
         test_observability_helper_type_annotation_completeness_lint,
+        # PR-V (artifact path root priority policy doc lint): 1 件
+        test_observability_artifact_path_root_priority_policy_doc_lint,
     ]
     failed = []
     for t in tests:
