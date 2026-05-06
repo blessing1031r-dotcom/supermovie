@@ -20270,6 +20270,85 @@ def test_supermovie_image_gen_asset_path_docs_match_insert_image_contract_lint()
     )
 
 
+def test_supermovie_image_gen_validation_docs_match_image_sequence_contract_lint() -> None:
+    """PR-JV: supermovie-image-gen validation docs must match ImageSequence contract."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-image-gen" / "SKILL.md"
+    sequence_path = template_root / "src" / "InsertImage" / "ImageSequence.tsx"
+    data_path = template_root / "src" / "InsertImage" / "insertImageData.ts"
+    types_path = template_root / "src" / "InsertImage" / "types.ts"
+    assert skill_path.is_file(), "skills/supermovie-image-gen/SKILL.md not found"
+    assert sequence_path.is_file(), "template/src/InsertImage/ImageSequence.tsx not found"
+    assert data_path.is_file(), "template/src/InsertImage/insertImageData.ts not found"
+    assert types_path.is_file(), "template/src/InsertImage/types.ts not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    sequence_text = sequence_path.read_text(encoding="utf-8")
+    data_text = data_path.read_text(encoding="utf-8")
+    types_text = types_path.read_text(encoding="utf-8")
+    validation_match = re.search(
+        r"### 5-1\. バリデーション\s*([\s\S]*?)### 5-2\.",
+        skill_text,
+    )
+    assert validation_match is not None, "supermovie-image-gen validation table not found"
+    validation_text = validation_match.group(1)
+
+    errors: list[str] = []
+    for snippet in (
+        "画像ファイル存在",
+        "全ファイルが `public/images/generated/` にある",
+        "フレーム重複",
+        "画像同士が重ならない",
+        "前の画像のendFrameをカット",
+        "テロップとの共存",
+        "画像表示中もテロップは読める",
+        "範囲超過",
+        "endFrame ≤ TOTAL_FRAMES",
+        "画像枚数の目安",
+        "動画1分あたり1-3枚",
+    ):
+        if snippet not in validation_text:
+            errors.append(f"supermovie-image-gen validation docs missing snippet: {snippet}")
+
+    sequence_patterns = {
+        "Sequence import": r"import\s*\{\s*Sequence\s*\}\s*from\s*['\"]remotion['\"]",
+        "InsertImage import": r"import\s*\{\s*InsertImage\s*\}\s*from\s*['\"]\.\/InsertImage['\"]",
+        "insertImageData import": r"import\s*\{\s*insertImageData\s*\}\s*from\s*['\"]\.\/insertImageData['\"]",
+        "data map": r"\binsertImageData\.map\s*\(\s*\(\s*segment\s*\)\s*=>",
+        "sequence key": r"key=\{segment\.id\}",
+        "sequence from startFrame": r"from=\{segment\.startFrame\}",
+        "sequence duration end minus start": r"durationInFrames=\{segment\.endFrame\s*-\s*segment\.startFrame\}",
+        "renderer receives segment": r"<InsertImage\s+segment=\{segment\}\s*/>",
+    }
+    for name, pattern in sequence_patterns.items():
+        if not re.search(pattern, sequence_text):
+            errors.append(f"ImageSequence.tsx missing {name} contract")
+
+    for snippet in (
+        "startFrame: number;",
+        "endFrame: number;",
+        "file: string;",
+        "type: 'photo' | 'infographic' | 'overlay';",
+    ):
+        if snippet not in types_text:
+            errors.append(f"ImageSegment type missing validation-backed field: {snippet}")
+    for snippet in (
+        "export const insertImageData: ImageSegment[]",
+        "file: 'generated/example.png'",
+        "type: 'infographic'",
+    ):
+        if snippet not in data_text:
+            errors.append(f"insertImageData.ts missing validation-backed placeholder snippet: {snippet}")
+
+    assert errors == [], (
+        "supermovie-image-gen validation docs / ImageSequence contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_slides_validation_docs_match_build_slide_data_lint() -> None:
     """PR-IM: supermovie-slides validation docs must match build_slide_data guards."""
     import re
@@ -24354,6 +24433,8 @@ def main() -> int:
         test_supermovie_image_gen_display_logic_docs_match_insert_image_renderer_lint,
         # PR-IR (supermovie-image-gen asset path docs stay synced with InsertImage): 1 件
         test_supermovie_image_gen_asset_path_docs_match_insert_image_contract_lint,
+        # PR-JV (supermovie-image-gen validation docs stay synced with ImageSequence): 1 件
+        test_supermovie_image_gen_validation_docs_match_image_sequence_contract_lint,
         # PR-IM (supermovie-slides validation docs stay synced with build_slide_data guards): 1 件
         test_supermovie_slides_validation_docs_match_build_slide_data_lint,
         # PR-IN (supermovie-slides tone style docs stay synced with build_slide_data): 1 件
