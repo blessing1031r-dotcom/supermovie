@@ -14910,6 +14910,34 @@ def test_vitest_react_test_discovery_contract_lint() -> None:
     )
 
 
+def test_vitest_setup_jest_dom_import_contract_lint() -> None:
+    import json
+    import re
+
+    template_root = Path(__file__).parents[1]
+    setup_path = template_root / "vitest.setup.ts"
+    assert setup_path.is_file(), "template/vitest.setup.ts not found"
+    raw = setup_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    pkg = json.loads((template_root / "package.json").read_text(encoding="utf-8"))
+    dev_deps = pkg.get("devDependencies", {})
+    errors: list[str] = []
+    if not re.search(
+        r"""import\s+['"]@testing-library/jest-dom/vitest['"]\s*;""",
+        text,
+    ):
+        errors.append(
+            "vitest.setup.ts: missing import '@testing-library/jest-dom/vitest';"
+        )
+    if "@testing-library/jest-dom" not in dev_deps:
+        errors.append(
+            "package.json devDependencies: missing @testing-library/jest-dom"
+        )
+    assert errors == [], (
+        "template Vitest jest-dom setup contract drift:\n" + "\n".join(errors)
+    )
+
+
 def test_eslint_config_no_explicit_any_contract_lint() -> None:
     """PR-BV: template/eslint.config.mjs must enforce @typescript-eslint/no-explicit-any as "error".
     Catches accidental removal or downgrade to "warn"/"off" of the any-free contract.
@@ -18759,6 +18787,8 @@ def main() -> int:
         test_vitest_setup_files_resolve_lint,
         # PR-GB (Vitest React discovery config + npm script lint): 1 件
         test_vitest_react_test_discovery_contract_lint,
+        # PR-GD (Vitest setup imports jest-dom/vitest and dependency exists): 1 件
+        test_vitest_setup_jest_dom_import_contract_lint,
         test_eslint_config_no_explicit_any_contract_lint,
         test_remotion_config_contract_lint,
         test_package_json_remotion_version_parity_lint,
