@@ -19306,6 +19306,32 @@ def test_se_sequence_volume_callback_contract_lint() -> None:
     )
 
 
+def test_se_sequence_public_export_surface_contract_lint() -> None:
+    """PR-GZ: SESequence module must export only the SESequence component."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    seq_file = template_root / "src" / "SoundEffects" / "SESequence.tsx"
+    assert seq_file.is_file(), "template/src/SoundEffects/SESequence.tsx not found"
+    raw = seq_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/SoundEffects/SESequence.tsx must not use a default export"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|type|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    assert exported == {"SESequence"}, (
+        "template/src/SoundEffects/SESequence.tsx public export surface drift: "
+        f"expected ['SESequence'], got {sorted(exported)}"
+    )
+
+
 def test_narration_audio_chunks_sequence_wiring_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -19880,6 +19906,8 @@ def main() -> int:
         test_se_sequence_wraps_sound_effects_in_sequence_audio_contract_lint,
         test_se_sequence_asset_path_prefix_contract_lint,
         test_se_sequence_volume_callback_contract_lint,
+        # PR-GZ (SESequence module exports only the SESequence component): 1 件
+        test_se_sequence_public_export_surface_contract_lint,
         test_narration_audio_chunks_sequence_wiring_contract_lint,
         test_narration_mode_priority_dispatch_contract_lint,
         test_narration_audio_legacy_branch_wiring_contract_lint,
