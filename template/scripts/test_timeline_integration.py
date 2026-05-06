@@ -17547,6 +17547,78 @@ def test_supermovie_subtitles_budoux_docs_match_build_telop_cli_lint() -> None:
     )
 
 
+def test_supermovie_subtitles_budoux_helper_and_dependency_contract_lint() -> None:
+    """PR-JJ: BudouX helper CLI and package dependency must match subtitles docs."""
+    import json
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    subtitles_skill_path = repo_root / "skills" / "supermovie-subtitles" / "SKILL.md"
+    budoux_helper_path = template_root / "scripts" / "budoux_split.mjs"
+    package_path = template_root / "package.json"
+    assert subtitles_skill_path.is_file(), "skills/supermovie-subtitles/SKILL.md not found"
+    assert budoux_helper_path.is_file(), "template/scripts/budoux_split.mjs not found"
+    assert package_path.is_file(), "template/package.json not found"
+
+    skill_text = subtitles_skill_path.read_text(encoding="utf-8")
+    helper_text = budoux_helper_path.read_text(encoding="utf-8")
+    package_json = json.loads(package_path.read_text(encoding="utf-8"))
+    errors: list[str] = []
+
+    required_doc_snippets = {
+        "helper path": "`template/scripts/budoux_split.mjs` 経由",
+        "helper cli": "`scripts/budoux_split.mjs --in input.json --out phrases.json`",
+        "parser api": "`loadDefaultJapaneseParser().parse()`",
+        "package dependency": "npm: budoux（template/package.jsonに追加済み）",
+        "google license": "Google開発、Apache 2.0ライセンス",
+    }
+    required_helper_snippets = {
+        "node shebang": "#!/usr/bin/env node",
+        "budoux import": 'import { loadDefaultJapaneseParser } from "budoux";',
+        "fs imports": 'import { readFileSync, writeFileSync } from "node:fs";',
+        "process imports": 'import { argv, exit } from "node:process";',
+        "parse args": "function parseArgs(args) {",
+        "in arg": 'if (a === "--in") out.in = args[++i];',
+        "out arg": 'else if (a === "--out") out.out = args[++i];',
+        "text arg": 'else if (a === "--text") out.text = args[++i];',
+        "parser": "const parser = loadDefaultJapaneseParser();",
+        "text stdout": 'process.stdout.write(JSON.stringify({ text: opts.text, phrases }, null, 2));',
+        "usage in out": 'console.error("usage: node budoux_split.mjs --in input.json --out phrases.json");',
+        "usage text": 'console.error("       node budoux_split.mjs --text \'テキスト\'");',
+        "exit bad usage": "exit(2);",
+        "input read": 'const input = JSON.parse(readFileSync(opts.in, "utf8"));',
+        "segment map": "const segments = (input.segments || []).map((seg) => ({",
+        "phrase parse": 'phrases: parser.parse(seg.text || ""),',
+        "output write": 'writeFileSync(opts.out, JSON.stringify({ segments }, null, 2), "utf8");',
+    }
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-subtitles BudouX docs missing {name}: {snippet}")
+    for name, snippet in required_helper_snippets.items():
+        if snippet not in helper_text:
+            errors.append(f"budoux_split.mjs missing {name}: {snippet}")
+
+    budoux_version = package_json.get("dependencies", {}).get("budoux")
+    if not isinstance(budoux_version, str) or not budoux_version:
+        errors.append(f"template/package.json dependencies.budoux must be a non-empty string, got {budoux_version!r}")
+
+    parse_pos = helper_text.find("function parseArgs(args) {")
+    opts_pos = helper_text.find("const opts = parseArgs(argv.slice(2));")
+    parser_pos = helper_text.find("const parser = loadDefaultJapaneseParser();")
+    text_pos = helper_text.find("if (opts.text != null) {")
+    usage_pos = helper_text.find("if (!opts.in || !opts.out) {")
+    read_pos = helper_text.find('const input = JSON.parse(readFileSync(opts.in, "utf8"));')
+    write_pos = helper_text.find('writeFileSync(opts.out, JSON.stringify({ segments }, null, 2), "utf8");')
+    order = [parse_pos, opts_pos, parser_pos, text_pos, usage_pos, read_pos, write_pos]
+    if any(pos == -1 for pos in order) or order != sorted(order):
+        errors.append("budoux_split.mjs must parse args, create parser, handle --text, validate --in/--out, then read/write JSON")
+
+    assert errors == [], (
+        "supermovie-subtitles BudouX helper / dependency contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_subtitles_linebreak_docs_match_insert_linebreak_contract_lint() -> None:
     """PR-JH: supermovie-subtitles linebreak docs must match insert_linebreak()."""
     import re
@@ -23258,6 +23330,8 @@ def main() -> int:
         test_supermovie_subtitles_template_id_mapping_matches_registry_lint,
         # PR-JG (supermovie-subtitles BudouX docs stay synced with build_telop_data CLI): 1 件
         test_supermovie_subtitles_budoux_docs_match_build_telop_cli_lint,
+        # PR-JJ (BudouX helper CLI and package dependency stay synced with subtitles docs): 1 件
+        test_supermovie_subtitles_budoux_helper_and_dependency_contract_lint,
         # PR-JH (supermovie-subtitles linebreak docs stay synced with insert_linebreak): 1 件
         test_supermovie_subtitles_linebreak_docs_match_insert_linebreak_contract_lint,
         # PR-JI (supermovie-subtitles KPI gate docs stay synced with compare_telop_split): 1 件
