@@ -15171,6 +15171,61 @@ def test_vitest_use_narration_mode_tests_reset_cache_before_each_lint() -> None:
     )
 
 
+def test_vitest_use_narration_mode_tests_render_hook_import_contract_lint() -> None:
+    """PR-GL: useNarrationMode hook tests must use renderHook from @testing-library/react.
+
+    The template standardizes on Vitest + @testing-library/react; keep hook tests off the
+    deprecated @testing-library/react-hooks package, ensure renderHook stays imported, and
+    keep the package dependency available.
+    """
+    import json
+    import re
+
+    template_root = Path(__file__).parents[1]
+    pkg = json.loads((template_root / "package.json").read_text(encoding="utf-8"))
+    dev_deps = pkg.get("devDependencies", {})
+    assert "@testing-library/react" in dev_deps, (
+        "template/package.json devDependencies must include @testing-library/react"
+    )
+
+    test_dir = template_root / "src" / "Narration"
+    target_files = sorted(test_dir.glob("useNarrationMode*.test.tsx"))
+    assert target_files, "template/src/Narration/useNarrationMode*.test.tsx files not found"
+
+    errors: list[str] = []
+    react_import_pattern = re.compile(
+        r"""^import\s*\{(?P<names>[^}]+)\}\s*from\s*['"]@testing-library/react['"]\s*;?\s*$""",
+        re.MULTILINE,
+    )
+    deprecated_import_pattern = re.compile(r"""@testing-library/react-hooks""")
+
+    for path in target_files:
+        raw = path.read_text(encoding="utf-8")
+        text = "\n".join(
+            line for line in raw.splitlines()
+            if not line.lstrip().startswith("//")
+        )
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+        rel = path.relative_to(template_root).as_posix()
+
+        if deprecated_import_pattern.search(text):
+            errors.append(f"{rel}: must not import deprecated @testing-library/react-hooks")
+        import_match = react_import_pattern.search(text)
+        if not import_match:
+            errors.append(f"{rel}: missing named import from @testing-library/react")
+            continue
+        imported = {name.strip() for name in import_match.group("names").split(",")}
+        if "renderHook" not in imported:
+            errors.append(f"{rel}: renderHook must be imported from @testing-library/react")
+        if not re.search(r"\brenderHook\s*\(", text):
+            errors.append(f"{rel}: renderHook(...) call not found")
+
+    assert errors == [], (
+        "template useNarrationMode React test renderHook import contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_vitest_setup_jest_dom_import_contract_lint() -> None:
     import json
     import re
@@ -19121,6 +19176,8 @@ def main() -> int:
         test_vitest_use_narration_mode_tests_mock_narration_data_before_sut_import_lint,
         # PR-GI (useNarrationMode React tests reset mode cache before each test): 1 件
         test_vitest_use_narration_mode_tests_reset_cache_before_each_lint,
+        # PR-GL (useNarrationMode React tests import renderHook from testing-library/react): 1 件
+        test_vitest_use_narration_mode_tests_render_hook_import_contract_lint,
         # PR-GD (Vitest setup imports jest-dom/vitest and dependency exists): 1 件
         test_vitest_setup_jest_dom_import_contract_lint,
         test_eslint_config_no_explicit_any_contract_lint,
