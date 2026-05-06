@@ -16397,6 +16397,96 @@ def test_supermovie_telop_creator_registry_integration_docs_match_registry_contr
     )
 
 
+def test_supermovie_telop_creator_component_skeleton_docs_match_subtitledata_contract_lint() -> None:
+    """PR-KW: telop-creator component skeleton docs must match registry component props."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-telop-creator" / "SKILL.md"
+    registry_path = template_root / "src" / "テロップテンプレート" / "telopTemplateRegistry.tsx"
+    player_path = template_root / "src" / "テロップテンプレート" / "TelopPlayer.tsx"
+    obs_path = repo_root / "docs" / "OBSERVABILITY.md"
+    for path in (skill_path, registry_path, player_path, obs_path):
+        assert path.is_file(), f"{path.relative_to(repo_root)} not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    registry_text = registry_path.read_text(encoding="utf-8")
+    player_text = player_path.read_text(encoding="utf-8")
+    obs_text = obs_path.read_text(encoding="utf-8")
+
+    section_match = re.search(
+        r"### 3-2\. コンポーネント共通構造（必ず守る）([\s\S]*?)### 3-3\.",
+        skill_text,
+    )
+    assert section_match is not None, "supermovie-telop-creator Phase 3 component skeleton docs not found"
+    section_text = section_match.group(1)
+
+    errors: list[str] = []
+    required_skill_snippets = {
+        "contract comment": "registry component contract: TelopPlayer から subtitleData を受け取る",
+        "subtitle item interface": "export interface SubtitleItem",
+        "subtitle data interface": "export interface SubtitleData",
+        "subtitle data fps": "fps: number;",
+        "subtitle data array": "subtitles: SubtitleItem[];",
+        "required prop": "subtitleData: SubtitleData;",
+        "prop comment": "Props: subtitleData は必須。",
+        "current lookup": "const currentSubtitle = subtitleData.subtitles.find(",
+        "frame range": "(sub) => frame >= sub.startFrame && frame <= sub.endFrame",
+        "null fallback": "if (!currentSubtitle) return null;",
+        "duration source": "const duration = currentSubtitle.endFrame - currentSubtitle.startFrame;",
+        "animation source": "currentSubtitle.startFrame",
+        "no telopData note": "この skeleton では `telopData` を import しない。",
+        "player bridge": "`TelopPlayer` が現在 segment を",
+        "subtitleData bridge": "`SubtitleData` に変換し、registry component に `subtitleData` prop として渡す。",
+    }
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in section_text:
+            errors.append(f"telop-creator component skeleton docs missing {name}: {snippet}")
+
+    forbidden_skill_snippets = {
+        "TelopSegment import": "import type { TelopSegment }",
+        "telopData import": "import { telopData }",
+        "telopData lookup": "const currentTelop = telopData.find",
+        "currentTelop duration": "currentTelop.endFrame",
+    }
+    for name, snippet in forbidden_skill_snippets.items():
+        if snippet in section_text:
+            errors.append(f"telop-creator component skeleton docs still contain legacy {name}: {snippet}")
+
+    required_registry_snippets = {
+        "registry SubtitleData": "export interface SubtitleData",
+        "registry TelopComponent": "export type TelopComponent = React.FC<{ subtitleData: SubtitleData }>",
+    }
+    for name, snippet in required_registry_snippets.items():
+        if snippet not in registry_text:
+            errors.append(f"telopTemplateRegistry.tsx missing {name}: {snippet}")
+
+    required_player_snippets = {
+        "segment conversion": "subtitles: [segmentToSubtitleItem(current, fps)]",
+        "component render": "<Component subtitleData={subtitleData} />",
+        "legacy fallback": "<Telop segment={current} />",
+    }
+    for name, snippet in required_player_snippets.items():
+        if snippet not in player_text:
+            errors.append(f"TelopPlayer.tsx missing {name}: {snippet}")
+
+    required_obs_snippets = {
+        "step": "| 369 | `skills/supermovie-telop-creator/SKILL.md`",
+        "test name": "test_supermovie_telop_creator_component_skeleton_docs_match_subtitledata_contract_lint",
+        "pr code": "PR-KW",
+        "subtitleData": "`subtitleData`",
+    }
+    for name, snippet in required_obs_snippets.items():
+        if snippet not in obs_text:
+            errors.append(f"OBSERVABILITY step 369 missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-telop-creator component skeleton docs / subtitleData contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_main_video_staticfile_uses_video_file_lint() -> None:
     """PR-CI: MainVideo.tsx must import VIDEO_FILE from ./videoConfig and use staticFile(VIDEO_FILE).
     Tightens the existing import-only lint; verifies the base video source actually flows through SSoT.
@@ -26783,6 +26873,8 @@ def main() -> int:
         test_supermovie_telop_creator_preview_cleanup_docs_match_root_contract_lint,
         # PR-KV (telop-creator integration docs stay registry-first): 1 件
         test_supermovie_telop_creator_registry_integration_docs_match_registry_contract_lint,
+        # PR-KW (telop-creator component skeleton docs match subtitleData contract): 1 件
+        test_supermovie_telop_creator_component_skeleton_docs_match_subtitledata_contract_lint,
         test_main_video_staticfile_uses_video_file_lint,
         test_main_video_required_layers_contract_lint,
         test_main_video_canonical_layer_import_paths_lint,
