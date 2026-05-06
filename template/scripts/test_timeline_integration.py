@@ -18439,6 +18439,90 @@ def test_supermovie_transcript_fix_error_handling_docs_match_validation_contract
     )
 
 
+def test_supermovie_transcript_fix_typo_learning_docs_match_dict_guard_lint() -> None:
+    """PR-KH: transcript-fix typo_dict learning docs must match dictionary guards."""
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    transcript_fix_skill_path = repo_root / "skills" / "supermovie-transcript-fix" / "SKILL.md"
+    assert transcript_fix_skill_path.is_file(), "skills/supermovie-transcript-fix/SKILL.md not found"
+
+    skill_text = transcript_fix_skill_path.read_text(encoding="utf-8")
+    typo_schema_match = re.search(
+        r"### 2-1\. typo_dict\.json の構造\s*```json\n([\s\S]*?)\n```",
+        skill_text,
+    )
+    output_match = re.search(
+        r"### 5-2\. 出力ファイル\s*([\s\S]*?)\n### 5-3\. typo_dict\.json 学習フィードバック",
+        skill_text,
+    )
+    learning_match = re.search(
+        r"### 5-3\. typo_dict\.json 学習フィードバック\s*([\s\S]*?)\n---\n\n## 完了時の報告フォーマット",
+        skill_text,
+    )
+    assert typo_schema_match is not None, "supermovie-transcript-fix typo_dict.json schema block not found"
+    assert output_match is not None, "supermovie-transcript-fix output section before typo learning not found"
+    assert learning_match is not None, "supermovie-transcript-fix typo_dict learning section not found"
+
+    typo_schema = json.loads(typo_schema_match.group(1))
+    output_text = output_match.group(1)
+    learning_text = learning_match.group(1)
+
+    errors: list[str] = []
+    if list(typo_schema.keys()) != ["replace", "fillers", "preserve"]:
+        errors.append(
+            "typo_dict.json top-level keys must remain replace/fillers/preserve, "
+            f"got {list(typo_schema.keys())}"
+        )
+    if list(typo_schema.get("fillers", {}).keys()) != ["remove", "keep_in_context"]:
+        errors.append(
+            "typo_dict.json fillers keys must remain remove/keep_in_context, "
+            f"got {list(typo_schema.get('fillers', {}).keys())}"
+        )
+
+    required_schema_snippets = {
+        "replace sample": '"広価": "効果"',
+        "partial replace sample": '"クロードコード": "Claude Code"',
+        "remove fillers": '"remove": ["えーと", "あのー", "えー", "うーん", "そのー", "ええと"]',
+        "context fillers": '"keep_in_context": ["まあ", "なんか"]',
+        "preserve words": '"preserve": ["AI", "ChatGPT", "Claude", "Remotion", "YouTube"]',
+        "filler split rationale": "`fillers` を `remove`（常に削除）と `keep_in_context`（文脈判断）に分離",
+    }
+    required_output_snippets = {
+        "corrections output": "**transcript_corrections.json**",
+        "llm phase evidence": '"phase": "llm"',
+        "llm reason evidence": '"reason": "文脈: システム移行"',
+        "fillers kept reason": '"fillers_kept": [',
+    }
+    required_learning_snippets = {
+        "two or more intro": "LLM修正で **2回以上出現** した同じパターンを辞書追加候補として提案:",
+        "add prompt": "以下の修正パターンを typo_dict.json に追加しますか？",
+        "three occurrence example": '"以降" → "移行"（3回出現、全て文脈「システム移行」）',
+        "two occurrence example": '"加工" → "下降"（2回出現、全て文脈「売上下降」）',
+        "context dependent heading": "以下は文脈依存のため追加しません:",
+        "single occurrence example": '"意向" → "移行"（1回のみ、別文脈では正しい可能性あり）',
+        "phase two reuse": "追加すると次回以降はPhase 2で即座に修正されます。",
+        "two or more criterion": "- 2回以上の同一パターン → 提案",
+        "single occurrence criterion": "- 1回のみ → 提案しない（文脈依存の可能性）",
+        "homophone criterion": "- 同音異義語で複数の正解がありうる → 提案しない",
+    }
+    for name, snippet in required_schema_snippets.items():
+        if snippet not in typo_schema_match.group(1) and snippet not in skill_text:
+            errors.append(f"supermovie-transcript-fix typo_dict schema docs missing {name}: {snippet}")
+    for name, snippet in required_output_snippets.items():
+        if snippet not in output_text:
+            errors.append(f"supermovie-transcript-fix correction output docs missing {name}: {snippet}")
+    for name, snippet in required_learning_snippets.items():
+        if snippet not in learning_text:
+            errors.append(f"supermovie-transcript-fix typo learning docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-transcript-fix typo_dict learning docs drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_cut_vad_result_schema_docs_match_claude_path_contract_lint() -> None:
     """PR-JM: supermovie-cut vad_result docs must match VAD runner and CLAUDE path contract."""
     import json
@@ -25292,6 +25376,8 @@ def main() -> int:
         test_supermovie_transcript_fix_completion_handoff_docs_match_cut_handoff_contract_lint,
         # PR-KG (supermovie-transcript-fix error docs stay synced with validation/LLM guards): 1 件
         test_supermovie_transcript_fix_error_handling_docs_match_validation_contract_lint,
+        # PR-KH (supermovie-transcript-fix typo_dict learning docs stay synced with dictionary guards): 1 件
+        test_supermovie_transcript_fix_typo_learning_docs_match_dict_guard_lint,
         # PR-JM (supermovie-cut VAD result docs stay synced with CLAUDE path contract): 1 件
         test_supermovie_cut_vad_result_schema_docs_match_claude_path_contract_lint,
         # PR-JN (supermovie-cut docs stay synced with timeline.py VAD mapping helpers): 1 件
