@@ -558,6 +558,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 257 | `template/src/index.ts` が export を持たない side-effect only entrypoint のまま、`registerRoot(...)` を 1 回だけ呼ぶことを lint (`test_entrypoint_side_effect_only_no_exports_contract_lint`、Codex 推奨 PR-GO)。Remotion entrypoint が module API surface 化する drift と二重 root 登録を保護 | PR-GO |
 | 258 | `template/src/videoConfig.ts` の public export surface が `VideoFormat` / `FORMAT` / `FPS` / `SOURCE_DURATION_FRAMES` / `VIDEO_FILE` / `RESOLUTION` / `TELOP_CONFIG` に限定され、default export を持たないことを lint (`test_videoconfig_public_export_surface_contract_lint`、Codex 推奨 PR-GP)。RESOLUTION_MAP / TELOP_CONFIG_MAP など内部 map の API surface 化を保護 | PR-GP |
 | 259 | `template/src/Narration/mode.ts` の public export surface が `NARRATION_LEGACY_FILE` / `NARRATION_READY_FILE` / `NarrationMode` / `getNarrationMode` / `invalidateNarrationMode` に限定され、default export を持たないことを lint (`test_narration_mode_public_export_surface_contract_lint`、Codex 推奨 PR-GQ)。Narration mode SSoT helper の API surface creep を保護 | PR-GQ |
+| 260 | `template/src/Narration/useNarrationMode.ts` の public export surface が `useNarrationMode` だけに限定され、default export を持たないことを lint (`test_use_narration_mode_public_export_surface_contract_lint`、Codex 推奨 PR-GR)。Narration hook module の API surface creep を保護 | PR-GR |
 
 ## Test Requirements
 
