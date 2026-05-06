@@ -20736,6 +20736,108 @@ def test_supermovie_init_project_config_telop_style_defaults_match_claude_lint()
     )
 
 
+def test_supermovie_init_videoconfig_ssot_docs_match_template_contract_lint() -> None:
+    """PR-JS: supermovie-init videoConfig SSoT docs must match template videoConfig."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    init_skill_path = repo_root / "skills" / "supermovie-init" / "SKILL.md"
+    video_config_path = template_root / "src" / "videoConfig.ts"
+    assert init_skill_path.is_file(), "skills/supermovie-init/SKILL.md not found"
+    assert video_config_path.is_file(), "template/src/videoConfig.ts not found"
+
+    init_text = init_skill_path.read_text(encoding="utf-8")
+    video_text = video_config_path.read_text(encoding="utf-8")
+
+    def extract_const_object_block(ts_text: str, const_name: str) -> str:
+        match = re.search(rf"\bconst\s+{re.escape(const_name)}\s*=\s*\{{", ts_text)
+        assert match is not None, f"{const_name} object not found in videoConfig.ts"
+        start = match.end() - 1
+        depth = 0
+        for index in range(start, len(ts_text)):
+            char = ts_text[index]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return ts_text[start : index + 1]
+        raise AssertionError(f"{const_name} object is not closed in videoConfig.ts")
+
+    format_union_match = re.search(r"export\s+type\s+VideoFormat\s*=\s*([^;]+);", video_text)
+    assert format_union_match is not None, "VideoFormat union export not found in videoConfig.ts"
+    formats = re.findall(r"""['"]([^'"]+)['"]""", format_union_match.group(1))
+    assert formats, "VideoFormat union must include at least one literal format"
+
+    resolution_block = extract_const_object_block(video_text, "RESOLUTION_MAP")
+    resolution_entries = {
+        name: (int(width), int(height))
+        for name, width, height in re.findall(
+            r"^\s{2}([A-Za-z0-9_]+):\s*\{\s*width:\s*(\d+),\s*height:\s*(\d+)\s*\}",
+            resolution_block,
+            re.MULTILINE,
+        )
+    }
+    telop_config_block = extract_const_object_block(video_text, "TELOP_CONFIG_MAP")
+    telop_config_keys = set(re.findall(r"^\s{2}([A-Za-z0-9_]+):\s*\{", telop_config_block, re.MULTILINE))
+
+    errors: list[str] = []
+    for snippet in (
+        "/supermovie-init が自動設定します",
+        "export type VideoFormat = 'youtube' | 'short' | 'square';",
+        "export const FORMAT: VideoFormat = 'youtube';",
+        "export const FPS = 30;",
+        "export const SOURCE_DURATION_FRAMES = 1500;",
+        "export const VIDEO_FILE = 'main.mp4';",
+        "export const RESOLUTION = RESOLUTION_MAP[FORMAT];",
+        "export const TELOP_CONFIG = TELOP_CONFIG_MAP[FORMAT];",
+    ):
+        if snippet not in video_text:
+            errors.append(f"videoConfig.ts missing SSoT snippet: {snippet}")
+
+    format_set = set(formats)
+    if set(resolution_entries) != format_set:
+        errors.append(
+            "RESOLUTION_MAP keys must match VideoFormat union: "
+            f"expected {formats}, got {sorted(resolution_entries)}"
+        )
+    if telop_config_keys != format_set:
+        errors.append(
+            "TELOP_CONFIG_MAP keys must match VideoFormat union: "
+            f"expected {formats}, got {sorted(telop_config_keys)}"
+        )
+
+    for snippet in (
+        "### 3-3. ファイル更新 (videoConfig.ts SSoT を書き換える / Root.tsx は触らない)",
+        "export const FORMAT: VideoFormat = '<chosen_format>'; // preflight 結果から",
+        "export const FPS = <render_fps>; // preflight source.fps.render_fps",
+        "export const SOURCE_DURATION_FRAMES = <duration_frames>; // 元動画 frame、cut 後は cutData.CUT_TOTAL_FRAMES を使う",
+        "export const VIDEO_FILE = 'main.mp4';",
+        "解像度は FORMAT から RESOLUTION_MAP で自動決定",
+        "preflight が `display.{width,height}` と FORMAT_MAP の解像度の不一致を検出した時は Roku に確認",
+        "Root.tsx / telopData.ts / titleData.ts は videoConfig から import",
+        "touch しない",
+        "telopData.ts の TOTAL_FRAMES は cut phase 完了後に CUT_TOTAL_FRAMES に切替。",
+    ):
+        if snippet not in init_text:
+            errors.append(f"supermovie-init docs missing videoConfig SSoT snippet: {snippet}")
+
+    for format_name in formats:
+        dimensions = resolution_entries.get(format_name)
+        if dimensions is None:
+            continue
+        width, height = dimensions
+        expected_doc = f"{format_name}={width}x{height}"
+        if expected_doc not in init_text:
+            errors.append(f"supermovie-init docs missing RESOLUTION_MAP dimension: {expected_doc}")
+
+    assert errors == [], (
+        "supermovie-init videoConfig SSoT docs / template contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_public_export_surface_contract_lint() -> None:
     """PR-HM: telopTemplateRegistry module must expose only canonical registry API."""
     import re
@@ -24133,6 +24235,8 @@ def main() -> int:
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
         test_supermovie_init_project_config_telop_style_defaults_match_claude_lint,
+        # PR-JS (supermovie-init videoConfig SSoT docs stay synced with template): 1 件
+        test_supermovie_init_videoconfig_ssot_docs_match_template_contract_lint,
         # PR-HM (telopTemplateRegistry module exports only canonical registry API): 1 件
         test_telop_template_registry_public_export_surface_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
