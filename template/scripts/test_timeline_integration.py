@@ -18013,6 +18013,40 @@ def test_narration_mode_invalidate_resets_cached_mode() -> None:
     )
 
 
+def test_narration_mode_public_export_surface_contract_lint() -> None:
+    """PR-GQ: Narration mode helper exports must stay limited to the SSoT API."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    mode_file = template_root / "src" / "Narration" / "mode.ts"
+    assert mode_file.is_file(), "template/src/Narration/mode.ts not found"
+    raw = mode_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/Narration/mode.ts must not use a default export"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|type|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    allowed = {
+        "NARRATION_LEGACY_FILE",
+        "NARRATION_READY_FILE",
+        "NarrationMode",
+        "getNarrationMode",
+        "invalidateNarrationMode",
+    }
+    assert exported == allowed, (
+        "template/src/Narration/mode.ts public export surface drift: "
+        f"expected {sorted(allowed)}, got {sorted(exported)}"
+    )
+
+
 def test_narration_mode_static_file_lookup_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -19418,6 +19452,8 @@ def main() -> int:
         test_slide_segment_schema_contract_lint,
         test_slide_types_bullet_and_optional_fields_contract_lint,
         test_narration_mode_invalidate_resets_cached_mode,
+        # PR-GQ (Narration mode helper public export surface stays limited): 1 件
+        test_narration_mode_public_export_surface_contract_lint,
         test_narration_mode_static_file_lookup_contract_lint,
         test_template_narration_data_exports_typed_empty_array_lint,
         test_insert_image_segment_schema_contract_lint,
