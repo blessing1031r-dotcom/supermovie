@@ -17744,6 +17744,92 @@ def test_supermovie_se_rotation_docs_match_style_matrix_lint() -> None:
     )
 
 
+def test_supermovie_narration_mode_docs_match_runtime_contract_lint() -> None:
+    """PR-IU: supermovie-narration Remotion mode docs must match runtime wiring."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-narration" / "SKILL.md"
+    mode_path = template_root / "src" / "Narration" / "mode.ts"
+    main_video_path = template_root / "src" / "MainVideo.tsx"
+    narration_audio_path = template_root / "src" / "Narration" / "NarrationAudio.tsx"
+    for path in (skill_path, mode_path, main_video_path, narration_audio_path):
+        assert path.is_file(), f"{path.relative_to(repo_root)} not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    mode_text = mode_path.read_text(encoding="utf-8")
+    main_video_text = main_video_path.read_text(encoding="utf-8")
+    narration_audio_text = narration_audio_path.read_text(encoding="utf-8")
+    phase4_match = re.search(
+        r"## Phase 4: Remotion 接合[\s\S]*?## 実行コマンド",
+        skill_text,
+    )
+    assert phase4_match is not None, "supermovie-narration Phase 4 docs not found"
+    phase4_text = phase4_match.group(0)
+
+    required_doc_snippets = {
+        "mode table none": "narrationData 空 + narration.wav 不在 | null (skip) | 1.0 (元音声再生)",
+        "mode table legacy": "narrationData 空 + narration.wav 存在 (Phase 3-D legacy) | 単一 `<Audio>` 再生 | 0 (mute)",
+        "mode table chunks": "narrationData non-empty + 全 chunk 存在 (Phase 3-H) | `<Sequence from durationInFrames>` で chunk ループ | 0 (mute)",
+        "priority": "優先順位は narrationData > narration.wav > null。",
+        "mode helper": "`getNarrationMode()`: chunks / legacy / none",
+        "base volume": "`none` だけ `volume=1.0`、それ以外は `0`",
+        "audio branch": "`<Sequence>` ループ / 単一 `<Audio>` / `null` を返す",
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in phase4_text:
+            errors.append(f"supermovie-narration Phase 4 docs missing {name}: {snippet}")
+
+    for pattern, desc in (
+        (r"export\s+const\s+NARRATION_LEGACY_FILE\s*=\s*['\"]narration\.wav['\"]", "legacy narration.wav constant"),
+        (r"\|\s*\{\s*kind:\s*['\"]chunks['\"];\s*segments:\s*readonly\s+NarrationSegment\[\]\s*\}", "chunks mode type"),
+        (r"\|\s*\{\s*kind:\s*['\"]legacy['\"];\s*file:\s*string\s*\}", "legacy mode type"),
+        (r"\|\s*\{\s*kind:\s*['\"]none['\"]\s*\}", "none mode type"),
+        (r"narrationData\.length\s*>\s*0", "narrationData non-empty gate"),
+        (r"narrationData\.every\s*\(\s*\(?seg\)?\s*=>\s*names\.has\s*\(\s*seg\.file\s*\)\s*\)", "all chunk files gate"),
+        (r"names\.has\s*\(\s*NARRATION_LEGACY_FILE\s*\)", "legacy file gate"),
+        (r"_modeCache\s*=\s*\{\s*kind:\s*['\"]none['\"]\s*\}", "none fallback"),
+    ):
+        if not re.search(pattern, mode_text):
+            errors.append(f"mode.ts missing {desc}")
+
+    chunk_gate_idx = mode_text.find("narrationData.length > 0")
+    legacy_gate_idx = mode_text.find("names.has(NARRATION_LEGACY_FILE)")
+    none_idx = mode_text.find("_modeCache = { kind: 'none' }")
+    if not (0 <= chunk_gate_idx < legacy_gate_idx < none_idx):
+        errors.append("mode.ts must keep priority narrationData chunks > narration.wav legacy > none")
+
+    for pattern, desc in (
+        (r"const\s+narrationMode\s*=\s*useNarrationMode\s*\(\s*\)\s*;", "single useNarrationMode call"),
+        (r"const\s+baseVolume\s*=\s*narrationMode\.kind\s*===\s*['\"]none['\"]\s*\?\s*1\.0\s*:\s*0\s*;", "baseVolume none-only 1.0 contract"),
+        (r"volume=\{\s*\(\s*\)\s*=>\s*baseVolume\s*\}", "base video volume callback"),
+        (r"<NarrationAudioWithMode\s+volume=\{1\.0\}\s+mode=\{narrationMode\}\s*/>", "NarrationAudioWithMode mode prop wiring"),
+    ):
+        if not re.search(pattern, main_video_text):
+            errors.append(f"MainVideo.tsx missing {desc}")
+
+    for pattern, desc in (
+        (r"export\s+const\s+NarrationAudioWithMode\s*:\s*React\.FC", "NarrationAudioWithMode export"),
+        (r"if\s*\(\s*mode\.kind\s*===\s*['\"]chunks['\"]\s*\)", "chunks branch"),
+        (r"mode\.segments\.map\s*\(\s*\(?seg\)?\s*=>", "segments map"),
+        (r"<Sequence\b[\s\S]*?from=\{seg\.startFrame\}[\s\S]*?durationInFrames=\{seg\.durationInFrames\}", "Sequence frame wiring"),
+        (r"<Audio\s+src=\{\s*staticFile\s*\(\s*seg\.file\s*\)\s*\}\s+volume=\{\s*\(\s*\)\s*=>\s*volume\s*\}", "chunk Audio wiring"),
+        (r"if\s*\(\s*mode\.kind\s*===\s*['\"]legacy['\"]\s*\)", "legacy branch"),
+        (r"<Audio\s+src=\{\s*staticFile\s*\(\s*mode\.file\s*\)\s*\}\s+volume=\{\s*\(\s*\)\s*=>\s*volume\s*\}", "legacy Audio wiring"),
+        (r"return\s+null\s*;", "none branch null return"),
+    ):
+        if not re.search(pattern, narration_audio_text):
+            errors.append(f"NarrationAudio.tsx missing {desc}")
+
+    assert errors == [], (
+        "supermovie-narration Phase 4 docs / runtime narration mode contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -22089,6 +22175,8 @@ def main() -> int:
         test_supermovie_se_asset_path_docs_match_sequence_contract_lint,
         # PR-IT (supermovie-se rotation docs stay synced with style matrix/catalog): 1 件
         test_supermovie_se_rotation_docs_match_style_matrix_lint,
+        # PR-IU (supermovie-narration mode docs stay synced with runtime wiring): 1 件
+        test_supermovie_narration_mode_docs_match_runtime_contract_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
