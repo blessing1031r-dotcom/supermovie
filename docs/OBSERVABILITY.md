@@ -586,6 +586,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 285 | `template/src/Narration/types.ts` の public export surface が `NarrationSegment` に限定され、default export / re-export を持たないことを lint (`test_narration_types_public_export_surface_contract_lint`、Codex 推奨 PR-HQ)。Narration types module の API surface creep を保護 | PR-HQ |
 | 286 | `template/src/MainVideo.tsx` の public export surface が `MainVideo` に限定され、default export / re-export を持たないことを lint (`test_main_video_public_export_surface_contract_lint`、Codex 推奨 PR-HR)。MainVideo module の API surface creep を保護 | PR-HR |
 | 287 | `template/src/Root.tsx` の public export surface が `RemotionRoot` に限定され、default export / re-export を持たないことを lint (`test_root_public_export_surface_contract_lint`、Codex 推奨 PR-HS)。Root module の API surface creep を保護 | PR-HS |
+| 288 | `template/src/InsertImage/ImageSequence.tsx` の public export surface が `ImageSequence` に限定され、default export / re-export を持たないことを lint (`test_image_sequence_public_export_surface_contract_lint`、Codex 推奨 PR-HT)。ImageSequence module の API surface creep を保護 | PR-HT |
 
 ## Test Requirements
 
