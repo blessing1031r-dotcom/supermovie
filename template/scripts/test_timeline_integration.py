@@ -17526,6 +17526,79 @@ def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     )
 
 
+def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
+    """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    claude_path = repo_root / "CLAUDE.md"
+    registry_path = template_root / "src" / "テロップテンプレート" / "telopTemplateRegistry.tsx"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert registry_path.is_file(), "template/src/テロップテンプレート/telopTemplateRegistry.tsx not found"
+
+    registry_raw = registry_path.read_text(encoding="utf-8")
+    registry_text = "\n".join(line for line in registry_raw.splitlines() if not line.lstrip().startswith("//"))
+    registry_text = re.sub(r"/\*.*?\*/", "", registry_text, flags=re.DOTALL)
+    registry_entries = {
+        display_name: {"templateId": template_id, "category": category}
+        for template_id, category, display_name in re.findall(
+            r"^\s*(\w+):\s*\{\s*category:\s*['\"](\w+)['\"]\s*,\s*displayName:\s*['\"]([^'\"]+)['\"]",
+            registry_text,
+            re.MULTILINE,
+        )
+    }
+    assert len(registry_entries) == 30, (
+        f"telop registry entry count changed: expected 30, got {len(registry_entries)}"
+    )
+
+    claude_text = claude_path.read_text(encoding="utf-8")
+    config_match = re.search(
+        r"### project-config\.json\s*```json\s*(\{[\s\S]*?\})\s*```",
+        claude_text,
+    )
+    assert config_match is not None, "CLAUDE.md project-config.json code block not found"
+    config = json.loads(config_match.group(1))
+    actual_telop_style = config.get("telopStyle")
+    expected_telop_style = {
+        "main": "白青テロップver2",
+        "emphasis": "オレンジグラデーション",
+        "negative": "黒紫グラデ",
+    }
+
+    errors: list[str] = []
+    if actual_telop_style != expected_telop_style:
+        errors.append(f"CLAUDE.md telopStyle defaults drift: expected {expected_telop_style}, got {actual_telop_style}")
+
+    expected_categories = {"main": "main", "emphasis": "emphasis", "negative": "negative"}
+    expected_template_ids = {
+        "main": "WhiteBlueTeleopV2",
+        "emphasis": "OrangeGradation",
+        "negative": "BlackPurpleGradation",
+    }
+    if isinstance(actual_telop_style, dict):
+        for slot, display_name in actual_telop_style.items():
+            entry = registry_entries.get(display_name)
+            if entry is None:
+                errors.append(f"CLAUDE.md telopStyle.{slot} displayName is not in registry: {display_name}")
+                continue
+            if entry["category"] != expected_categories.get(slot):
+                errors.append(
+                    f"CLAUDE.md telopStyle.{slot} category drift: "
+                    f"expected {expected_categories.get(slot)!r}, got {entry['category']!r}"
+                )
+            if entry["templateId"] != expected_template_ids.get(slot):
+                errors.append(
+                    f"CLAUDE.md telopStyle.{slot} templateId drift: "
+                    f"expected {expected_template_ids.get(slot)!r}, got {entry['templateId']!r}"
+                )
+
+    assert errors == [], (
+        "CLAUDE.md project-config telopStyle / registry contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_public_export_surface_contract_lint() -> None:
     """PR-HM: telopTemplateRegistry module must expose only canonical registry API."""
     import re
@@ -20837,6 +20910,8 @@ def main() -> int:
         test_supermovie_subtitles_template_id_mapping_matches_registry_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
+        # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
+        test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-HM (telopTemplateRegistry module exports only canonical registry API): 1 件
         test_telop_template_registry_public_export_surface_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
