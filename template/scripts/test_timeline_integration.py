@@ -15600,6 +15600,31 @@ def test_main_video_imports_video_config_lint() -> None:
     )
 
 
+def test_main_video_named_export_contract_lint() -> None:
+    """PR-GN: MainVideo must remain a named React.FC export.
+
+    Root.tsx composes MainVideo through a named import; keep the component export surface
+    aligned with that Remotion entrypoint contract.
+    """
+    import re
+
+    template_root = Path(__file__).parents[1]
+    main_video_path = template_root / "src" / "MainVideo.tsx"
+    assert main_video_path.is_file(), "template/src/MainVideo.tsx not found"
+    raw = main_video_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+    assert re.search(
+        r"""^\s*export\s+const\s+MainVideo\s*:\s*React\.FC\s*=\s*\(\s*\)\s*=>\s*\{""",
+        text,
+        re.MULTILINE,
+    ), "MainVideo.tsx: must expose `export const MainVideo: React.FC = () => {`"
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "MainVideo.tsx: must not switch MainVideo to a default export"
+    )
+
+
 def test_main_video_imports_remotion_primitives_lint() -> None:
     import re
 
@@ -19251,6 +19276,8 @@ def main() -> int:
         test_docs_required_files_present_lint,
         test_context_anchor_required_sections_lint,
         test_main_video_imports_video_config_lint,
+        # PR-GN (MainVideo stays a named React.FC export for Root import): 1 件
+        test_main_video_named_export_contract_lint,
         test_main_video_imports_remotion_primitives_lint,
         test_scripts_required_files_executable_lint,
         test_sm_claude_entrypoint_executable_lint,
