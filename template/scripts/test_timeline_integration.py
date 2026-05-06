@@ -21048,6 +21048,54 @@ def test_supermovie_init_preflight_source_schema_docs_match_script_contract_lint
     )
 
 
+def test_supermovie_init_setup_docs_match_package_dev_script_contract_lint() -> None:
+    """PR-JW: supermovie-init setup handoff docs must match package dev script."""
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    init_skill_path = repo_root / "skills" / "supermovie-init" / "SKILL.md"
+    package_path = template_root / "package.json"
+    assert init_skill_path.is_file(), "skills/supermovie-init/SKILL.md not found"
+    assert package_path.is_file(), "template/package.json not found"
+
+    init_text = init_skill_path.read_text(encoding="utf-8")
+    package_json = json.loads(package_path.read_text(encoding="utf-8"))
+    scripts = package_json.get("scripts", {})
+
+    errors: list[str] = []
+    for snippet in (
+        "## Phase 5: セットアップ (Phase 1 検証では skill 内で自動実行しない)",
+        "skill が `npm install` / `npx remotion studio` を自動実行しないこと",
+        "Phase 4 まで完了したら以下フォーマットで報告して終了",
+        "Phase 4 まで完了。<PROJECT_DIR> を生成しました。",
+        "cd <PROJECT_DIR> && npm install",
+        "npx remotion studio",
+        "## Phase 6: 起動確認 (Phase 1 検証では skill 内で自動実行しない)",
+        "skill 内では実行せず、Roku が手動で `npx remotion studio` を実行する",
+        "npm run dev                   ← プレビュー",
+    ):
+        if snippet not in init_text:
+            errors.append(f"supermovie-init setup handoff docs missing snippet: {snippet}")
+
+    expected_scripts = {
+        "dev": "remotion studio",
+        "render": "remotion render MainVideo out/video.mp4",
+        "lint": "eslint src && tsc",
+        "test:timeline": "python3 scripts/test_timeline_integration.py",
+    }
+    for name, expected in expected_scripts.items():
+        actual = scripts.get(name)
+        if actual != expected:
+            errors.append(f"template/package.json scripts.{name} drift: expected {expected!r}, got {actual!r}")
+    if not package_json.get("private"):
+        errors.append("template/package.json must remain private for generated project setup")
+
+    assert errors == [], (
+        "supermovie-init setup handoff docs / package dev script contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_public_export_surface_contract_lint() -> None:
     """PR-HM: telopTemplateRegistry module must expose only canonical registry API."""
     import re
@@ -24453,6 +24501,8 @@ def main() -> int:
         test_supermovie_init_videoconfig_ssot_docs_match_template_contract_lint,
         # PR-JT (supermovie-init preflight source.* docs stay synced with script): 1 件
         test_supermovie_init_preflight_source_schema_docs_match_script_contract_lint,
+        # PR-JW (supermovie-init setup handoff docs stay synced with package dev script): 1 件
+        test_supermovie_init_setup_docs_match_package_dev_script_contract_lint,
         # PR-HM (telopTemplateRegistry module exports only canonical registry API): 1 件
         test_telop_template_registry_public_export_surface_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
