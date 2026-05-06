@@ -17960,6 +17960,141 @@ def test_supermovie_subtitles_completion_handoff_docs_match_workflow_contract_li
     )
 
 
+def test_supermovie_subtitles_style_animation_docs_match_telop_segment_contract_lint() -> None:
+    """PR-KL: supermovie-subtitles style/animation docs must match TelopSegment."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    subtitles_skill_path = repo_root / "skills" / "supermovie-subtitles" / "SKILL.md"
+    telop_types_path = template_root / "src" / "テロップテンプレート" / "telopTypes.ts"
+    telop_player_path = template_root / "src" / "テロップテンプレート" / "TelopPlayer.tsx"
+    assert subtitles_skill_path.is_file(), "skills/supermovie-subtitles/SKILL.md not found"
+    assert telop_types_path.is_file(), "template/src/テロップテンプレート/telopTypes.ts not found"
+    assert telop_player_path.is_file(), "template/src/テロップテンプレート/TelopPlayer.tsx not found"
+
+    skill_text = subtitles_skill_path.read_text(encoding="utf-8")
+    telop_types_raw = telop_types_path.read_text(encoding="utf-8")
+    telop_types_text = "\n".join(
+        line for line in telop_types_raw.splitlines() if not line.lstrip().startswith("//")
+    )
+    telop_types_text = re.sub(r"/\*.*?\*/", "", telop_types_text, flags=re.DOTALL)
+    telop_player_text = telop_player_path.read_text(encoding="utf-8")
+    phase5_match = re.search(
+        r"## Phase 5: スタイル \+ templateId 自動割り当て[\s\S]*?"
+        r"## Phase 6: タイトルデータ生成",
+        skill_text,
+    )
+    assert phase5_match is not None, "supermovie-subtitles Phase 5 style/templateId docs not found"
+    phase5_text = phase5_match.group(0)
+
+    style_match = re.search(r"\bstyle\??\s*:\s*([^;]+);", telop_types_text, re.DOTALL)
+    template_match = re.search(r"\btemplate\??\s*:\s*([^;]+);", telop_types_text, re.DOTALL)
+    template_id_match = re.search(r"\btemplateId\??\s*:\s*TelopTemplateId\b", telop_types_text)
+    animation_match = re.search(r"\banimation\??\s*:\s*([^;]+);", telop_types_text, re.DOTALL)
+    assert style_match is not None, "TelopSegment.style union not found"
+    assert template_match is not None, "TelopSegment.template union not found"
+    assert template_id_match is not None, "TelopSegment.templateId not found"
+    assert animation_match is not None, "TelopSegment.animation union not found"
+    style_union = set(re.findall(r"""['"]([^'"]+)['"]""", style_match.group(1)))
+    template_union = set(re.findall(r"\b([1-6])\b", template_match.group(1)))
+    animation_union = set(re.findall(r"""['"]([^'"]+)['"]""", animation_match.group(1)))
+
+    expected_style_rows = [
+        ("通常の文", "normal", "fadeOnly", "60-70%", "2"),
+        ("疑問文（？）", "normal", "slideIn", "5-10%", "2"),
+        ("強調キーワード含む", "emphasis", "slideIn", "10-15%", "1 or 6"),
+        ("ネガティブ表現", "warning", "slideIn", "5-10%", "4 or 5"),
+        ("ポジティブ表現", "success", "fadeOnly", "5-10%", "3"),
+        ("最重要メッセージ", "emphasis", "charByChar", "1-3%", "1"),
+    ]
+    actual_style_rows = [
+        tuple(cell.strip().strip("`") for cell in row)
+        for row in re.findall(
+            r"^\|\s*([^|]+?)\s*\|\s*(normal|emphasis|warning|success)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|",
+            phase5_text,
+            re.MULTILINE,
+        )
+    ]
+    expected_tone_rows = {
+        "プロフェッショナル": ("70%", "25%", "0%", "5%"),
+        "エンタメ": ("40%", "35%", "10%", "15%"),
+        "カジュアル": ("50%", "25%", "5%", "20%"),
+        "教育的": ("75%", "20%", "0%", "5%"),
+    }
+    actual_tone_rows = {
+        tone: (fade, slide, char, left)
+        for tone, fade, slide, char, left in re.findall(
+            r"^\|\s*(プロフェッショナル|エンタメ|カジュアル|教育的)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|",
+            phase5_text,
+            re.MULTILINE,
+        )
+    }
+
+    errors: list[str] = []
+    if style_union != {"normal", "emphasis", "warning", "success"}:
+        errors.append(f"TelopSegment.style union drift: {sorted(style_union)}")
+    if template_union != {"1", "2", "3", "4", "5", "6"}:
+        errors.append(f"TelopSegment.template union drift: {sorted(template_union)}")
+    for animation in {"fadeOnly", "slideIn", "charByChar", "slideFromLeft"}:
+        if animation not in animation_union:
+            errors.append(f"TelopSegment.animation union missing subtitles documented animation: {animation}")
+    if actual_style_rows != expected_style_rows:
+        errors.append(f"supermovie-subtitles style distribution table drift: expected {expected_style_rows}, got {actual_style_rows}")
+    if actual_tone_rows != expected_tone_rows:
+        errors.append(f"supermovie-subtitles tone animation table drift: expected {expected_tone_rows}, got {actual_tone_rows}")
+
+    for _condition, style, animation, _ratio, legacy_template in expected_style_rows:
+        if style not in style_union:
+            errors.append(f"subtitles style table references style outside TelopSegment.style: {style}")
+        if animation not in animation_union:
+            errors.append(f"subtitles style table references animation outside TelopSegment.animation: {animation}")
+        legacy_values = re.findall(r"\b([1-6])\b", legacy_template)
+        missing_legacy = sorted(set(legacy_values) - template_union)
+        if missing_legacy:
+            errors.append(f"subtitles style table references legacy templates outside TelopSegment.template: {missing_legacy}")
+
+    required_doc_snippets = {
+        "deterministic policy": "LLM は意味分割のみ、style 判定は deterministic、templateId は config lookup",
+        "template id lookup": "findTemplateIdByDisplayName()",
+        "success preserved": "`success` は `style` フィールドとして残す",
+        "success template fallback": "templateId は emphasis と同じ",
+        "legacy template fallback": "legacy `template` (1..6) は telopId が解決できない時の fallback",
+        "registry priority": "templateId が指定されていれば TelopPlayer が registry 経路を優先する (`telopTypes.ts` 参照)",
+        "notes keywords": "+ project-config.json の notes のキーワード",
+        "emphasis dictionary": "重要, ポイント, すごい, 注目",
+        "warning dictionary": "問題, 失敗, 難しい, 危険",
+        "success dictionary": "解決, 成功, できる, 簡単",
+        "punctuation removal": "例外: ！？は残す（感情表現として有効）",
+    }
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in phase5_text:
+            errors.append(f"supermovie-subtitles Phase 5 docs missing {name}: {snippet}")
+
+    required_runtime_snippets = {
+        "template id import": "import type { TelopTemplateId } from './telopTemplateRegistry';",
+        "registry route": "const tplId = (current as TelopSegment).templateId as TelopTemplateId | undefined;",
+        "registry priority guard": "if (tplId && telopTemplateRegistry[tplId]) {",
+        "legacy route": "// legacy 経路 (旧 Telop.tsx)",
+        "legacy fallback component": "<Telop segment={current} />",
+    }
+    runtime_sources = {
+        "template id import": telop_types_raw,
+        "registry route": telop_player_text,
+        "registry priority guard": telop_player_text,
+        "legacy route": telop_player_text,
+        "legacy fallback component": telop_player_text,
+    }
+    for name, snippet in required_runtime_snippets.items():
+        if snippet not in runtime_sources[name]:
+            errors.append(f"telop runtime/schema missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-subtitles style/animation docs / TelopSegment contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema_lint() -> None:
     """PR-JK: supermovie-transcribe transcript schema docs must match CLAUDE.md."""
     import json
@@ -25698,6 +25833,8 @@ def main() -> int:
         test_supermovie_subtitles_kpi_docs_match_compare_telop_split_contract_lint,
         # PR-KK (supermovie-subtitles completion/map docs stay synced with downstream handoff): 1 件
         test_supermovie_subtitles_completion_handoff_docs_match_workflow_contract_lint,
+        # PR-KL (supermovie-subtitles style/animation docs stay synced with TelopSegment): 1 件
+        test_supermovie_subtitles_style_animation_docs_match_telop_segment_contract_lint,
         # PR-JK (supermovie-transcribe output schema docs stay synced with CLAUDE transcript schema): 1 件
         test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema_lint,
         # PR-KC (supermovie-transcribe audio extraction docs stay synced with file path contract): 1 件
