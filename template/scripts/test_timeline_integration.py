@@ -18992,6 +18992,97 @@ def test_supermovie_se_completion_docs_match_preview_and_catalog_contract_lint()
     )
 
 
+def test_supermovie_se_error_handling_docs_match_fallback_contract_lint() -> None:
+    """PR-JZ: supermovie-se error handling docs must match fallback runbook."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    se_skill_path = repo_root / "skills" / "supermovie-se" / "SKILL.md"
+    telop_data_path = template_root / "src" / "テロップテンプレート" / "telopData.ts"
+    se_data_path = template_root / "src" / "SoundEffects" / "seData.ts"
+    assert se_skill_path.is_file(), "skills/supermovie-se/SKILL.md not found"
+    assert telop_data_path.is_file(), "template/src/テロップテンプレート/telopData.ts not found"
+    assert se_data_path.is_file(), "template/src/SoundEffects/seData.ts not found"
+
+    skill_text = se_skill_path.read_text(encoding="utf-8")
+    telop_data_text = telop_data_path.read_text(encoding="utf-8")
+    se_data_text = se_data_path.read_text(encoding="utf-8")
+
+    prerequisite_match = re.search(
+        r"## 前提条件チェックリスト\s*([\s\S]*?)\n---\n",
+        skill_text,
+    )
+    asset_match = re.search(
+        r"### 2-1\. 素材チェック\s*([\s\S]*?)### 2-2\.",
+        skill_text,
+    )
+    phase1_match = re.search(
+        r"## Phase 1: データ読み込み\s*([\s\S]*?)\n---\n",
+        skill_text,
+    )
+    error_match = re.search(
+        r"## エラーハンドリング\s*([\s\S]*?)\n---\n",
+        skill_text,
+    )
+    assert prerequisite_match is not None, "supermovie-se prerequisite checklist section not found"
+    assert asset_match is not None, "supermovie-se asset check section not found"
+    assert phase1_match is not None, "supermovie-se Phase 1 input section not found"
+    assert error_match is not None, "supermovie-se error handling section not found"
+
+    prerequisite_text = prerequisite_match.group(1)
+    asset_text = asset_match.group(1)
+    phase1_text = phase1_match.group(1)
+    error_text = error_match.group(1)
+    error_rows = {
+        error.strip(): handling.strip()
+        for error, handling in re.findall(r"^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|", error_text, re.MULTILINE)
+        if error.strip() not in {"エラー", "--------"}
+    }
+    casual_match = re.search(r"^\|\s*カジュアル\s*\|\s*(\d+)-(\d+)%\s*\|", skill_text, re.MULTILINE)
+    default_match = re.search(r"デフォルト（カジュアル密度(\d+)%）で続行", error_text)
+
+    expected_error_rows = {
+        "telopData が空": "`/supermovie-subtitles` の実行を促す",
+        "SE素材が不足": "共通素材のコピーを提案",
+        "project-config.json なし": "デフォルト（カジュアル密度40%）で続行",
+    }
+    errors: list[str] = []
+    if error_rows != expected_error_rows:
+        errors.append(f"supermovie-se error handling table drift: expected {expected_error_rows}, got {error_rows}")
+
+    if "`/supermovie-subtitles` でテロップ生成済み" not in prerequisite_text:
+        errors.append("supermovie-se prerequisite checklist must point telopData-empty recovery at /supermovie-subtitles")
+    if "/supermovie-subtitles で自動生成されます" not in telop_data_text:
+        errors.append("template telopData.ts must retain /supermovie-subtitles generator comment")
+    if "public/se/` の中身を確認" not in asset_text or "空の場合は共通素材をコピー" not in asset_text:
+        errors.append("supermovie-se asset check docs must describe common asset copy fallback")
+    if "/Users/tonodukaren/movie/YT/03_AI×動画編集革命_YT/public/se/*" not in asset_text:
+        errors.append("supermovie-se asset copy fallback source path drift")
+    if '"<PROJECT>/public/se/"' not in asset_text:
+        errors.append("supermovie-se asset copy fallback target path drift")
+    if "`project-config.json` の `tone` を取得" not in phase1_text:
+        errors.append("supermovie-se Phase 1 docs must read project-config.json tone before fallback")
+    if casual_match is None:
+        errors.append("supermovie-se casual tone density row not found")
+    if default_match is None:
+        errors.append("supermovie-se project-config fallback default density not found")
+    if casual_match is not None and default_match is not None:
+        low, high = int(casual_match.group(1)), int(casual_match.group(2))
+        default_density = int(default_match.group(1))
+        if not low <= default_density <= high:
+            errors.append(
+                f"supermovie-se fallback density {default_density}% outside casual tone range {low}-{high}%"
+            )
+    if "export const seData: SoundEffect[] = [" not in se_data_text:
+        errors.append("template seData.ts must keep typed SoundEffect[] export for fallback validation")
+
+    assert errors == [], (
+        "supermovie-se error handling docs / fallback runbook contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_narration_mode_docs_match_runtime_contract_lint() -> None:
     """PR-IU: supermovie-narration Remotion mode docs must match runtime wiring."""
     import re
@@ -24619,6 +24710,8 @@ def main() -> int:
         test_supermovie_se_input_prereq_docs_match_template_data_surface_lint,
         # PR-JY (supermovie-se completion docs stay synced with preview script and SE catalog): 1 件
         test_supermovie_se_completion_docs_match_preview_and_catalog_contract_lint,
+        # PR-JZ (supermovie-se error handling docs stay synced with fallback runbook): 1 件
+        test_supermovie_se_error_handling_docs_match_fallback_contract_lint,
         # PR-IU (supermovie-narration mode docs stay synced with runtime wiring): 1 件
         test_supermovie_narration_mode_docs_match_runtime_contract_lint,
         # PR-IV (supermovie-narration output docs stay synced with voicevox paths): 1 件
