@@ -17599,6 +17599,74 @@ def test_claude_project_config_telop_style_defaults_match_registry_lint() -> Non
     )
 
 
+def test_supermovie_init_project_config_telop_style_defaults_match_claude_lint() -> None:
+    """PR-IC: supermovie-init project-config telopStyle sample must match CLAUDE.md."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    claude_path = repo_root / "CLAUDE.md"
+    init_skill_path = repo_root / "skills" / "supermovie-init" / "SKILL.md"
+    registry_path = template_root / "src" / "テロップテンプレート" / "telopTemplateRegistry.tsx"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert init_skill_path.is_file(), "skills/supermovie-init/SKILL.md not found"
+    assert registry_path.is_file(), "template/src/テロップテンプレート/telopTemplateRegistry.tsx not found"
+
+    def load_project_config_sample(markdown_text: str, heading_pattern: str, source: str) -> dict[str, object]:
+        match = re.search(heading_pattern + r"[\s\S]*?```json\s*(\{[\s\S]*?\})\s*```", markdown_text)
+        assert match is not None, f"{source} project-config.json code block not found"
+        return json.loads(match.group(1))
+
+    claude_config = load_project_config_sample(
+        claude_path.read_text(encoding="utf-8"),
+        r"### project-config\.json",
+        "CLAUDE.md",
+    )
+    init_config = load_project_config_sample(
+        init_skill_path.read_text(encoding="utf-8"),
+        r"### ヒアリング結果 → `project-config\.json`",
+        "skills/supermovie-init/SKILL.md",
+    )
+
+    registry_raw = registry_path.read_text(encoding="utf-8")
+    registry_text = "\n".join(line for line in registry_raw.splitlines() if not line.lstrip().startswith("//"))
+    registry_text = re.sub(r"/\*.*?\*/", "", registry_text, flags=re.DOTALL)
+    display_names_by_category: dict[str, set[str]] = {"main": set(), "emphasis": set(), "negative": set()}
+    for _, category, display_name in re.findall(
+        r"^\s*(\w+):\s*\{\s*category:\s*['\"](\w+)['\"]\s*,\s*displayName:\s*['\"]([^'\"]+)['\"]",
+        registry_text,
+        re.MULTILINE,
+    ):
+        display_names_by_category.setdefault(category, set()).add(display_name)
+
+    errors: list[str] = []
+    claude_telop_style = claude_config.get("telopStyle")
+    init_telop_style = init_config.get("telopStyle")
+    if init_telop_style != claude_telop_style:
+        errors.append(f"supermovie-init telopStyle sample drift: expected {claude_telop_style}, got {init_telop_style}")
+    if isinstance(init_telop_style, dict):
+        for slot in ("main", "emphasis", "negative"):
+            display_name = init_telop_style.get(slot)
+            if display_name not in display_names_by_category[slot]:
+                errors.append(
+                    f"supermovie-init telopStyle.{slot} displayName is not a {slot} registry template: {display_name}"
+                )
+    else:
+        errors.append(f"supermovie-init telopStyle sample must be a dict, got {type(init_telop_style).__name__}")
+
+    for key in ("format", "resolution", "videoType", "targetAudience", "tone", "bgmMood", "notes"):
+        if init_config.get(key) != claude_config.get(key):
+            errors.append(
+                f"supermovie-init project-config sample '{key}' drift: "
+                f"expected {claude_config.get(key)!r}, got {init_config.get(key)!r}"
+            )
+
+    assert errors == [], (
+        "supermovie-init project-config sample / CLAUDE.md schema contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_public_export_surface_contract_lint() -> None:
     """PR-HM: telopTemplateRegistry module must expose only canonical registry API."""
     import re
@@ -20912,6 +20980,8 @@ def main() -> int:
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
+        # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
+        test_supermovie_init_project_config_telop_style_defaults_match_claude_lint,
         # PR-HM (telopTemplateRegistry module exports only canonical registry API): 1 件
         test_telop_template_registry_public_export_surface_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
