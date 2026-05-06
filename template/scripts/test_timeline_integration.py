@@ -17463,6 +17463,69 @@ def test_supermovie_subtitles_template_id_mapping_matches_registry_lint() -> Non
     )
 
 
+def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
+    """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    se_skill_path = repo_root / "skills" / "supermovie-se" / "SKILL.md"
+    telop_types_path = template_root / "src" / "テロップテンプレート" / "telopTypes.ts"
+    assert se_skill_path.is_file(), "skills/supermovie-se/SKILL.md not found"
+    assert telop_types_path.is_file(), "template/src/テロップテンプレート/telopTypes.ts not found"
+
+    telop_types_text = telop_types_path.read_text(encoding="utf-8")
+    style_union_match = re.search(r"\bstyle\??\s*:\s*([^;]+);", telop_types_text)
+    assert style_union_match is not None, "TelopSegment.style union not found"
+    style_union = set(re.findall(r"['\"]([^'\"]+)['\"]", style_union_match.group(1)))
+
+    skill_text = se_skill_path.read_text(encoding="utf-8")
+    catalog_aliases = set(
+        re.findall(r"^│\s*[^│]+?\.mp3\s*│\s*([A-Z]+(?:-\d+)?)\s*│", skill_text, re.MULTILINE)
+    )
+    matrix_rows = re.findall(
+        r"^│\s*(normal|emphasis|warning|success)\s*│\s*([^│]+?)\s*│\s*(0\.\d{2})\s*│",
+        skill_text,
+        re.MULTILINE,
+    )
+    actual_matrix: dict[str, tuple[list[str], str]] = {}
+    for style, candidates_raw, volume in matrix_rows:
+        candidates = [candidate.strip() for candidate in candidates_raw.split(",")]
+        actual_matrix[style] = (candidates, volume)
+
+    expected_matrix = {
+        "normal": (["POP", "WSH-1", "WSH-2", "WSH-3"], "0.30"),
+        "emphasis": (["BTN-2", "BTN-3", "BTN-4", "BTN-12"], "0.35"),
+        "warning": (["BUZZ", "COMIC"], "0.25"),
+        "success": (["BTN-2", "BTN-3"], "0.35"),
+    }
+    errors: list[str] = []
+    if style_union != set(expected_matrix):
+        errors.append(f"TelopSegment.style union drift: expected {sorted(expected_matrix)}, got {sorted(style_union)}")
+    if actual_matrix != expected_matrix:
+        errors.append(f"supermovie-se style matrix drift: expected {expected_matrix}, got {actual_matrix}")
+
+    missing_aliases = sorted(
+        {candidate for candidates, _ in expected_matrix.values() for candidate in candidates} - catalog_aliases
+    )
+    if missing_aliases:
+        errors.append(f"supermovie-se style matrix references aliases missing from catalog: {missing_aliases}")
+
+    for literal in (
+        "`emphasis` テロップの startFrame → BTN系",
+        "`warning` テロップの startFrame → BUZZ or COMIC",
+        "`success` テロップの startFrame → BTN系",
+        "`normal` テロップ → 2〜3個に1個の頻度で POP or WSH系",
+    ):
+        if literal not in skill_text:
+            errors.append(f"supermovie-se missing placement guidance literal: {literal}")
+
+    assert errors == [], (
+        "supermovie-se style matrix / TelopSegment style contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_public_export_surface_contract_lint() -> None:
     """PR-HM: telopTemplateRegistry module must expose only canonical registry API."""
     import re
@@ -20772,6 +20835,8 @@ def main() -> int:
         test_supermovie_init_telop_style_choices_match_registry_lint,
         # PR-HZ (supermovie-subtitles style/templateId table stays synced with registry): 1 件
         test_supermovie_subtitles_template_id_mapping_matches_registry_lint,
+        # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
+        test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-HM (telopTemplateRegistry module exports only canonical registry API): 1 件
         test_telop_template_registry_public_export_surface_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
