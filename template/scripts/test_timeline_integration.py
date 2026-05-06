@@ -17645,6 +17645,105 @@ def test_supermovie_subtitles_linebreak_docs_match_insert_linebreak_contract_lin
     )
 
 
+def test_supermovie_subtitles_kpi_docs_match_compare_telop_split_contract_lint() -> None:
+    """PR-JI: supermovie-subtitles KPI docs must match compare_telop_split.py."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    subtitles_skill_path = repo_root / "skills" / "supermovie-subtitles" / "SKILL.md"
+    compare_path = template_root / "scripts" / "compare_telop_split.py"
+    assert subtitles_skill_path.is_file(), "skills/supermovie-subtitles/SKILL.md not found"
+    assert compare_path.is_file(), "template/scripts/compare_telop_split.py not found"
+
+    skill_text = subtitles_skill_path.read_text(encoding="utf-8")
+    compare_text = compare_path.read_text(encoding="utf-8")
+    kpi_match = re.search(
+        r"### 7-4\. KPI ゲート \(Codex Phase 2b Q3、BudouX 統合 verify 用\)[\s\S]*?"
+        r"## 完了時の報告フォーマット",
+        skill_text,
+    )
+    assert kpi_match is not None, "supermovie-subtitles KPI gate docs not found"
+    docs_text = kpi_match.group(0)
+
+    expected_doc_gates = {
+        "hard_word_split_count": "== 0",
+        "linebreak_inside_preserve_count": "== 0",
+        "single_char_telops": "new ≤ baseline",
+        "two_char_tail_telops": "new ≤ baseline",
+        "frame_overlap_count": "== 0",
+    }
+    rows = re.findall(
+        r"^\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|",
+        docs_text,
+        re.MULTILINE,
+    )
+    actual_doc_gates = {metric: gate.strip() for metric, gate, _meaning in rows}
+    errors: list[str] = []
+    if actual_doc_gates != expected_doc_gates:
+        errors.append(f"supermovie-subtitles KPI table drift: expected {expected_doc_gates}, got {actual_doc_gates}")
+
+    required_doc_snippets = {
+        "compare command": "`python3 scripts/compare_telop_split.py <baseline.ts> <new.ts>`",
+        "baseline step": "baseline (旧 24 字機械分割)",
+        "new step": "new (BudouX)",
+        "hard word meaning": "telop 境界が transcript の word.text 途中に入った件数",
+        "preserve meaning": "preserve 語 (Claude / Code 等) の途中で改行",
+        "two char meaning": "改行後 2 行目が 2 字以下",
+        "overlap meaning": "隣接 telop の frame 範囲重複",
+    }
+    required_code_snippets = {
+        "usage baseline": "python3 scripts/build_telop_data.py --baseline",
+        "usage new": "python3 scripts/build_telop_data.py",
+        "usage compare": "python3 scripts/compare_telop_split.py /tmp/telop_baseline.ts /tmp/telop_new.ts",
+        "single char init": '"single_char_telops": 0',
+        "two char init": '"two_char_tail_telops": 0',
+        "preserve init": '"linebreak_inside_preserve_count": 0',
+        "hard word init": '"hard_word_split_count": 0',
+        "overlap init": '"frame_overlap_count": 0',
+        "gate hard word": 'gates.append(("hard_word_split_count == 0", new_kpi["hard_word_split_count"] == 0))',
+        "gate preserve": 'gates.append(("linebreak_inside_preserve_count == 0", new_kpi["linebreak_inside_preserve_count"] == 0))',
+        "gate single char": 'gates.append(("single_char_telops_new <= baseline", new_kpi["single_char_telops"] <= base_kpi["single_char_telops"]))',
+        "gate two char": 'gates.append(("two_char_tail_telops_new <= baseline", new_kpi["two_char_tail_telops"] <= base_kpi["two_char_tail_telops"]))',
+        "gate overlap": 'gates.append(("frame_overlap_count == 0", new_kpi["frame_overlap_count"] == 0))',
+    }
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in docs_text:
+            errors.append(f"supermovie-subtitles KPI docs missing {name}: {snippet}")
+    for name, snippet in required_code_snippets.items():
+        if snippet not in compare_text:
+            errors.append(f"compare_telop_split.py missing KPI contract {name}: {snippet}")
+
+    keys_match = re.search(r"keys = \[(.*?)\]", compare_text, re.DOTALL)
+    assert keys_match is not None, "compare_telop_split.py KPI print keys not found"
+    printed_keys = re.findall(r'"([^"]+)"', keys_match.group(1))
+    expected_printed_keys = [
+        "telop_count",
+        "single_char_telops",
+        "two_char_tail_telops",
+        "linebreak_inside_preserve_count",
+        "hard_word_split_count",
+        "frame_overlap_count",
+    ]
+    if printed_keys != expected_printed_keys:
+        errors.append(f"compare_telop_split.py KPI print key order drift: expected {expected_printed_keys}, got {printed_keys}")
+
+    gate_positions = [
+        compare_text.find('gates.append(("hard_word_split_count == 0"'),
+        compare_text.find('gates.append(("linebreak_inside_preserve_count == 0"'),
+        compare_text.find('gates.append(("single_char_telops_new <= baseline"'),
+        compare_text.find('gates.append(("two_char_tail_telops_new <= baseline"'),
+        compare_text.find('gates.append(("frame_overlap_count == 0"'),
+    ]
+    if any(pos == -1 for pos in gate_positions) or gate_positions != sorted(gate_positions):
+        errors.append("compare_telop_split.py gate order must remain hard_word -> preserve -> single -> two_char -> overlap")
+
+    assert errors == [], (
+        "supermovie-subtitles KPI docs / compare_telop_split.py contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -23161,6 +23260,8 @@ def main() -> int:
         test_supermovie_subtitles_budoux_docs_match_build_telop_cli_lint,
         # PR-JH (supermovie-subtitles linebreak docs stay synced with insert_linebreak): 1 件
         test_supermovie_subtitles_linebreak_docs_match_insert_linebreak_contract_lint,
+        # PR-JI (supermovie-subtitles KPI gate docs stay synced with compare_telop_split): 1 件
+        test_supermovie_subtitles_kpi_docs_match_compare_telop_split_contract_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
