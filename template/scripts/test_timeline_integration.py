@@ -20140,6 +20140,62 @@ def test_supermovie_image_gen_type_docs_match_image_segment_union_lint() -> None
     )
 
 
+def test_supermovie_image_gen_display_logic_docs_match_insert_image_renderer_lint() -> None:
+    """PR-JU: supermovie-image-gen display logic docs must match InsertImage renderer."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-image-gen" / "SKILL.md"
+    renderer_path = template_root / "src" / "InsertImage" / "InsertImage.tsx"
+    assert skill_path.is_file(), "skills/supermovie-image-gen/SKILL.md not found"
+    assert renderer_path.is_file(), "template/src/InsertImage/InsertImage.tsx not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    renderer_text = renderer_path.read_text(encoding="utf-8")
+    display_section_match = re.search(
+        r"### 4-2\. タイプ別表示ロジック（InsertImage\.tsx連携）\s*([\s\S]*?)## Phase 5:",
+        skill_text,
+    )
+    assert display_section_match is not None, "supermovie-image-gen type display table section not found"
+    documented_rows = {
+        typ: desc
+        for typ, desc in re.findall(
+            r"^\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|",
+            display_section_match.group(1),
+            re.MULTILINE,
+        )
+        if typ != "type"
+    }
+    expected_rows = {
+        "infographic": "全画面固定表示",
+        "photo": "全画面 + Ken Burnsズーム（1.0→1.05）",
+        "overlay": "暗背景(0.7) + 中央配置",
+    }
+
+    errors: list[str] = []
+    if documented_rows != expected_rows:
+        errors.append(f"supermovie-image-gen display table drift: expected {expected_rows}, got {documented_rows}")
+
+    renderer_patterns = {
+        "overlay branch": r"if\s*\(\s*segment\.type\s*===\s*['\"]overlay['\"]\s*\)",
+        "overlay dark background": r"backgroundColor:\s*['\"]rgba\(0,\s*0,\s*0,\s*0\.7\)['\"]",
+        "overlay centered": r"justifyContent:\s*['\"]center['\"][\s\S]*?alignItems:\s*['\"]center['\"]",
+        "overlay contain bounds": r"maxWidth:\s*['\"]80%['\"][\s\S]*?maxHeight:\s*['\"]80%['\"][\s\S]*?objectFit:\s*['\"]contain['\"]",
+        "photo ken burns": r"segment\.type\s*===\s*['\"]photo['\"][\s\S]*?interpolate\(\s*localFrame,\s*\[0,\s*duration\],\s*\[1\.0,\s*1\.05\]",
+        "infographic contain photo cover": r"objectFit:\s*segment\.type\s*===\s*['\"]infographic['\"]\s*\?\s*['\"]contain['\"]\s*:\s*['\"]cover['\"]",
+        "full screen wrapper": r"position:\s*['\"]absolute['\"][\s\S]*?top:\s*0,\s*left:\s*0,\s*width:\s*['\"]100%['\"],\s*height:\s*['\"]100%['\"]",
+    }
+    for name, pattern in renderer_patterns.items():
+        if not re.search(pattern, renderer_text):
+            errors.append(f"InsertImage.tsx missing {name} display contract")
+
+    assert errors == [], (
+        "supermovie-image-gen display docs / InsertImage renderer contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_image_gen_asset_path_docs_match_insert_image_contract_lint() -> None:
     """PR-IR: supermovie-image-gen asset path docs must match InsertImage contract."""
     import re
@@ -24294,6 +24350,8 @@ def main() -> int:
         test_supermovie_image_gen_aspect_table_matches_video_config_lint,
         # PR-IL (supermovie-image-gen type docs stay synced with ImageSegment union): 1 件
         test_supermovie_image_gen_type_docs_match_image_segment_union_lint,
+        # PR-JU (supermovie-image-gen display logic docs stay synced with InsertImage): 1 件
+        test_supermovie_image_gen_display_logic_docs_match_insert_image_renderer_lint,
         # PR-IR (supermovie-image-gen asset path docs stay synced with InsertImage): 1 件
         test_supermovie_image_gen_asset_path_docs_match_insert_image_contract_lint,
         # PR-IM (supermovie-slides validation docs stay synced with build_slide_data guards): 1 件
