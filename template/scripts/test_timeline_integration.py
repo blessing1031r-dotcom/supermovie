@@ -17307,6 +17307,86 @@ def test_telop_template_registry_lookup_helpers_contract_lint() -> None:
     )
 
 
+def test_supermovie_init_telop_style_choices_match_registry_lint() -> None:
+    """PR-HY: supermovie-init telop style choices must stay in sync with the registry."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    registry_path = template_root / "src" / "テロップテンプレート" / "telopTemplateRegistry.tsx"
+    init_skill_path = repo_root / "skills" / "supermovie-init" / "SKILL.md"
+    assert registry_path.is_file(), "template/src/テロップテンプレート/telopTemplateRegistry.tsx not found"
+    assert init_skill_path.is_file(), "skills/supermovie-init/SKILL.md not found"
+
+    registry_raw = registry_path.read_text(encoding="utf-8")
+    registry_text = "\n".join(line for line in registry_raw.splitlines() if not line.lstrip().startswith("//"))
+    registry_text = re.sub(r"/\*.*?\*/", "", registry_text, flags=re.DOTALL)
+    entries = re.findall(
+        r"^\s*(\w+):\s*\{\s*category:\s*['\"](\w+)['\"]\s*,\s*displayName:\s*['\"]([^'\"]+)['\"]",
+        registry_text,
+        re.MULTILINE,
+    )
+    assert len(entries) == 30, f"telop registry entry count changed: expected 30, got {len(entries)}"
+
+    display_names_by_category: dict[str, set[str]] = {"main": set(), "emphasis": set(), "negative": set()}
+    template_ids_by_display_name: dict[str, str] = {}
+    for template_id, category, display_name in entries:
+        display_names_by_category.setdefault(category, set()).add(display_name)
+        template_ids_by_display_name[display_name] = template_id
+
+    init_text = init_skill_path.read_text(encoding="utf-8")
+    errors: list[str] = []
+    for category, display_names in display_names_by_category.items():
+        for display_name in sorted(display_names):
+            if display_name not in init_text:
+                errors.append(f"supermovie-init missing {category} telop displayName: {display_name}")
+
+    default_rows_checked = 0
+    table_rows = re.findall(
+        r"^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|",
+        init_text,
+        re.MULTILINE,
+    )
+    all_display_names = set(template_ids_by_display_name)
+    for tone, main, emphasis, negative in table_rows:
+        tone = tone.strip()
+        main = main.strip()
+        emphasis = emphasis.strip()
+        negative = negative.strip()
+        if main not in all_display_names and emphasis not in all_display_names and negative not in all_display_names:
+            continue
+        default_rows_checked += 1
+        if main not in display_names_by_category["main"]:
+            errors.append(f"supermovie-init tone default '{tone}' main displayName is not a main template: {main}")
+        if emphasis not in display_names_by_category["emphasis"]:
+            errors.append(
+                f"supermovie-init tone default '{tone}' emphasis displayName is not an emphasis template: {emphasis}"
+            )
+        if negative not in display_names_by_category["negative"]:
+            errors.append(
+                f"supermovie-init tone default '{tone}' negative displayName is not a negative template: {negative}"
+            )
+    if default_rows_checked != 6:
+        errors.append(f"supermovie-init tone default row count changed: expected 6, got {default_rows_checked}")
+
+    if template_ids_by_display_name.get("白青テロップver2") != "WhiteBlueTeleopV2":
+        errors.append("registry displayName '白青テロップver2' must resolve to templateId 'WhiteBlueTeleopV2'")
+    for pattern, desc in (
+        (r"findTemplateIdByDisplayName\(displayName\)", "findTemplateIdByDisplayName(displayName) guidance"),
+        (
+            r"`?\"白青テロップver2\"`?\s*→\s*`?templateId:\s*'WhiteBlueTeleopV2'`?",
+            "白青テロップver2 -> WhiteBlueTeleopV2 example",
+        ),
+    ):
+        if not re.search(pattern, init_text):
+            errors.append(f"supermovie-init missing registry lookup guidance: {desc}")
+
+    assert errors == [], (
+        "supermovie-init telop style choice / registry contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_public_export_surface_contract_lint() -> None:
     """PR-HM: telopTemplateRegistry module must expose only canonical registry API."""
     import re
@@ -20612,6 +20692,8 @@ def main() -> int:
         test_telop_template_registry_component_imports_contract_lint,
         test_telop_template_registry_type_surface_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
+        # PR-HY (supermovie-init telop choices stay synced with registry displayNames): 1 件
+        test_supermovie_init_telop_style_choices_match_registry_lint,
         # PR-HM (telopTemplateRegistry module exports only canonical registry API): 1 件
         test_telop_template_registry_public_export_surface_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
