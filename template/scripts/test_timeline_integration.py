@@ -19691,6 +19691,36 @@ def test_insert_image_data_public_export_surface_contract_lint() -> None:
     )
 
 
+def test_insert_image_public_export_surface_contract_lint() -> None:
+    """PR-HW: InsertImage module must export only the InsertImage component."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    image_file = template_root / "src" / "InsertImage" / "InsertImage.tsx"
+    assert image_file.is_file(), "template/src/InsertImage/InsertImage.tsx not found"
+    raw = image_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/InsertImage/InsertImage.tsx must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*(?:\*|\{)""", text, re.MULTILINE), (
+        "template/src/InsertImage/InsertImage.tsx must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    expected = {"InsertImage"}
+    assert exported == expected, (
+        "template/src/InsertImage/InsertImage.tsx public export surface drift: "
+        f"expected {sorted(expected)}, got {sorted(exported)}"
+    )
+
+
 def test_slide_sequence_canonical_imports_contract_lint() -> None:
     import re
 
@@ -20594,6 +20624,8 @@ def main() -> int:
         test_insert_image_types_public_export_surface_contract_lint,
         test_insert_image_canonical_imports_contract_lint,
         test_insert_image_render_variant_style_contract_lint,
+        # PR-HW (InsertImage module exports only the InsertImage component): 1 件
+        test_insert_image_public_export_surface_contract_lint,
         test_narration_segment_required_fields_contract_lint,
         test_narration_segment_optional_debug_fields_contract_lint,
         # PR-HQ (Narration types module exports only NarrationSegment): 1 件
