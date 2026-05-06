@@ -14658,6 +14658,13 @@ def test_template_component_barrel_exports_contract_lint() -> None:
             "./useNarrationMode": {"useNarrationMode"},
             "./types": {"NarrationSegment"},
         },
+        "src/テロップテンプレート/index.tsx": {
+            "./Telop": {"Telop"},
+            "./TelopPlayer": {"TelopPlayer"},
+            "./telopData": {"telopData", "TOTAL_FRAMES", "FPS"},
+            "./telopTypes": {"TelopSegment"},
+            "./telopStyles": {"subtitleConfig"},
+        },
     }
     export_re = re.compile(
         r"""export\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]""",
