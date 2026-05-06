@@ -15015,6 +15015,55 @@ def test_vitest_use_narration_mode_tests_mock_remotion_before_sut_import_lint() 
     )
 
 
+def test_vitest_use_narration_mode_tests_reset_cache_before_each_lint() -> None:
+    """PR-GI: useNarrationMode React tests must reset mode cache in beforeEach.
+
+    getNarrationMode caches mode at module scope; every useNarrationMode test file must
+    call invalidateNarrationMode() before each case so tests do not share cached mode.
+    """
+    import re
+
+    template_root = Path(__file__).parents[1]
+    test_dir = template_root / "src" / "Narration"
+    target_files = sorted(test_dir.glob("useNarrationMode*.test.tsx"))
+    assert target_files, "template/src/Narration/useNarrationMode*.test.tsx files not found"
+
+    errors: list[str] = []
+    mode_import_pattern = re.compile(
+        r"""^import\s*\{\s*invalidateNarrationMode\s*\}\s*from\s*['"]\.\/mode['"]\s*;?\s*$""",
+        re.MULTILINE,
+    )
+    before_each_reset_pattern = re.compile(
+        r"""\bbeforeEach\s*\(\s*\(\s*\)\s*=>\s*\{[\s\S]*?\binvalidateNarrationMode\s*\(\s*\)\s*;""",
+        re.MULTILINE,
+    )
+    before_each_import_pattern = re.compile(
+        r"""^import\s*\{[^}]*\bbeforeEach\b[^}]*\}\s*from\s*['"]vitest['"]\s*;?\s*$""",
+        re.MULTILINE,
+    )
+
+    for path in target_files:
+        raw = path.read_text(encoding="utf-8")
+        text = "\n".join(
+            line for line in raw.splitlines()
+            if not line.lstrip().startswith("//")
+        )
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+        rel = path.relative_to(template_root).as_posix()
+
+        if not before_each_import_pattern.search(text):
+            errors.append(f"{rel}: beforeEach must be imported from vitest")
+        if not mode_import_pattern.search(text):
+            errors.append(f"{rel}: missing import {{ invalidateNarrationMode }} from './mode'")
+        if not before_each_reset_pattern.search(text):
+            errors.append(f"{rel}: beforeEach must call invalidateNarrationMode()")
+
+    assert errors == [], (
+        "template useNarrationMode React test cache reset contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_vitest_setup_jest_dom_import_contract_lint() -> None:
     import json
     import re
@@ -18959,6 +19008,8 @@ def main() -> int:
         test_vitest_react_test_files_match_include_contract_lint,
         # PR-GH (useNarrationMode React tests mock remotion before SUT import): 1 件
         test_vitest_use_narration_mode_tests_mock_remotion_before_sut_import_lint,
+        # PR-GI (useNarrationMode React tests reset mode cache before each test): 1 件
+        test_vitest_use_narration_mode_tests_reset_cache_before_each_lint,
         # PR-GD (Vitest setup imports jest-dom/vitest and dependency exists): 1 件
         test_vitest_setup_jest_dom_import_contract_lint,
         test_eslint_config_no_explicit_any_contract_lint,
