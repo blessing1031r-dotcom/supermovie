@@ -17542,6 +17542,30 @@ def test_entrypoint_imports_register_root_from_remotion_lint() -> None:
     )
 
 
+def test_entrypoint_side_effect_only_no_exports_contract_lint() -> None:
+    """PR-GO: Remotion entrypoint must stay side-effect only.
+
+    Keep template/src/index.ts focused on registering RemotionRoot once, without adding
+    exports that imply it is an application module API surface.
+    """
+    import re
+
+    template_root = Path(__file__).parents[1]
+    index_ts = template_root / "src" / "index.ts"
+    assert index_ts.is_file(), "template/src/index.ts not found"
+    raw = index_ts.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+    assert not re.search(r"""^\s*export\b""", text, re.MULTILINE), (
+        "template/src/index.ts must remain side-effect only and not export symbols"
+    )
+    register_calls = re.findall(r"\bregisterRoot\s*\(", text)
+    assert len(register_calls) == 1, (
+        f"template/src/index.ts must call registerRoot exactly once, found {len(register_calls)}"
+    )
+
+
 def test_bgm_file_constant_is_single_source_for_presence_check_and_audio_src() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -19337,6 +19361,8 @@ def main() -> int:
         # PR-CS (index.ts imports RemotionRoot and calls registerRoot lint): 1 件
         test_entrypoint_registers_remotion_root,
         test_entrypoint_imports_register_root_from_remotion_lint,
+        # PR-GO (index.ts remains side-effect only and registers root once): 1 件
+        test_entrypoint_side_effect_only_no_exports_contract_lint,
         # PR-CT (BGM.tsx uses BGM_FILE constant for both presence check and audio src lint): 1 件
         test_bgm_file_constant_is_single_source_for_presence_check_and_audio_src,
         test_bgm_props_default_volume_contract_lint,
