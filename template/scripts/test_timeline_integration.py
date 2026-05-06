@@ -18801,6 +18801,36 @@ def test_insert_image_segment_schema_contract_lint() -> None:
     )
 
 
+def test_insert_image_types_public_export_surface_contract_lint() -> None:
+    """PR-HV: InsertImage types module must export only the ImageSegment interface."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    types_file = template_root / "src" / "InsertImage" / "types.ts"
+    assert types_file.is_file(), "template/src/InsertImage/types.ts not found"
+    raw = types_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/InsertImage/types.ts must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*(?:\*|\{)""", text, re.MULTILINE), (
+        "template/src/InsertImage/types.ts must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    expected = {"ImageSegment"}
+    assert exported == expected, (
+        "template/src/InsertImage/types.ts public export surface drift: "
+        f"expected {sorted(expected)}, got {sorted(exported)}"
+    )
+
+
 def test_insert_image_canonical_imports_contract_lint() -> None:
     import re
 
@@ -20560,6 +20590,8 @@ def main() -> int:
         # PR-HP (Narration data module exports only the generated narrationData array): 1 件
         test_narration_data_public_export_surface_contract_lint,
         test_insert_image_segment_schema_contract_lint,
+        # PR-HV (InsertImage types module exports only ImageSegment): 1 件
+        test_insert_image_types_public_export_surface_contract_lint,
         test_insert_image_canonical_imports_contract_lint,
         test_insert_image_render_variant_style_contract_lint,
         test_narration_segment_required_fields_contract_lint,
