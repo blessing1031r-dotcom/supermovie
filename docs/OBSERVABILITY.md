@@ -592,6 +592,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 291 | `template/src/InsertImage/InsertImage.tsx` の public export surface が `InsertImage` に限定され、default export / re-export を持たないことを lint (`test_insert_image_public_export_surface_contract_lint`、Codex 推奨 PR-HW)。InsertImage module の API surface creep を保護 | PR-HW |
 | 292 | `template/src/メインテロップ` / `強調テロップ` / `ネガティブテロップ` の 30 component file が `SubtitleItem` / `SubtitleData` / component const の 3 export のみに限定され、default export / re-export を持たないことを lint (`test_telop_template_components_public_export_surface_contract_lint`、Codex 推奨 PR-HX)。Telop template component file の API surface creep を保護 | PR-HX |
 | 293 | `skills/supermovie-init/SKILL.md` の telop style 選択肢 / トーン別 default が `telopTemplateRegistry.tsx` の 30 displayName と category に同期し、`白青テロップver2` → `WhiteBlueTeleopV2` lookup guidance を保持することを lint (`test_supermovie_init_telop_style_choices_match_registry_lint`、Codex 推奨 PR-HY)。supermovie-init の hearing choices と registry の drift を保護 | PR-HY |
+| 294 | `skills/supermovie-subtitles/SKILL.md` の style→templateId mapping table が `telopTemplateRegistry.tsx` の registry key / category / displayName と同期し、`normal/emphasis/warning/success` の templateId 既定値が registry 実体に存在することを lint (`test_supermovie_subtitles_template_id_mapping_matches_registry_lint`、Codex 推奨 PR-HZ)。supermovie-subtitles の deterministic style mapping と registry の drift を保護 | PR-HZ |
 
 ## Test Requirements
 

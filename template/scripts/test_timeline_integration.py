@@ -17387,6 +17387,82 @@ def test_supermovie_init_telop_style_choices_match_registry_lint() -> None:
     )
 
 
+def test_supermovie_subtitles_template_id_mapping_matches_registry_lint() -> None:
+    """PR-HZ: supermovie-subtitles style to templateId docs must match the registry."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    registry_path = template_root / "src" / "テロップテンプレート" / "telopTemplateRegistry.tsx"
+    subtitles_skill_path = repo_root / "skills" / "supermovie-subtitles" / "SKILL.md"
+    assert registry_path.is_file(), "template/src/テロップテンプレート/telopTemplateRegistry.tsx not found"
+    assert subtitles_skill_path.is_file(), "skills/supermovie-subtitles/SKILL.md not found"
+
+    registry_raw = registry_path.read_text(encoding="utf-8")
+    registry_text = "\n".join(line for line in registry_raw.splitlines() if not line.lstrip().startswith("//"))
+    registry_text = re.sub(r"/\*.*?\*/", "", registry_text, flags=re.DOTALL)
+    registry_entries = {
+        template_id: {"category": category, "displayName": display_name}
+        for template_id, category, display_name in re.findall(
+            r"^\s*(\w+):\s*\{\s*category:\s*['\"](\w+)['\"]\s*,\s*displayName:\s*['\"]([^'\"]+)['\"]",
+            registry_text,
+            re.MULTILINE,
+        )
+    }
+    assert len(registry_entries) == 30, (
+        f"telop registry entry count changed: expected 30, got {len(registry_entries)}"
+    )
+
+    skill_text = subtitles_skill_path.read_text(encoding="utf-8")
+    errors: list[str] = []
+    for literal in (
+        "style → templateId 解決ロジック",
+        "findTemplateIdByDisplayName()",
+        "telopStyle.{main, emphasis, negative}",
+        "templateId は emphasis と同じ",
+        "templateId が指定されていれば TelopPlayer が registry 経路を優先する",
+    ):
+        if literal not in skill_text:
+            errors.append(f"supermovie-subtitles missing templateId guidance literal: {literal}")
+
+    rows = re.findall(
+        r"^\|\s*`(\w+)`\s*\|\s*`telopStyle\.(main|emphasis|negative)`[^|]*\|\s*`?'([^']+)'`?\s*(?:\([^|]*)?\|",
+        skill_text,
+        re.MULTILINE,
+    )
+    expected_rows = {
+        "normal": ("main", "WhiteBlueTeleopV2"),
+        "emphasis": ("emphasis", "OrangeGradation"),
+        "warning": ("negative", "BlackPurpleGradation"),
+        "success": ("emphasis", "OrangeGradation"),
+    }
+    actual_rows = {style: (category, template_id) for style, category, template_id in rows}
+    if actual_rows != expected_rows:
+        errors.append(f"supermovie-subtitles style templateId table drift: expected {expected_rows}, got {actual_rows}")
+
+    for style, (category, template_id) in expected_rows.items():
+        entry = registry_entries.get(template_id)
+        if entry is None:
+            errors.append(f"supermovie-subtitles style '{style}' references unknown templateId: {template_id}")
+            continue
+        if entry["category"] != category:
+            errors.append(
+                f"supermovie-subtitles style '{style}' references {template_id} with category "
+                f"{entry['category']!r}, expected {category!r}"
+            )
+    if registry_entries.get("WhiteBlueTeleopV2", {}).get("displayName") != "白青テロップver2":
+        errors.append("registry WhiteBlueTeleopV2 displayName must remain '白青テロップver2'")
+    if registry_entries.get("OrangeGradation", {}).get("displayName") != "オレンジグラデーション":
+        errors.append("registry OrangeGradation displayName must remain 'オレンジグラデーション'")
+    if registry_entries.get("BlackPurpleGradation", {}).get("displayName") != "黒紫グラデ":
+        errors.append("registry BlackPurpleGradation displayName must remain '黒紫グラデ'")
+
+    assert errors == [], (
+        "supermovie-subtitles templateId mapping / registry contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_public_export_surface_contract_lint() -> None:
     """PR-HM: telopTemplateRegistry module must expose only canonical registry API."""
     import re
@@ -20694,6 +20770,8 @@ def main() -> int:
         test_telop_template_registry_lookup_helpers_contract_lint,
         # PR-HY (supermovie-init telop choices stay synced with registry displayNames): 1 件
         test_supermovie_init_telop_style_choices_match_registry_lint,
+        # PR-HZ (supermovie-subtitles style/templateId table stays synced with registry): 1 件
+        test_supermovie_subtitles_template_id_mapping_matches_registry_lint,
         # PR-HM (telopTemplateRegistry module exports only canonical registry API): 1 件
         test_telop_template_registry_public_export_surface_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
