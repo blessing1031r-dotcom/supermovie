@@ -22227,6 +22227,100 @@ def test_supermovie_image_gen_content_analysis_docs_match_image_segment_type_con
     )
 
 
+def test_supermovie_image_gen_plan_hearing_docs_match_candidate_contract_lint() -> None:
+    """PR-KQ: supermovie-image-gen plan hearing docs must match candidate schema."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-image-gen" / "SKILL.md"
+    types_path = template_root / "src" / "InsertImage" / "types.ts"
+    assert skill_path.is_file(), "skills/supermovie-image-gen/SKILL.md not found"
+    assert types_path.is_file(), "template/src/InsertImage/types.ts not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    types_text = types_path.read_text(encoding="utf-8")
+    interface_match = re.search(r"\bexport\s+interface\s+ImageSegment\s*\{([\s\S]*?)\}", types_text)
+    type_match = re.search(r"\btype\s*:\s*([^;]+);", types_text)
+    assert interface_match is not None, "InsertImage/types.ts ImageSegment interface not found"
+    assert type_match is not None, "InsertImage/types.ts ImageSegment.type union not found"
+    image_segment_fields = set(re.findall(r"^\s*(\w+)\??\s*:", interface_match.group(1), re.MULTILINE))
+    allowed_types = set(re.findall(r"'([^']+)'", type_match.group(1)))
+
+    candidate_match = re.search(
+        r"### 1-3\. 候補リスト生成\s*```json\s*([\s\S]*?)```",
+        skill_text,
+    )
+    plan_match = re.search(
+        r"## Phase 2: 画像計画（ヒアリング）\s*([\s\S]*?)## Phase 3:",
+        skill_text,
+    )
+    assert candidate_match is not None, "supermovie-image-gen candidate JSON section not found"
+    assert plan_match is not None, "supermovie-image-gen Phase 2 plan hearing section not found"
+    candidate_text = candidate_match.group(1)
+    plan_text = plan_match.group(1)
+
+    errors: list[str] = []
+    required_image_fields = {"startFrame", "endFrame", "type"}
+    if not required_image_fields.issubset(image_segment_fields):
+        errors.append(f"ImageSegment missing plan-backed fields: {sorted(required_image_fields - image_segment_fields)}")
+
+    candidate_snippets = {
+        "insertAt wrapper": '"insertAt": { "startFrame": 150, "endFrame": 450 }',
+        "reason": '"reason": "「3つのポイント」を説明している箇所"',
+        "suggested type": '"suggestedType": "infographic"',
+        "prompt draft": '"promptDraft": "3つのポイントを示す図解。1.○○ 2.○○ 3.○○"',
+        "priority": '"priority": "high"',
+    }
+    for name, snippet in candidate_snippets.items():
+        if snippet not in candidate_text:
+            errors.append(f"supermovie-image-gen candidate JSON missing {name}: {snippet}")
+
+    plan_snippets = {
+        "presentation intro": "テロップ内容を分析しました。以下の箇所に画像を挿入する計画です:",
+        "first timing": "1. [0:05-0:15]",
+        "second timing": "2. [0:30-0:45]",
+        "third timing": "3. [1:20-1:35]",
+        "infographic label": "インフォグラフィック（高優先）",
+        "photo label": "イメージ画像（中優先）",
+        "prompt proposal": "→ プロンプト案:",
+        "edit prompt": "修正・追加・削除があれば教えてください。",
+        "confirmation prompt": "OKならこのまま生成します。",
+        "add delete": "- 画像の追加/削除",
+        "prompt edit": "- プロンプトの修正",
+        "type edit": "- タイプの変更（infographic ↔ photo ↔ overlay）",
+        "timing edit": "- 表示タイミングの変更",
+    }
+    for name, snippet in plan_snippets.items():
+        if snippet not in plan_text:
+            errors.append(f"supermovie-image-gen plan hearing docs missing {name}: {snippet}")
+
+    type_adjust_match = re.search(r"タイプの変更（([^）]+)）", plan_text)
+    assert type_adjust_match is not None, "supermovie-image-gen type adjustment line not found"
+    documented_adjust_types = set(re.findall(r"\b[a-z]+\b", type_adjust_match.group(1)))
+    if documented_adjust_types != allowed_types:
+        errors.append(f"supermovie-image-gen type adjustment drift: expected {sorted(allowed_types)}, got {sorted(documented_adjust_types)}")
+
+    suggested_types = set(re.findall(r'"suggestedType"\s*:\s*"([^"]+)"', candidate_text))
+    if suggested_types - allowed_types:
+        errors.append(f"supermovie-image-gen candidate suggestedType must be in ImageSegment.type: {sorted(suggested_types - allowed_types)}")
+
+    plan_ranges = [
+        (int(start_min) * 60 + int(start_sec), int(end_min) * 60 + int(end_sec))
+        for start_min, start_sec, end_min, end_sec in re.findall(r"\[(\d+):(\d+)-(\d+):(\d+)\]", plan_text)
+    ]
+    if len(plan_ranges) != 3:
+        errors.append(f"supermovie-image-gen plan hearing example count drift: expected 3 ranges, got {len(plan_ranges)}")
+    for index, (start, end) in enumerate(plan_ranges, start=1):
+        if start >= end:
+            errors.append(f"supermovie-image-gen plan hearing range {index} must have start < end: {start}-{end}")
+
+    assert errors == [], (
+        "supermovie-image-gen plan hearing docs / candidate contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_slides_validation_docs_match_build_slide_data_lint() -> None:
     """PR-IM: supermovie-slides validation docs must match build_slide_data guards."""
     import re
@@ -26399,6 +26493,8 @@ def main() -> int:
         test_supermovie_image_gen_error_handling_docs_match_prereq_contract_lint,
         # PR-KP (supermovie-image-gen content analysis docs stay synced with ImageSegment type): 1 件
         test_supermovie_image_gen_content_analysis_docs_match_image_segment_type_contract_lint,
+        # PR-KQ (supermovie-image-gen plan hearing docs stay synced with candidate schema): 1 件
+        test_supermovie_image_gen_plan_hearing_docs_match_candidate_contract_lint,
         # PR-IM (supermovie-slides validation docs stay synced with build_slide_data guards): 1 件
         test_supermovie_slides_validation_docs_match_build_slide_data_lint,
         # PR-IN (supermovie-slides tone style docs stay synced with build_slide_data): 1 件
