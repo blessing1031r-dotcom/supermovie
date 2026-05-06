@@ -588,6 +588,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 287 | `template/src/Root.tsx` の public export surface が `RemotionRoot` に限定され、default export / re-export を持たないことを lint (`test_root_public_export_surface_contract_lint`、Codex 推奨 PR-HS)。Root module の API surface creep を保護 | PR-HS |
 | 288 | `template/src/InsertImage/ImageSequence.tsx` の public export surface が `ImageSequence` に限定され、default export / re-export を持たないことを lint (`test_image_sequence_public_export_surface_contract_lint`、Codex 推奨 PR-HT)。ImageSequence module の API surface creep を保護 | PR-HT |
 | 289 | `template/src/InsertImage/insertImageData.ts` の public export surface が `toFrame` / `insertImageData` に限定され、default export / re-export を持たないことを lint (`test_insert_image_data_public_export_surface_contract_lint`、Codex 推奨 PR-HU)。InsertImage data module の API surface creep を保護 | PR-HU |
+| 290 | `template/src/InsertImage/types.ts` の public export surface が `ImageSegment` に限定され、default export / re-export を持たないことを lint (`test_insert_image_types_public_export_surface_contract_lint`、Codex 推奨 PR-HV)。InsertImage types module の API surface creep を保護 | PR-HV |
 
 ## Test Requirements
 
