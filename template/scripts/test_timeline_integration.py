@@ -8788,6 +8788,149 @@ def test_observability_path_policy_placeholder_set_docs_code_lint() -> None:
     )
 
 
+def test_observability_composite_7gate_release_note_drift_lint() -> None:
+    """`scripts/check_release_ready.sh` の composite 7-gate 定義 ↔
+    `docs/PHASE3_RELEASE_NOTE.md` の 7 gate composite 記述 双方向 lint
+    (Codex 09:32 PR-R1 verdict、PR-Q1 fixture recipe ↔ release note 双方向
+    audit と同型を release readiness gate axis に展開)。
+
+    `scripts/check_release_ready.sh` は Phase 3 release readiness の composite
+    gate runner で、`echo "--- xxx ---"` 形式の 7 section header を持つ:
+      gate 1: env (git + python3 available 確認)
+      gate 2: worktree clean 確認
+      gate 3: regen verify (--verify pass 確認)
+      gate 4: integration smoke test (pure python timeline test)
+      gate 5: TS compile surface (optional)
+      gate 6: React component test (optional)
+      gate 7: anchor drift check (Codex 12:54 consult Step 3 で追加)
+
+    `docs/PHASE3_RELEASE_NOTE.md` line 76 / 145 / 160 は「7 gate composite」
+    と明記、line 145 で「**ALL PASS** 維持 (gate 7 anchor drift 追加)」、
+    line 160 で `bash scripts/check_release_ready.sh` invocation 示す。
+
+    docs と script が drift すると、(a) script に gate 追加 / 削除した時に
+    release note の "7 gate composite" 文言が古いまま (gate 8 / 6 化など
+    drift) → CI 失敗時の人為診断ミス、(b) gate 名称 rename (例: anchor
+    drift → freeze sentinel) で release note ↔ runbook 不整合、(c)
+    `bash scripts/check_release_ready.sh` invocation 削除で実行例 reference
+    切れ、(d) `ALL GATES PASS` terminator 文言が release note の "ALL
+    PASS" claim と food chain で食い違うと PR description 自動化壊れ。
+
+    本 lint は 5-part validation:
+      1. `scripts/check_release_ready.sh` ファイル存在 + 1 行目 bash
+         shebang
+      2. script body から `^echo "--- (.*) ---"` regex で section header
+         を全抽出、件数が exactly 7 件 (composite 7-gate 数 lock-in)、
+         加えて `=== ALL GATES PASS ===` terminator literal 存在 (script
+         ALL PASS 経路 lock-in)
+      3. 7 section header に必須 keyword (regen verify / smoke / anchor
+         drift) が含まれること (rename drift fail-loud)
+      4. docs/PHASE3_RELEASE_NOTE.md に「7 gate composite」literal が
+         minimum 1 件 docs presence (drift で「6 gate」「8 gate」へ
+         silent rewrite を fail-loud)
+      5. docs/PHASE3_RELEASE_NOTE.md 内に `bash scripts/check_release_ready.sh`
+         invocation literal 1 件以上 docs presence (実行例 reference 切れ
+         fail-loud)、加えて `ALL PASS` claim literal 存在で script
+         terminator との food chain 整合 lock-in
+
+    PR-Q1 fixture recipe ↔ release note 双方向 audit と同型、本 lint は
+    composite 7-gate 定義の docs/script drift という別 axis を fix。
+    """
+    import re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+
+    # part 1: script existence + shebang
+    script_path = (
+        repo_root / "scripts" / "check_release_ready.sh"
+    )
+    assert script_path.exists(), (
+        "`scripts/check_release_ready.sh` composite gate runner が "
+        "見つからない (削除 / rename drift?)"
+    )
+    src = script_path.read_text(encoding="utf-8")
+    first_line = src.split("\n", 1)[0] if src else ""
+    assert first_line.startswith("#!"), (
+        f"check_release_ready.sh の 1 行目が shebang でない: "
+        f"{first_line!r}"
+    )
+
+    # part 2: gate 数 = 7 検証 (実装は 2 style 混在: gates 1-2 は
+    # `echo "  [OK]   env:..."` / `echo "  [OK]   worktree:..."` 形式、
+    # gates 3-7 は `echo "--- xxx ---"` section header 形式)
+    # + ALL GATES PASS terminator
+    header_re = re.compile(
+        r'^echo "--- ([^-].*?) ---"', re.MULTILINE
+    )
+    headers = header_re.findall(src)
+    assert len(headers) == 5, (
+        f"check_release_ready.sh の `echo \"--- xxx ---\"` section "
+        f"header (gates 3-7 explicit style) 数が 5 でない: "
+        f"{len(headers)} (gate 追加 / 削除 drift?)\n"
+        f"検出 headers: {headers}"
+    )
+    # gates 1-2 の implicit `[OK]` style 行存在検証
+    assert re.search(
+        r'^echo\s+"\s*\[OK\]\s+env:', src, re.MULTILINE
+    ), (
+        "check_release_ready.sh に gate 1 (env: git + python3 available) "
+        "の `[OK]   env:...` 経路が見つからない (gate 1 削除 / rename "
+        "drift?)"
+    )
+    assert re.search(
+        r'^echo\s+"\s*\[OK\]\s+worktree:', src, re.MULTILINE
+    ), (
+        "check_release_ready.sh に gate 2 (worktree clean) の "
+        "`[OK]   worktree:...` 経路が見つからない (gate 2 削除 / "
+        "rename drift?)"
+    )
+    # 合計 7 gate (gates 1-2 implicit + gates 3-7 explicit)
+    assert "=== ALL GATES PASS ===" in src, (
+        "check_release_ready.sh に `=== ALL GATES PASS ===` terminator "
+        "literal が見つからない (release-ready 経路の terminal marker "
+        "削除 drift?)"
+    )
+
+    # part 3: 7 gate に必須 keyword (env / worktree / regen verify /
+    # smoke / anchor drift の 5 必須、TS / React は optional 化済) が
+    # rename されていないこと、explicit 5 header の中で 3 必須 keyword
+    # 検証
+    headers_blob = " ".join(headers).lower()
+    REQUIRED_HEADER_KEYWORDS = ["regen verify", "smoke", "anchor drift"]
+    for kw in REQUIRED_HEADER_KEYWORDS:
+        assert kw in headers_blob, (
+            f"check_release_ready.sh の explicit 5 gate section header "
+            f"に必須 keyword '{kw}' を含む header が見つからない "
+            f"(gate name rename / drift?)\n検出 headers: {headers}"
+        )
+
+    # part 4: docs `7 gate composite` literal presence
+    release_note = repo_root / "docs" / "PHASE3_RELEASE_NOTE.md"
+    md = release_note.read_text(encoding="utf-8")
+    assert "7 gate composite" in md, (
+        "docs/PHASE3_RELEASE_NOTE.md に `7 gate composite` literal が "
+        "見つからない (gate count claim drift / 6 gate / 8 gate へ "
+        "silent rewrite?)"
+    )
+
+    # part 5: docs 内 bash invocation literal + ALL PASS claim
+    invocation_re = re.compile(
+        r"bash\s+scripts/check_release_ready\.sh"
+    )
+    inv_matches = invocation_re.findall(md)
+    assert inv_matches, (
+        "docs/PHASE3_RELEASE_NOTE.md に "
+        "`bash scripts/check_release_ready.sh` invocation literal が "
+        "見つからない (実行例 reference 切れ / コマンド drift?)"
+    )
+    assert "ALL PASS" in md, (
+        "docs/PHASE3_RELEASE_NOTE.md に `ALL PASS` claim literal が "
+        "見つからない (script terminator `=== ALL GATES PASS ===` との "
+        "food chain 整合 drift?)"
+    )
+
+
 def test_observability_normalize_fixture_recipe_evidence_trail_lint() -> None:
     """`template/scripts/normalize_fixture.sh` recipe contract ↔
     `docs/PHASE3_RELEASE_NOTE.md §b1 fixture normalize evidence trail`
@@ -11801,6 +11944,7 @@ def main() -> int:
         test_observability_emit_json_disabled_silent_caller_ast_lint,
         test_observability_trace_context_precedence_semantics_lint,
         test_observability_normalize_fixture_recipe_evidence_trail_lint,
+        test_observability_composite_7gate_release_note_drift_lint,
         test_compare_telop_split_error_message_redacted,
         test_compare_telop_split_exit_code_propagates,
         test_visual_smoke_out_dir_mkdir_error_emits_tail,
