@@ -511,6 +511,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 210 | `template/src/テロップテンプレート/telopTypes.ts` が `TelopTemplateId` を `./telopTemplateRegistry` から type import し、`templateId?: TelopTemplateId` と `animation?: 'none' | 'slideIn' | 'fadeOnly' | 'slideFromLeft' | 'fadeBlurFromBottom' | 'slideLeftFadeBlur' | 'fadeFromRight' | 'fadeFromLeft' | 'charByChar'` を保つことを lint (`test_telop_segment_template_id_and_animation_contract_lint`、Codex 推奨 PR-ET)。TelopSegment registry templateId / animation union contract を保護 | PR-ET |
 | 211 | `template/src/テロップテンプレート/index.tsx` が `Telop` / `TelopPlayer` / `telopData` / `TOTAL_FRAMES` / `FPS` / `TelopSegment` / `subtitleConfig` の barrel export を保つことを lint (`test_template_component_barrel_exports_contract_lint`、Codex 推奨 PR-EU)。Telop component barrel exports contract を保護 | PR-EU |
 | 212 | `template/src/videoConfig.ts` が Root composition duration の SSoT である `export const SOURCE_DURATION_FRAMES = <positive integer>;` を保つことを lint (`test_videoconfig_source_duration_frames_numeric_export_lint`、Codex 推奨 PR-EV)。videoConfig source duration numeric export contract を保護 | PR-EV |
+| 213 | `template/src/videoConfig.ts` の `/supermovie-init` rewrite block が `FORMAT: VideoFormat`、positive integer の `FPS` / `SOURCE_DURATION_FRAMES`、public-relative `VIDEO_FILE` export を保持することを lint (`test_videoconfig_supermovie_init_block_scalar_exports_lint`、Codex 推奨 PR-EW)。videoConfig init scalar rewrite block contract を保護 | PR-EW |
 
 ## Test Requirements
 

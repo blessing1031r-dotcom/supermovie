@@ -14860,6 +14860,54 @@ def test_videoconfig_source_duration_frames_numeric_export_lint() -> None:
     )
 
 
+def test_videoconfig_supermovie_init_block_scalar_exports_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    vc_path = template_root / "src" / "videoConfig.ts"
+    assert vc_path.is_file(), "template/src/videoConfig.ts not found"
+    raw = vc_path.read_text(encoding="utf-8")
+    block_match = re.search(
+        r"// ---- ここを /supermovie-init が書き換える ----(?P<block>[\s\S]*?)// ---- ここまで ----",
+        raw,
+    )
+    assert block_match, (
+        "template/src/videoConfig.ts /supermovie-init rewrite block markers not found"
+    )
+    block = block_match.group("block")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    format_union = re.search(r"export\s+type\s+VideoFormat\s*=\s*([^;]+);", text)
+    assert format_union, "template/src/videoConfig.ts VideoFormat union not found"
+    allowed_formats = set(re.findall(r"['\"]([^'\"]+)['\"]", format_union.group(1)))
+    errors: list[str] = []
+    format_match = re.search(r"\bexport\s+const\s+FORMAT\s*:\s*VideoFormat\s*=\s*['\"]([^'\"]+)['\"]\s*;", block)
+    if not format_match:
+        errors.append("init block: missing 'export const FORMAT: VideoFormat = <format>;'")
+    elif format_match.group(1) not in allowed_formats:
+        errors.append(
+            f"init block: FORMAT {format_match.group(1)!r} not in VideoFormat {sorted(allowed_formats)}"
+        )
+    for name in ("FPS", "SOURCE_DURATION_FRAMES"):
+        match = re.search(rf"\bexport\s+const\s+{name}\s*=\s*(\d+)\s*;", block)
+        if not match:
+            errors.append(f"init block: missing numeric 'export const {name} = <integer>;'")
+        elif int(match.group(1)) <= 0:
+            errors.append(f"init block: {name} must be a positive integer")
+    video_file = re.search(r"\bexport\s+const\s+VIDEO_FILE\s*=\s*['\"]([^'\"]+)['\"]\s*;", block)
+    if not video_file:
+        errors.append("init block: missing 'export const VIDEO_FILE = <public-relative path>;'")
+    else:
+        value = video_file.group(1)
+        if not value.strip():
+            errors.append("init block: VIDEO_FILE must be non-empty")
+        if value.startswith("/"):
+            errors.append("init block: VIDEO_FILE must be public-relative, not absolute")
+    assert errors == [], (
+        "template/src/videoConfig.ts /supermovie-init scalar export block contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_package_json_identity_contract_lint() -> None:
     """PR-BZ: template/package.json must have private=true, license=UNLICENSED, non-empty name/version.
     Catches accidental publishability or malformed identity fields that break package managers.
@@ -17491,6 +17539,7 @@ def main() -> int:
         test_package_json_tailwind_v4_dependencies_lint,
         test_videoconfig_required_exports_present_lint,
         test_videoconfig_source_duration_frames_numeric_export_lint,
+        test_videoconfig_supermovie_init_block_scalar_exports_lint,
         test_package_json_identity_contract_lint,
         test_template_src_required_directories_lint,
         test_docs_required_files_present_lint,
