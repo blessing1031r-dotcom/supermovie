@@ -14045,6 +14045,47 @@ def test_markdown_heading_level_skip_lint() -> None:
     assert errors == [], "Markdown heading level skip lint failed:\n" + "\n".join(errors)
 
 
+def test_plugin_json_homepage_repository_canonical_url_lint() -> None:
+    """PR-BF: plugin.json homepage and repository must be identical, must be a
+    canonical GitHub URL matching https://github.com/{owner}/{name}, must end
+    with the plugin name slug, and must have no trailing slash.
+    """
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    manifest = json.loads((repo_root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+
+    plugin_name = manifest.get("name", "")
+    homepage = manifest.get("homepage", "")
+    repository = manifest.get("repository", "")
+
+    errors: list[str] = []
+
+    if homepage != repository:
+        errors.append(
+            f"plugin.json homepage != repository: {homepage!r} vs {repository!r}"
+        )
+
+    GITHUB_URL_RE = re.compile(r"^https://github\.com/[^/\s]+/[^/\s]+$")
+    if not GITHUB_URL_RE.fullmatch(repository):
+        errors.append(
+            f"plugin.json repository is not a canonical GitHub URL: {repository!r}"
+        )
+    else:
+        slug = repository.rsplit("/", 1)[-1]
+        if slug != plugin_name:
+            errors.append(
+                f"plugin.json repository slug {slug!r} != plugin name {plugin_name!r}"
+            )
+        if repository != repository.rstrip("/"):
+            errors.append(f"plugin.json repository has trailing slash: {repository!r}")
+
+    assert errors == [], (
+        "plugin.json homepage/repository canonical URL lint failed:\n" + "\n".join(errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -14293,6 +14334,8 @@ def main() -> int:
         test_markdown_local_links_resolve_lint,
         # PR-BE (markdown heading level skip lint: no H1->H3 etc. in doc files): 1 件
         test_markdown_heading_level_skip_lint,
+        # PR-BF (plugin.json homepage == repository == canonical GitHub URL ending /{name}): 1 件
+        test_plugin_json_homepage_repository_canonical_url_lint,
     ]
     failed = []
     for t in tests:
