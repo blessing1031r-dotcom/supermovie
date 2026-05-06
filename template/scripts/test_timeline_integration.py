@@ -15973,6 +15973,59 @@ def test_telop_template_registry_metadata_contract_lint() -> None:
     )
 
 
+def test_telop_template_registry_entry_cardinality_contract_lint() -> None:
+    import re
+    from collections import Counter
+
+    template_root = Path(__file__).parents[1]
+    registry_path = template_root / "src" / "テロップテンプレート" / "telopTemplateRegistry.tsx"
+    assert registry_path.is_file(), "telopTemplateRegistry.tsx not found"
+    raw = registry_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+    entries = re.findall(
+        r"^\s*(\w+):\s*\{\s*category:\s*['\"](\w+)['\"]\s*,\s*"
+        r"displayName:\s*['\"]([^'\"]+)['\"]\s*,\s*"
+        r"Component:\s*(\w+)\s+as\s+TelopComponent\s*\}\s*,",
+        text,
+        re.MULTILINE,
+    )
+    expected_category_counts = {"main": 12, "emphasis": 13, "negative": 5}
+    errors: list[str] = []
+    if len(entries) != 30:
+        errors.append(f"registry entry count changed: expected 30, got {len(entries)}")
+
+    category_counts = Counter(category for _, category, _, _ in entries)
+    if dict(category_counts) != expected_category_counts:
+        errors.append(
+            f"registry category counts changed: expected {expected_category_counts}, got {dict(category_counts)}"
+        )
+
+    keys = [key for key, _, _, _ in entries]
+    display_names = [display_name for _, _, display_name, _ in entries]
+    component_refs = [component_ref for _, _, _, component_ref in entries]
+    for label, values in [
+        ("registry key", keys),
+        ("displayName", display_names),
+        ("Component ref", component_refs),
+    ]:
+        duplicates = sorted(name for name, count in Counter(values).items() if count > 1)
+        if duplicates:
+            errors.append(f"duplicate {label}: {duplicates}")
+
+    for key, _, _, component_ref in entries:
+        if component_ref != key:
+            errors.append(
+                f"{key}: Component ref must match registry key, got {component_ref}"
+            )
+
+    assert errors == [], (
+        "telopTemplateRegistry.tsx entry cardinality contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_type_surface_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -18322,6 +18375,7 @@ def main() -> int:
         test_telop_color_interpolation_helpers_contract_lint,
         test_telop_template_registry_file_coverage_lint,
         test_telop_template_registry_metadata_contract_lint,
+        test_telop_template_registry_entry_cardinality_contract_lint,
         test_telop_template_registry_type_surface_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
