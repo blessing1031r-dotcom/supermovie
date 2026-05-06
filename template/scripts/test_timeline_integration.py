@@ -15693,6 +15693,47 @@ def test_narration_watch_uses_mode_constants_and_data_files() -> None:
     )
 
 
+def test_use_narration_mode_watch_dedup_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    hook_file = template_root / "src" / "Narration" / "useNarrationMode.ts"
+    assert hook_file.is_file(), "template/src/Narration/useNarrationMode.ts not found"
+    raw = hook_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    for pattern, desc in [
+        (r"""import\s*\{[^}]*\buseEffect\b[^}]*\buseRef\b[^}]*\buseState\b[^}]*\}\s*from\s*['"]react['"]""", "React hook imports"),
+        (r"""import\s*\{[^}]*\bwatchStaticFile\b[^}]*\}\s*from\s*['"]remotion['"]""", "watchStaticFile import"),
+        (r"type\s+StaticFileMeta\s*=[\s\S]*?lastModified\??:\s*number\s*;[\s\S]*?sizeInBytes\??:\s*number\s*\}[\s\S]*?\|\s*null[\s\S]*?\|\s*undefined\s*;", "StaticFileMeta metadata/null/undefined union"),
+        (r"const\s+\[\s*mode\s*,\s*setMode\s*\]\s*=\s*useState\s*<\s*NarrationMode\s*>\s*\(\s*\(\s*\)\s*=>\s*getNarrationMode\s*\(\s*\)\s*\)\s*;", "mode state initializes from getNarrationMode()"),
+        (r"const\s+lastSignalRef\s*=\s*useRef\s*<\s*Map\s*<\s*string\s*,\s*string\s*>\s*>\s*\(\s*new\s+Map\s*\(\s*\)\s*\)\s*;", "lastSignalRef stores per-key signal map"),
+        (r"const\s+pendingRef\s*=\s*useRef\s*<\s*boolean\s*>\s*\(\s*false\s*\)\s*;", "pendingRef starts false"),
+        (r"useEffect\s*\(\s*\(\s*\)\s*=>\s*\{[\s\S]*?\}\s*,\s*\[\s*\]\s*\)\s*;", "watch setup useEffect has empty dependency array"),
+        (r"const\s+cancels\s*:\s*Array\s*<\s*\(\s*\)\s*=>\s*void\s*>\s*=\s*\[\s*\]\s*;", "watch cancel callbacks array"),
+        (r"const\s+dedupSignal\s*=\s*lastSignalRef\.current\s*;", "dedupSignal aliases ref current"),
+        (r"const\s+scheduleUpdate\s*=\s*\(\s*\)\s*=>\s*\{[\s\S]*?if\s*\(\s*pendingRef\.current\s*\)\s*\{[\s\S]*?return\s*;[\s\S]*?\}[\s\S]*?pendingRef\.current\s*=\s*true\s*;[\s\S]*?queueMicrotask\s*\(\s*\(\s*\)\s*=>\s*\{[\s\S]*?pendingRef\.current\s*=\s*false\s*;[\s\S]*?invalidateNarrationMode\s*\(\s*\)\s*;[\s\S]*?setMode\s*\(\s*getNarrationMode\s*\(\s*\)\s*\)\s*;", "scheduleUpdate coalesces updates through queueMicrotask"),
+        (r"const\s+makeUpdate\s*=[\s\S]*?\(\s*key:\s*string\s*,\s*isSentinel:\s*boolean\s*\)\s*=>\s*\(\s*file\??:\s*StaticFileMeta\s*\)\s*=>\s*\{", "makeUpdate factory with key/isSentinel/file"),
+        (r"if\s*\(\s*isSentinel\s*&&\s*file\s*===\s*null\s*\)\s*\{[\s\S]*?return\s*;[\s\S]*?\}", "sentinel delete event is ignored"),
+        (r"file\s*&&[\s\S]*?file\.lastModified\s*!==\s*undefined\s*\|\|\s*file\.sizeInBytes\s*!==\s*undefined", "metadata presence enables dedup"),
+        (r"const\s+signal\s*=\s*`\$\{file\.lastModified\s*\?\?\s*['\"]na['\"]\}:\$\{file\.sizeInBytes\s*\?\?\s*['\"]na['\"]\}`\s*;", "signal key uses lastModified:sizeInBytes"),
+        (r"if\s*\(\s*dedupSignal\.get\s*\(\s*key\s*\)\s*===\s*signal\s*\)\s*\{[\s\S]*?return\s*;[\s\S]*?\}", "duplicate signal returns early"),
+        (r"dedupSignal\.set\s*\(\s*key\s*,\s*signal\s*\)\s*;", "new signal is stored"),
+        (r"scheduleUpdate\s*\(\s*\)\s*;", "watch callback schedules update"),
+        (r"if\s*\(\s*watchReady\s*&&\s*typeof\s+watchReady\.cancel\s*===\s*['\"]function['\"]\s*\)\s*\{[\s\S]*?cancels\.push\s*\(\s*watchReady\.cancel\s*\)\s*;", "ready watcher cancel is collected"),
+        (r"if\s*\(\s*watchLegacy\s*&&\s*typeof\s+watchLegacy\.cancel\s*===\s*['\"]function['\"]\s*\)\s*\{[\s\S]*?cancels\.push\s*\(\s*watchLegacy\.cancel\s*\)\s*;", "legacy watcher cancel is collected"),
+        (r"if\s*\(\s*watchChunk\s*&&\s*typeof\s+watchChunk\.cancel\s*===\s*['\"]function['\"]\s*\)\s*\{[\s\S]*?cancels\.push\s*\(\s*watchChunk\.cancel\s*\)\s*;", "chunk watcher cancel is collected"),
+        (r"return\s+\(\s*\)\s*=>\s*\{[\s\S]*?for\s*\(\s*const\s+cancel\s+of\s+cancels\s*\)[\s\S]*?try\s*\{[\s\S]*?cancel\s*\(\s*\)\s*;[\s\S]*?\}\s*catch\s*\{", "cleanup cancels watchers and swallows cancel errors"),
+        (r"return\s+mode\s*;", "hook returns current mode state"),
+    ]:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"useNarrationMode.ts: missing {desc}")
+    assert errors == [], (
+        "template/src/Narration/useNarrationMode.ts watch dedup contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_narration_audio_with_mode_is_pure_mode_prop_renderer() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -16928,6 +16969,7 @@ def main() -> int:
         test_telop_player_active_segment_range_and_subtitle_item_contract_lint,
         # PR-CQ (useNarrationMode.ts watches mode constants + narrationData files lint): 1 件
         test_narration_watch_uses_mode_constants_and_data_files,
+        test_use_narration_mode_watch_dedup_contract_lint,
         # PR-CR (NarrationAudioWithMode is pure mode-prop renderer, no internal hook call lint): 1 件
         test_narration_audio_with_mode_is_pure_mode_prop_renderer,
         test_narration_audio_none_and_default_volume_contract_lint,
