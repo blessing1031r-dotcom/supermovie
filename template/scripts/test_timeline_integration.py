@@ -19792,6 +19792,106 @@ def test_supermovie_slides_required_input_docs_match_build_slide_data_lint() -> 
     )
 
 
+def test_remotion_codex_plugin_integration_plan_docs_contract_lint() -> None:
+    """PR-KT: SuperMovie x official Remotion Codex plugin boundary plan stays explicit."""
+
+    repo_root = Path(__file__).parents[2]
+    plan_path = repo_root / "docs" / "REMOTION_CODEX_PLUGIN_INTEGRATION.md"
+    obs_path = repo_root / "docs" / "OBSERVABILITY.md"
+    skills_root = repo_root / "skills"
+    assert plan_path.is_file(), "docs/REMOTION_CODEX_PLUGIN_INTEGRATION.md not found"
+    assert obs_path.is_file(), "docs/OBSERVABILITY.md not found"
+    assert skills_root.is_dir(), "skills/ directory not found"
+
+    plan_text = plan_path.read_text(encoding="utf-8")
+    obs_text = obs_path.read_text(encoding="utf-8")
+    skill_paths = sorted(
+        f"skills/{path.name}/SKILL.md"
+        for path in skills_root.iterdir()
+        if path.is_dir() and (path / "SKILL.md").is_file()
+    )
+
+    errors: list[str] = []
+    required_sections = (
+        "# SuperMovie x Remotion Codex Plugin Integration",
+        "## Inputs Verified",
+        "## What Remains SuperMovie-Owned",
+        "## What Can Be Delegated To The Official Remotion Plugin",
+        "## What Should Move Into Codex Skills",
+        "## Minimal Spike",
+        "## Non-Goals",
+    )
+    for section in required_sections:
+        if section not in plan_text:
+            errors.append(f"integration plan missing section: {section}")
+
+    for skill_path in skill_paths:
+        if f"- `{skill_path}`" not in plan_text:
+            errors.append(f"integration plan missing SuperMovie-owned skill path: {skill_path}")
+
+    required_official_plugin_snippets = {
+        "official plugin path": "openai/plugins/plugins/remotion",
+        "official plugin manifest": ".codex-plugin/plugin.json",
+        "official skill path": "skills/remotion/SKILL.md",
+        "official skill name": "remotion-best-practices",
+        "official source of truth": "remotion-dev/remotion/packages/codex-plugin",
+        "interface short description": "Create motion graphics from prompts",
+    }
+    for name, snippet in required_official_plugin_snippets.items():
+        if snippet not in plan_text:
+            errors.append(f"integration plan missing official Remotion plugin {name}: {snippet}")
+
+    required_delegated_rules = (
+        "rules/sequencing.md",
+        "rules/timing.md",
+        "rules/animations.md",
+        "rules/audio.md",
+        "rules/videos.md",
+        "rules/sfx.md",
+        "rules/subtitles.md",
+        "rules/display-captions.md",
+        "rules/ffmpeg.md",
+        "rules/silence-detection.md",
+        "rules/compositions.md",
+        "rules/parameters.md",
+        "rules/calculate-metadata.md",
+    )
+    for rule in required_delegated_rules:
+        if rule not in plan_text:
+            errors.append(f"integration plan missing delegated rule reference: {rule}")
+
+    required_boundary_snippets = {
+        "not replacement": "not a replacement proposal",
+        "advisory": "official Remotion guidance is advisory",
+        "schemas stay source": "SuperMovie data schemas, file paths, Japanese editing runbooks, and tests remain the source of truth",
+        "thin migration": "Codex skill migration should be thin and behavior-preserving",
+        "load official skill condition": "load the official `remotion-best-practices` skill only when changing Remotion code",
+        "docs only spike": "only as a local/fork docs-and-lint branch",
+        "do not replace skills": "Do not replace SuperMovie skills.",
+        "no upstream PR": "Do not create upstream PRs.",
+        "no maintainer contact": "Do not contact upstream maintainers.",
+        "future bridge skill": "supermovie-remotion-bridge",
+    }
+    for name, snippet in required_boundary_snippets.items():
+        if snippet not in plan_text:
+            errors.append(f"integration plan missing boundary {name}: {snippet}")
+
+    required_obs_snippets = {
+        "step": "| 366 | `docs/REMOTION_CODEX_PLUGIN_INTEGRATION.md`",
+        "test name": "test_remotion_codex_plugin_integration_plan_docs_contract_lint",
+        "complement layer": "置換ではなく補完 layer",
+        "pr code": "PR-KT",
+    }
+    for name, snippet in required_obs_snippets.items():
+        if snippet not in obs_text:
+            errors.append(f"OBSERVABILITY step 366 missing {name}: {snippet}")
+
+    assert errors == [], (
+        "SuperMovie x official Remotion Codex plugin integration plan drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -26582,6 +26682,8 @@ def main() -> int:
         test_supermovie_slides_layer_handoff_docs_match_mainvideo_contract_lint,
         # PR-KS (supermovie-slides required input docs stay synced with build_slide_data): 1 件
         test_supermovie_slides_required_input_docs_match_build_slide_data_lint,
+        # PR-KT (SuperMovie x official Remotion Codex plugin boundary plan): 1 件
+        test_remotion_codex_plugin_integration_plan_docs_contract_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
