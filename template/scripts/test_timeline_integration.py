@@ -17991,6 +17991,30 @@ def test_se_sequence_asset_path_prefix_contract_lint() -> None:
     )
 
 
+def test_se_sequence_volume_callback_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    seq_file = template_root / "src" / "SoundEffects" / "SESequence.tsx"
+    assert seq_file.is_file(), "template/src/SoundEffects/SESequence.tsx not found"
+    raw = seq_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    if not re.search(r"\bconst\s+v\s*=\s*se\.volume\s*\?\?\s*1\s*;", text):
+        errors.append("SESequence.tsx: missing const v = se.volume ?? 1 default")
+    if not re.search(
+        r"<Audio\b[^>]*\bvolume=\{\s*\(\s*\)\s*=>\s*v\s*\}",
+        text,
+        re.DOTALL,
+    ):
+        errors.append("SESequence.tsx: <Audio> must pass volume={() => v}")
+    assert errors == [], (
+        "template/src/SoundEffects/SESequence.tsx volume callback contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_narration_audio_chunks_sequence_wiring_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -18511,6 +18535,7 @@ def main() -> int:
         test_telop_data_placeholder_empty_array_contract_lint,
         test_se_sequence_wraps_sound_effects_in_sequence_audio_contract_lint,
         test_se_sequence_asset_path_prefix_contract_lint,
+        test_se_sequence_volume_callback_contract_lint,
         test_narration_audio_chunks_sequence_wiring_contract_lint,
         test_narration_mode_priority_dispatch_contract_lint,
         test_narration_audio_legacy_branch_wiring_contract_lint,
