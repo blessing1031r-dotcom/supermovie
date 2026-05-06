@@ -12874,6 +12874,74 @@ def test_skill_frontmatter_required_fields_lint() -> None:
     )
 
 
+def test_skill_frontmatter_allowed_tools_allowlist_lint() -> None:
+    """PR-AG: every skills/*/SKILL.md frontmatter allowed-tools must list only approved
+    Claude Code tool names (no unknown tools, no empty tokens, no duplicates).
+    Approved set: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion.
+    Only the YAML frontmatter block is inspected; document body placeholders are ignored.
+    """
+    import re
+
+    APPROVED_TOOLS = {
+        "Read", "Write", "Edit", "Bash", "Glob", "Grep", "Agent", "AskUserQuestion"
+    }
+
+    repo_root = Path(__file__).parents[2]
+    skills_dir = repo_root / "skills"
+    errors: list[str] = []
+
+    for skill_path in sorted(skills_dir.iterdir()):
+        if not skill_path.is_dir():
+            continue
+        skill_md_path = skill_path / "SKILL.md"
+        if not skill_md_path.exists():
+            continue
+        content = skill_md_path.read_text(encoding="utf-8")
+
+        # Extract YAML frontmatter block only (document body is ignored)
+        fm_m = re.match(r"^---\s*$\n(.*?)^---\s*$", content, re.MULTILINE | re.DOTALL)
+        if not fm_m:
+            continue  # PR-AF already catches missing frontmatter; skip here
+        fm_block = fm_m.group(1)
+
+        # Find inline allowed-tools value within frontmatter
+        at_m = re.search(r"^allowed-tools:\s+(\S.*)", fm_block, re.MULTILINE)
+        if not at_m:
+            continue  # PR-AF already catches missing field; skip here
+
+        raw_value = at_m.group(1).strip()
+        tokens = [t.strip() for t in raw_value.split(",")]
+
+        # Check for empty tokens (e.g. trailing comma or double comma)
+        empty_tokens = [i for i, t in enumerate(tokens) if not t]
+        if empty_tokens:
+            errors.append(
+                f"{skill_path.name}/SKILL.md: allowed-tools has empty token(s) at "
+                f"position(s) {empty_tokens}: {raw_value!r}"
+            )
+
+        # Check for unknown tools
+        unknown = [t for t in tokens if t and t not in APPROVED_TOOLS]
+        if unknown:
+            errors.append(
+                f"{skill_path.name}/SKILL.md: allowed-tools contains unknown tool(s) "
+                f"{unknown!r} (approved: {sorted(APPROVED_TOOLS)!r})"
+            )
+
+        # Check for duplicates
+        seen: set[str] = set()
+        dupes = [t for t in tokens if t and t in seen or seen.add(t)]  # type: ignore[func-returns-value]
+        if dupes:
+            errors.append(
+                f"{skill_path.name}/SKILL.md: allowed-tools has duplicate(s) {dupes!r}"
+            )
+
+    assert not errors, (
+        f"SKILL.md frontmatter allowed-tools violations ({len(errors)} error(s)):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13072,6 +13140,8 @@ def main() -> int:
         test_readme_quickstart_workflow_matches_claude_pipeline_lint,
         # PR-AF (skill frontmatter required fields lint): 1 件
         test_skill_frontmatter_required_fields_lint,
+        # PR-AG (skill frontmatter allowed-tools allowlist lint): 1 件
+        test_skill_frontmatter_allowed_tools_allowlist_lint,
     ]
     failed = []
     for t in tests:
