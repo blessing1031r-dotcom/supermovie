@@ -18095,6 +18095,123 @@ def test_supermovie_subtitles_style_animation_docs_match_telop_segment_contract_
     )
 
 
+def test_supermovie_subtitles_title_generation_docs_match_title_data_contract_lint() -> None:
+    """PR-KM: supermovie-subtitles title docs must match Title data surface."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    subtitles_skill_path = repo_root / "skills" / "supermovie-subtitles" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    title_component_path = template_root / "src" / "Title" / "Title.tsx"
+    title_data_path = template_root / "src" / "Title" / "titleData.ts"
+    assert subtitles_skill_path.is_file(), "skills/supermovie-subtitles/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert title_component_path.is_file(), "template/src/Title/Title.tsx not found"
+    assert title_data_path.is_file(), "template/src/Title/titleData.ts not found"
+
+    skill_text = subtitles_skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    title_component_text = title_component_path.read_text(encoding="utf-8")
+    title_data_text = title_data_path.read_text(encoding="utf-8")
+    phase6_match = re.search(
+        r"## Phase 6: タイトルデータ生成[\s\S]*?"
+        r"## Phase 7: ファイル書き込み＆検証",
+        skill_text,
+    )
+    title_output_match = re.search(
+        r"### 7-2\. titleData\.ts 出力[\s\S]*?"
+        r"### 7-3\. バリデーション",
+        skill_text,
+    )
+    assert phase6_match is not None, "supermovie-subtitles Phase 6 title generation docs not found"
+    assert title_output_match is not None, "supermovie-subtitles titleData output docs not found"
+    phase6_text = phase6_match.group(0)
+    title_output_text = title_output_match.group(0)
+
+    title_segment_match = re.search(
+        r"\bexport\s+interface\s+TitleSegment\s*\{([\s\S]*?)\n\}",
+        title_component_text,
+    )
+    assert title_segment_match is not None, "Title.tsx TitleSegment interface not found"
+    title_fields = re.findall(r"^\s*(id|startFrame|endFrame|text)\s*:\s*(number|string)\s*;", title_segment_match.group(1), re.MULTILINE)
+    expected_title_fields = [
+        ("id", "number"),
+        ("startFrame", "number"),
+        ("endFrame", "number"),
+        ("text", "string"),
+    ]
+
+    errors: list[str] = []
+    if title_fields != expected_title_fields:
+        errors.append(f"TitleSegment field drift: expected {expected_title_fields}, got {title_fields}")
+
+    required_phase6_snippets = {
+        "transcript input": "transcript_fixed.json の `segments` を俯瞰し、話題の転換点を検出。",
+        "silence split": "- 5秒以上の無音",
+        "topic switch": "- 話題の切り替わり（「次に」「それでは」「ここからは」等）",
+        "qa switch": "- 質問から回答への転換",
+        "segment count guidance": "- 目安: 5〜15セグメント",
+        "max chars": "- 最大15文字",
+        "catchy rule": "- キャッチーかつ内容を的確に表現",
+        "title segment type": "- `TitleSegment` 型で出力",
+    }
+    required_output_snippets = {
+        "output heading": "### 7-2. titleData.ts 出力",
+        "save path": "**保存先:** `src/Title/titleData.ts`",
+    }
+    required_title_data_snippets = {
+        "type import": "import type { TitleSegment } from './Title';",
+        "fps import": "import { FPS } from '../videoConfig';",
+        "toFrame export": "export const toFrame = (seconds: number) => Math.round(seconds * FPS);",
+        "generated comment": "// /supermovie-subtitles で自動生成されます",
+        "typed export": "export const titleData: TitleSegment[] = [",
+    }
+    required_title_runtime_snippets = {
+        "titleData import": "import { titleData } from './titleData';",
+        "telop config import": "import { TELOP_CONFIG } from '../videoConfig';",
+        "sequence export": "export const TitleSequence: React.FC = () => {",
+        "data map": "titleData.map((segment) =>",
+        "sequence from": "from={segment.startFrame}",
+        "sequence duration": "durationInFrames={segment.endFrame - segment.startFrame}",
+        "title render": "<Title segment={segment} />",
+        "title top": "top: TELOP_CONFIG.titleTop",
+        "title font size": "fontSize: TELOP_CONFIG.titleFontSize",
+    }
+    required_claude_snippets = {
+        "workflow output": "/supermovie-subtitles         ← transcript_fixed.json → telopData.ts + titleData.ts",
+        "title schema heading": "### titleData.ts（TitleSegment型）",
+        "title file path": "| タイトルデータ | `<PROJECT>/src/Title/titleData.ts` |",
+    }
+
+    for name, snippet in required_phase6_snippets.items():
+        if snippet not in phase6_text:
+            errors.append(f"supermovie-subtitles Phase 6 docs missing {name}: {snippet}")
+    for name, snippet in required_output_snippets.items():
+        if snippet not in title_output_text:
+            errors.append(f"supermovie-subtitles titleData output docs missing {name}: {snippet}")
+    for name, snippet in required_title_data_snippets.items():
+        if snippet not in title_data_text:
+            errors.append(f"titleData.ts missing {name}: {snippet}")
+    for name, snippet in required_title_runtime_snippets.items():
+        if snippet not in title_component_text:
+            errors.append(f"Title.tsx runtime missing {name}: {snippet}")
+    for name, snippet in required_claude_snippets.items():
+        if snippet not in claude_text:
+            errors.append(f"CLAUDE.md title contract missing {name}: {snippet}")
+
+    phase6_pos = skill_text.find("## Phase 6: タイトルデータ生成")
+    phase7_pos = skill_text.find("## Phase 7: ファイル書き込み＆検証")
+    title_save_pos = skill_text.find("**保存先:** `src/Title/titleData.ts`", phase7_pos)
+    if phase6_pos == -1 or phase7_pos == -1 or title_save_pos == -1 or not phase6_pos < phase7_pos < title_save_pos:
+        errors.append("supermovie-subtitles docs must introduce title generation before Phase 7 titleData save path")
+
+    assert errors == [], (
+        "supermovie-subtitles title generation docs / Title data surface drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema_lint() -> None:
     """PR-JK: supermovie-transcribe transcript schema docs must match CLAUDE.md."""
     import json
@@ -25835,6 +25952,8 @@ def main() -> int:
         test_supermovie_subtitles_completion_handoff_docs_match_workflow_contract_lint,
         # PR-KL (supermovie-subtitles style/animation docs stay synced with TelopSegment): 1 件
         test_supermovie_subtitles_style_animation_docs_match_telop_segment_contract_lint,
+        # PR-KM (supermovie-subtitles title generation docs stay synced with Title data surface): 1 件
+        test_supermovie_subtitles_title_generation_docs_match_title_data_contract_lint,
         # PR-JK (supermovie-transcribe output schema docs stay synced with CLAUDE transcript schema): 1 件
         test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema_lint,
         # PR-KC (supermovie-transcribe audio extraction docs stay synced with file path contract): 1 件
