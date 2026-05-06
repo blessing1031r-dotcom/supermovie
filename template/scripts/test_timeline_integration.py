@@ -11971,15 +11971,8 @@ def test_observability_v0_status_enumeration_completeness_lint() -> None:
     spec.loader.exec_module(obs_mod)  # type: ignore[union-attr]
     status_keys: set[str] = set(obs_mod.STATUS_MAP.keys())
 
-    V1_CALLER_SCRIPTS: set[str] = {
-        "build_slide_data.py",
-        "build_telop_data.py",
-        "preflight_video.py",
-        "compare_telop_split.py",
-        "visual_smoke.py",
-        "generate_slide_plan.py",
-        "voicevox_narration.py",
-    }
+    # Use module-level canonical set so additions to V1_CALLER_SCRIPTS fail this lint too
+    v1_scripts: set[str] = set(V1_CALLER_SCRIPTS)
 
     # (1) SCRIPT_EMIT_HELPERS must be set-equal to V1_CALLER_SCRIPTS
     SCRIPT_EMIT_HELPERS: dict[str, list[str]] = {
@@ -11991,10 +11984,10 @@ def test_observability_v0_status_enumeration_completeness_lint() -> None:
         "generate_slide_plan.py": ["emit_json"],
         "voicevox_narration.py": ["emit_json"],
     }
-    assert set(SCRIPT_EMIT_HELPERS.keys()) == V1_CALLER_SCRIPTS, (
+    assert set(SCRIPT_EMIT_HELPERS.keys()) == v1_scripts, (
         f"SCRIPT_EMIT_HELPERS key set != V1_CALLER_SCRIPTS: "
-        f"extra={set(SCRIPT_EMIT_HELPERS.keys()) - V1_CALLER_SCRIPTS}, "
-        f"missing={V1_CALLER_SCRIPTS - set(SCRIPT_EMIT_HELPERS.keys())}"
+        f"extra={set(SCRIPT_EMIT_HELPERS.keys()) - v1_scripts}, "
+        f"missing={v1_scripts - set(SCRIPT_EMIT_HELPERS.keys())}"
     )
 
     # (2) per-script v0_status enumeration completeness
