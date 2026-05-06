@@ -13895,6 +13895,45 @@ def test_skill_md_body_single_h1_lint() -> None:
     assert errors == [], "SKILL.md body single-H1 lint failed:\n" + "\n".join(errors)
 
 
+def test_markdown_fence_balanced_lint() -> None:
+    """PR-BB: Every opening triple-backtick (or tilde) fenced code block in README.md,
+    CLAUDE.md, docs/OBSERVABILITY.md, and skills/*/SKILL.md must have a matching
+    closing fence (balanced depth = 0 at EOF).
+    """
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    target_files: list[Path] = [
+        repo_root / "README.md",
+        repo_root / "CLAUDE.md",
+        repo_root / "docs" / "OBSERVABILITY.md",
+    ]
+    for skill_path in sorted((repo_root / "skills").iterdir()):
+        if skill_path.is_dir():
+            skill_md = skill_path / "SKILL.md"
+            if skill_md.is_file():
+                target_files.append(skill_md)
+
+    FENCE_RE = re.compile(r"^\s*(?:```|~~~)")
+    errors: list[str] = []
+
+    for fpath in target_files:
+        if not fpath.is_file():
+            continue
+        content = fpath.read_text(encoding="utf-8")
+        # strip YAML frontmatter before fence counting
+        body = re.sub(r"\A---\s*\n.*?^---\s*\n", "", content, flags=re.MULTILINE | re.DOTALL)
+        depth = 0
+        for line in body.splitlines():
+            if FENCE_RE.match(line):
+                depth = 0 if depth == 1 else 1
+        if depth != 0:
+            rel = fpath.relative_to(repo_root)
+            errors.append(f"{rel}: unclosed fenced code block (unbalanced fence depth={depth})")
+
+    assert errors == [], "Markdown fence balance lint failed:\n" + "\n".join(errors)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -14135,6 +14174,8 @@ def main() -> int:
         test_marketplace_json_plugins_array_shape_lint,
         # PR-BA (SKILL.md body single H1 heading outside frontmatter/code-blocks lint): 1 件
         test_skill_md_body_single_h1_lint,
+        # PR-BB (markdown fence balanced lint: README/CLAUDE.md/OBSERVABILITY.md/SKILL.md): 1 件
+        test_markdown_fence_balanced_lint,
     ]
     failed = []
     for t in tests:
