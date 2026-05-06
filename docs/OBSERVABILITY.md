@@ -604,6 +604,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 303 | `skills/supermovie-slides/SKILL.md` の `SlideSegment` shorthand schema が `template/src/Slides/types.ts` の `SlideSegment` field order / optional marker と同期することを lint (`test_supermovie_slides_schema_docs_match_slide_segment_contract_lint`、Codex 推奨 PR-II)。supermovie-slides 生成docsと実装型の drift を保護 | PR-II |
 | 304 | `skills/supermovie-image-gen/SKILL.md` の `insertImageData.ts` 出力サンプルが `template/src/InsertImage/types.ts` の `ImageSegment` 必須field order / typed export / `type` union と同期することを lint (`test_supermovie_image_gen_output_sample_matches_image_segment_contract_lint`、Codex 推奨 PR-IJ)。supermovie-image-gen 生成docsと画像挿入schemaの drift を保護 | PR-IJ |
 | 305 | `skills/supermovie-image-gen/SKILL.md` の Gemini API `-a` format/aspect table が `template/src/videoConfig.ts` の `RESOLUTION_MAP` (`youtube=16:9` / `short=9:16` / `square=1:1`) と同期することを lint (`test_supermovie_image_gen_aspect_table_matches_video_config_lint`、Codex 推奨 PR-IK)。画像生成format guidanceと動画format SSoTの drift を保護 | PR-IK |
+| 306 | `skills/supermovie-image-gen/SKILL.md` の type別 prompt template 見出し / type別表示ロジック table が `template/src/InsertImage/types.ts` の `ImageSegment.type` union (`infographic` / `photo` / `overlay`) と同期することを lint (`test_supermovie_image_gen_type_docs_match_image_segment_union_lint`、Codex 推奨 PR-IL)。画像生成type guidanceとレンダーtype schemaの drift を保護 | PR-IL |
 
 ## Test Requirements
 
