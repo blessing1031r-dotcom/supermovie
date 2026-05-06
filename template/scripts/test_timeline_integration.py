@@ -16155,6 +16155,41 @@ def test_use_narration_mode_watch_dedup_contract_lint() -> None:
     )
 
 
+def test_narration_audio_canonical_imports_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    narration_file = template_root / "src" / "Narration" / "NarrationAudio.tsx"
+    assert narration_file.is_file(), "template/src/Narration/NarrationAudio.tsx not found"
+    raw = narration_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    remotion_import = re.search(r"""import\s*\{(?P<body>[^}]*)\}\s*from\s*['"]remotion['"]""", text)
+    if remotion_import is None:
+        errors.append("NarrationAudio.tsx: no named import from remotion found")
+    else:
+        remotion_body = remotion_import.group("body")
+        for sym in ("Audio", "Sequence", "staticFile"):
+            if not re.search(rf"\b{sym}\b", remotion_body):
+                errors.append(f"NarrationAudio.tsx: {sym} not imported from remotion")
+    checks = [
+        (
+            r"""import\s*\{\s*useNarrationMode\s*\}\s*from\s*['"]\.\/useNarrationMode['"]""",
+            "useNarrationMode from ./useNarrationMode",
+        ),
+        (
+            r"""import\s+type\s*\{\s*NarrationMode\s*\}\s*from\s*['"]\.\/mode['"]""",
+            "type NarrationMode from ./mode",
+        ),
+    ]
+    errors.extend(desc for pattern, desc in checks if not re.search(pattern, text))
+    assert errors == [], (
+        "template/src/Narration/NarrationAudio.tsx import contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_narration_audio_with_mode_is_pure_mode_prop_renderer() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17895,6 +17930,7 @@ def main() -> int:
         test_narration_watch_uses_mode_constants_and_data_files,
         test_use_narration_mode_imports_mode_exports_contract_lint,
         test_use_narration_mode_watch_dedup_contract_lint,
+        test_narration_audio_canonical_imports_contract_lint,
         # PR-CR (NarrationAudioWithMode is pure mode-prop renderer, no internal hook call lint): 1 件
         test_narration_audio_with_mode_is_pure_mode_prop_renderer,
         test_narration_audio_none_and_default_volume_contract_lint,
