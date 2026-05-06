@@ -14842,6 +14842,67 @@ def test_template_component_barrel_exports_contract_lint() -> None:
     )
 
 
+def test_slides_barrel_public_export_surface_contract_lint() -> None:
+    """PR-GT: Slides barrel must expose only the stable slide API."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    barrel_path = template_root / "src" / "Slides" / "index.tsx"
+    assert barrel_path.is_file(), "template/src/Slides/index.tsx not found"
+    raw = barrel_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/Slides/index.tsx must not use a default export"
+    )
+    expected = {
+        ("value", "./SlideSequence"): {"SlideSequence"},
+        ("value", "./Slide"): {"Slide"},
+        ("type", "./types"): {"SlideSegment", "SlideBullet", "SlideAlignment"},
+        ("value", "./slideData"): {"slideData"},
+    }
+    export_line_re = re.compile(
+        r"""^\s*export\s+(?P<kind>type\s+)?\{(?P<body>[^}]*)\}\s*from\s*['"](?P<source>[^'"]+)['"]\s*;\s*$"""
+    )
+    actual: dict[tuple[str, str], set[str]] = {}
+    errors: list[str] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        if not line.lstrip().startswith("export "):
+            errors.append(f"unexpected non-export line in Slides barrel: {line.strip()!r}")
+            continue
+        match = export_line_re.match(line)
+        if match is None:
+            errors.append(f"unsupported export syntax in Slides barrel: {line.strip()!r}")
+            continue
+        kind = "type" if match.group("kind") else "value"
+        source = match.group("source")
+        names = {
+            token.strip().split(" as ", 1)[0].strip()
+            for token in match.group("body").replace("\n", " ").split(",")
+            if token.strip()
+        }
+        actual.setdefault((kind, source), set()).update(names)
+    missing_keys = sorted(set(expected) - set(actual))
+    extra_keys = sorted(set(actual) - set(expected))
+    if missing_keys:
+        errors.append(f"missing Slides barrel export source(s): {missing_keys}")
+    if extra_keys:
+        errors.append(f"extra Slides barrel export source(s): {extra_keys}")
+    for key, names in expected.items():
+        exported = actual.get(key, set())
+        if exported != names:
+            errors.append(
+                f"Slides barrel export drift for {key}: "
+                f"expected {sorted(names)}, got {sorted(exported)}"
+            )
+    assert errors == [], (
+        "template/src/Slides/index.tsx public export surface drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_vitest_setup_files_resolve_lint() -> None:
     """PR-BU: vitest.config.ts setupFiles entries must resolve to existing files.
     Catches renamed/moved setup files that silently break 'npm run test:react'.
@@ -19396,6 +19457,8 @@ def main() -> int:
         # PR-GA (staticFile args must stay public-relative): 1 件
         test_static_file_public_relative_contract_lint,
         test_template_component_barrel_exports_contract_lint,
+        # PR-GT (Slides barrel exports only the stable slide API): 1 件
+        test_slides_barrel_public_export_surface_contract_lint,
         test_vitest_setup_files_resolve_lint,
         # PR-GB (Vitest React discovery config + npm script lint): 1 件
         test_vitest_react_test_discovery_contract_lint,
