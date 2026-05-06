@@ -18898,6 +18898,100 @@ def test_supermovie_se_input_prereq_docs_match_template_data_surface_lint() -> N
     )
 
 
+def test_supermovie_se_completion_docs_match_preview_and_catalog_contract_lint() -> None:
+    """PR-JY: supermovie-se completion docs must match preview script and SE catalog."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    se_skill_path = repo_root / "skills" / "supermovie-se" / "SKILL.md"
+    package_path = template_root / "package.json"
+    se_data_path = template_root / "src" / "SoundEffects" / "seData.ts"
+    assert se_skill_path.is_file(), "skills/supermovie-se/SKILL.md not found"
+    assert package_path.is_file(), "template/package.json not found"
+    assert se_data_path.is_file(), "template/src/SoundEffects/seData.ts not found"
+
+    skill_text = se_skill_path.read_text(encoding="utf-8")
+    package_json = json.loads(package_path.read_text(encoding="utf-8"))
+    se_data_text = se_data_path.read_text(encoding="utf-8")
+
+    completion_match = re.search(
+        r"## 完了時の報告フォーマット\s*```([\s\S]*?)```\s*\n---\n",
+        skill_text,
+    )
+    integration_match = re.search(
+        r"## 連携マップ\s*```([\s\S]*?)```\s*$",
+        skill_text,
+    )
+    assert completion_match is not None, "supermovie-se completion report block not found"
+    assert integration_match is not None, "supermovie-se integration map block not found"
+    completion_text = completion_match.group(1)
+    integration_text = integration_match.group(1)
+
+    catalog_aliases = set(
+        alias.strip()
+        for alias in re.findall(r"^│\s*[^│]+?\.mp3\s*│\s*([A-Z]+(?:-\d+)?)\s*│", skill_text, re.MULTILINE)
+    )
+    volumes = [
+        float(volume)
+        for volume in re.findall(
+            r"^│\s*(?:normal|emphasis|warning|success|\(感動文脈\))\s*│\s*[^│]+?\s*│\s*(0\.\d{2})\s*│",
+            skill_text,
+            re.MULTILINE,
+        )
+    ]
+    expected_volume_range = f"{min(volumes):.2f}〜{max(volumes):.2f}" if volumes else ""
+    group_line_match = re.search(r"-\s*([A-Z他].*)", completion_text)
+    actual_groups = [part.split(":", 1)[0].strip() for part in group_line_match.group(1).split("/") if ":" in part] if group_line_match else []
+
+    errors: list[str] = []
+    required_completion_snippets = {
+        "done heading": "✅ SE配置完了",
+        "count ratio": "🔊 SE数: <N>個（テロップ比 <X>%）",
+        "manual adjustment": "→ 気になるSEがあれば seData.ts を手動調整",
+    }
+    for name, snippet in required_completion_snippets.items():
+        if snippet not in completion_text:
+            errors.append(f"supermovie-se completion docs missing {name}: {snippet}")
+
+    expected_groups = ["POP", "BTN", "WSH", "CUR", "BUZZ", "他"]
+    if actual_groups != expected_groups:
+        errors.append(f"supermovie-se completion SE group summary drift: expected {expected_groups}, got {actual_groups}")
+
+    required_catalog_families = {
+        "POP": any(alias == "POP" for alias in catalog_aliases),
+        "BTN": any(alias.startswith("BTN-") for alias in catalog_aliases),
+        "WSH": any(alias.startswith("WSH-") for alias in catalog_aliases),
+        "CUR": any(alias.startswith("CUR-") for alias in catalog_aliases),
+        "BUZZ": any(alias == "BUZZ" for alias in catalog_aliases),
+    }
+    missing_families = [family for family, present in required_catalog_families.items() if not present]
+    if missing_families:
+        errors.append(f"supermovie-se completion groups missing matching catalog family: {missing_families}")
+
+    if expected_volume_range and f"🎚️ 音量レンジ: {expected_volume_range}" not in completion_text:
+        errors.append(
+            f"supermovie-se completion volume range drift: expected {expected_volume_range} from style matrix"
+        )
+
+    scripts = package_json.get("scripts", {})
+    if scripts.get("dev") != "remotion studio":
+        errors.append(f"template/package.json scripts.dev drift: expected 'remotion studio', got {scripts.get('dev')!r}")
+    if "→ npm run dev でプレビュー確認" not in completion_text:
+        errors.append("supermovie-se completion docs must tell user to preview with npm run dev")
+    if "npm run dev                   ← プレビュー" not in integration_text:
+        errors.append("supermovie-se integration map must keep npm run dev preview handoff")
+    if "/supermovie-se                ← ★ここ: SE自動配置" not in integration_text:
+        errors.append("supermovie-se integration map must mark /supermovie-se as current step")
+    if "export const seData: SoundEffect[] = [" not in se_data_text:
+        errors.append("template seData.ts must keep typed SoundEffect[] export for manual adjustment handoff")
+
+    assert errors == [], (
+        "supermovie-se completion docs / preview script / catalog contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_narration_mode_docs_match_runtime_contract_lint() -> None:
     """PR-IU: supermovie-narration Remotion mode docs must match runtime wiring."""
     import re
@@ -24523,6 +24617,8 @@ def main() -> int:
         test_supermovie_se_rotation_docs_match_style_matrix_lint,
         # PR-JX (supermovie-se input/prerequisite docs stay synced with template data surface): 1 件
         test_supermovie_se_input_prereq_docs_match_template_data_surface_lint,
+        # PR-JY (supermovie-se completion docs stay synced with preview script and SE catalog): 1 件
+        test_supermovie_se_completion_docs_match_preview_and_catalog_contract_lint,
         # PR-IU (supermovie-narration mode docs stay synced with runtime wiring): 1 件
         test_supermovie_narration_mode_docs_match_runtime_contract_lint,
         # PR-IV (supermovie-narration output docs stay synced with voicevox paths): 1 件
