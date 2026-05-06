@@ -16476,6 +16476,45 @@ def test_slide_segment_schema_contract_lint() -> None:
     )
 
 
+def test_slide_types_bullet_and_optional_fields_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    types_file = template_root / "src" / "Slides" / "types.ts"
+    assert types_file.is_file(), "template/src/Slides/types.ts not found"
+    raw = types_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    bullet_match = re.search(r"export\s+interface\s+SlideBullet\s*\{([\s\S]*?)\}", text)
+    if not bullet_match:
+        errors.append("Slides/types.ts: export interface SlideBullet not found")
+    else:
+        bullet_body = bullet_match.group(1)
+        if not re.search(r"\btext\s*:\s*string\s*;", bullet_body):
+            errors.append("SlideBullet: required 'text: string;' not found")
+        if not re.search(r"\bemphasis\??\s*:\s*boolean\s*;", bullet_body):
+            errors.append("SlideBullet: optional 'emphasis?: boolean;' not found")
+    segment_match = re.search(r"export\s+interface\s+SlideSegment\s*\{([\s\S]*?)\}", text)
+    if not segment_match:
+        errors.append("Slides/types.ts: export interface SlideSegment not found")
+    else:
+        segment_body = segment_match.group(1)
+        for field, typ in (
+            ("subtitle", "string"),
+            ("bullets", "SlideBullet\\[\\]"),
+            ("align", "SlideAlignment"),
+            ("backgroundColor", "string"),
+            ("textColor", "string"),
+        ):
+            if not re.search(rf"\b{field}\??\s*:\s*{typ}\s*;", segment_body):
+                errors.append(f"SlideSegment: optional '{field}?: {typ};' not found")
+    assert errors == [], (
+        "template/src/Slides/types.ts SlideBullet / optional fields contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_narration_mode_invalidate_resets_cached_mode() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17591,6 +17630,7 @@ def main() -> int:
         test_title_uses_sequence_local_frame_without_startframe_offset_lint,
         test_title_visual_style_contract_lint,
         test_slide_segment_schema_contract_lint,
+        test_slide_types_bullet_and_optional_fields_contract_lint,
         test_narration_mode_invalidate_resets_cached_mode,
         test_narration_mode_static_file_lookup_contract_lint,
         test_template_narration_data_exports_typed_empty_array_lint,
