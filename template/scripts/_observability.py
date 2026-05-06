@@ -140,7 +140,7 @@ STATUS_MAP = {
 }
 
 
-def map_status(v0_status: str) -> tuple[str, str]:
+def map_status(v0_status: str) -> tuple[str, str | None]:
     """Map v0 status name to (v1_status, v1_category).
 
     Unknown v0 status → ("error", v0_status) defensive default.
@@ -413,7 +413,7 @@ def _coerce_finite_or_none(v: object) -> float | None:
             # としては不適切 → None 扱い
             return None
         if math.isfinite(v):
-            return v
+            return float(v)
     except (TypeError, ValueError):
         pass
     return None
