@@ -17526,6 +17526,73 @@ def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     )
 
 
+def test_supermovie_se_output_schema_docs_match_sound_effect_contract_lint() -> None:
+    """PR-ID: supermovie-se output docs must match SoundEffect/seData contracts."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    se_skill_path = repo_root / "skills" / "supermovie-se" / "SKILL.md"
+    se_player_path = template_root / "src" / "SoundEffects" / "SEPlayer.ts"
+    se_data_path = template_root / "src" / "SoundEffects" / "seData.ts"
+    assert se_skill_path.is_file(), "skills/supermovie-se/SKILL.md not found"
+    assert se_player_path.is_file(), "template/src/SoundEffects/SEPlayer.ts not found"
+    assert se_data_path.is_file(), "template/src/SoundEffects/seData.ts not found"
+
+    skill_text = se_skill_path.read_text(encoding="utf-8")
+    se_player_text = se_player_path.read_text(encoding="utf-8")
+    se_data_text = se_data_path.read_text(encoding="utf-8")
+    errors: list[str] = []
+
+    for field, typ in (("id", "number"), ("startFrame", "number"), ("file", "string")):
+        if not re.search(rf"\b{field}\s*:\s*{typ}\s*;", se_player_text):
+            errors.append(f"SEPlayer.ts SoundEffect missing required field '{field}: {typ}'")
+        if not re.search(rf"\b{field}\s*:", skill_text):
+            errors.append(f"supermovie-se output sample missing field '{field}'")
+    if not re.search(r"\bvolume\??\s*:\s*number\s*;", se_player_text):
+        errors.append("SEPlayer.ts SoundEffect missing optional field 'volume?: number'")
+    if not re.search(r"\bvolume\s*:\s*0\.\d+\b", skill_text):
+        errors.append("supermovie-se output sample missing numeric volume example")
+
+    for pattern, desc in (
+        (
+            r"import\s+type\s*\{\s*SoundEffect\s*\}\s+from\s*['\"]\.\/SEPlayer['\"]\s*;",
+            "type import from ./SEPlayer",
+        ),
+        (r"export\s+const\s+seData\s*:\s*SoundEffect\[\]\s*=", "typed seData export"),
+    ):
+        if not re.search(pattern, se_data_text):
+            errors.append(f"seData.ts missing {desc}")
+        if not re.search(pattern, skill_text):
+            errors.append(f"supermovie-se output sample missing {desc}")
+
+    expected_validation_rows = {
+        "フレーム重複": ("同一フレームにSEなし", "後のSEを+2フレームずらす"),
+        "範囲超過": ("startFrame < TOTAL_FRAMES", "超過分を削除"),
+        "ID連番": ("1から連番", "採番し直し"),
+        "密度チェック": ("SE数 / テロップ数 が目標範囲内", "警告表示（自動修正なし）"),
+        "ファイル存在": ("public/se/ に全ファイルあり", "不在ファイルを報告"),
+    }
+    validation_rows = {
+        check.strip(): (condition.strip(), failure.strip())
+        for check, condition, failure in re.findall(
+            r"^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|",
+            skill_text,
+            re.MULTILINE,
+        )
+        if check.strip() in expected_validation_rows
+    }
+    if validation_rows != expected_validation_rows:
+        errors.append(
+            f"supermovie-se validation table drift: expected {expected_validation_rows}, got {validation_rows}"
+        )
+
+    assert errors == [], (
+        "supermovie-se output schema docs / SoundEffect contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
     """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
     import re
@@ -20978,6 +21045,8 @@ def main() -> int:
         test_supermovie_subtitles_template_id_mapping_matches_registry_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
+        # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
+        test_supermovie_se_output_schema_docs_match_sound_effect_contract_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
