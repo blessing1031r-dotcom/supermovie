@@ -602,6 +602,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 301 | `CLAUDE.md` の `insertImageData.ts（ImageSegment型）` schema code block が `template/src/InsertImage/types.ts` の `ImageSegment` field order / optional marker / union type と同期することを lint (`test_claude_insert_image_schema_matches_image_segment_contract_lint`、Codex 推奨 PR-IG)。全スキル共通 insert image schema と実装型の drift を保護 | PR-IG |
 | 302 | `CLAUDE.md` の `cutData.ts（CutSegment型）` schema code block が `skills/supermovie-cut/SKILL.md` の `cutData.ts` 生成例にある `CutSegment` field order / type と同期することを lint (`test_claude_cut_data_schema_matches_supermovie_cut_skill_lint`、Codex 推奨 PR-IH)。全スキル共通 cut schema と生成スキルdocsの drift を保護 | PR-IH |
 | 303 | `skills/supermovie-slides/SKILL.md` の `SlideSegment` shorthand schema が `template/src/Slides/types.ts` の `SlideSegment` field order / optional marker と同期することを lint (`test_supermovie_slides_schema_docs_match_slide_segment_contract_lint`、Codex 推奨 PR-II)。supermovie-slides 生成docsと実装型の drift を保護 | PR-II |
+| 304 | `skills/supermovie-image-gen/SKILL.md` の `insertImageData.ts` 出力サンプルが `template/src/InsertImage/types.ts` の `ImageSegment` 必須field order / typed export / `type` union と同期することを lint (`test_supermovie_image_gen_output_sample_matches_image_segment_contract_lint`、Codex 推奨 PR-IJ)。supermovie-image-gen 生成docsと画像挿入schemaの drift を保護 | PR-IJ |
 
 ## Test Requirements
 
