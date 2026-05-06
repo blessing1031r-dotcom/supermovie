@@ -16100,6 +16100,35 @@ def test_telop_player_bridges_telop_data_to_registry_templates() -> None:
     )
 
 
+def test_telop_player_canonical_imports_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    telop_player = template_root / "src" / "テロップテンプレート" / "TelopPlayer.tsx"
+    assert telop_player.is_file(), "template/src/テロップテンプレート/TelopPlayer.tsx not found"
+    raw = telop_player.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    import_patterns = [
+        (r"""import\s+React\s*,\s*\{\s*useMemo\s*\}\s*from\s*['"]react['"]""", "React default + useMemo from 'react'"),
+        (r"""import\s*\{[^}]*\bAbsoluteFill\b[^}]*\buseCurrentFrame\b[^}]*\buseVideoConfig\b[^}]*\}\s*from\s*['"]remotion['"]""", "AbsoluteFill/useCurrentFrame/useVideoConfig from 'remotion'"),
+        (r"""import\s*\{[^}]*\bTelop\b[^}]*\}\s*from\s*['"]\.\/Telop['"]""", "Telop from './Telop'"),
+        (r"""import\s*\{[^}]*\btelopData\b[^}]*\}\s*from\s*['"]\.\/telopData['"]""", "telopData from './telopData'"),
+        (
+            r"""import\s*\{[^}]*\btelopTemplateRegistry\b[^}]*\btype\s+SubtitleData\b[^}]*\btype\s+SubtitleItem\b[^}]*\btype\s+TelopTemplateId\b[^}]*\}\s*from\s*['"]\.\/telopTemplateRegistry['"]""",
+            "telopTemplateRegistry and SubtitleData/SubtitleItem/TelopTemplateId types from './telopTemplateRegistry'",
+        ),
+        (r"""import\s+type\s*\{[^}]*\bTelopSegment\b[^}]*\}\s*from\s*['"]\.\/telopTypes['"]""", "TelopSegment type from './telopTypes'"),
+    ]
+    for pattern, desc in import_patterns:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"TelopPlayer.tsx: missing canonical import for {desc}")
+    assert errors == [], (
+        "template/src/テロップテンプレート/TelopPlayer.tsx import contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_player_active_segment_range_and_subtitle_item_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -18057,6 +18086,7 @@ def main() -> int:
         test_sequence_components_are_data_driven_from_local_arrays,
         # PR-CP (TelopPlayer bridges telopData to registry templates lint): 1 件
         test_telop_player_bridges_telop_data_to_registry_templates,
+        test_telop_player_canonical_imports_contract_lint,
         test_telop_player_active_segment_range_and_subtitle_item_contract_lint,
         # PR-CQ (useNarrationMode.ts watches mode constants + narrationData files lint): 1 件
         test_narration_watch_uses_mode_constants_and_data_files,
