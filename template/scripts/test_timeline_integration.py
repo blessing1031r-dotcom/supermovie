@@ -16218,6 +16218,96 @@ def test_root_public_export_surface_contract_lint() -> None:
     )
 
 
+def test_supermovie_telop_creator_preview_cleanup_docs_match_root_contract_lint() -> None:
+    """PR-KU: telop-creator temporary preview Composition docs stay synced with Root.tsx."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-telop-creator" / "SKILL.md"
+    root_path = template_root / "src" / "Root.tsx"
+    obs_path = repo_root / "docs" / "OBSERVABILITY.md"
+    assert skill_path.is_file(), "skills/supermovie-telop-creator/SKILL.md not found"
+    assert root_path.is_file(), "template/src/Root.tsx not found"
+    assert obs_path.is_file(), "docs/OBSERVABILITY.md not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    root_raw = root_path.read_text(encoding="utf-8")
+    obs_text = obs_path.read_text(encoding="utf-8")
+    root_text = "\n".join(
+        line for line in root_raw.splitlines()
+        if not line.lstrip().startswith("//")
+    )
+    root_text = re.sub(r"/\*.*?\*/", "", root_text, flags=re.DOTALL)
+
+    preview_match = re.search(
+        r"## Phase 4: Remotionプレビュー([\s\S]*?)## Phase 5:",
+        skill_text,
+    )
+    cleanup_match = re.search(
+        r"## Phase 6: 保存＆統合([\s\S]*?)## 完了時の報告フォーマット",
+        skill_text,
+    )
+    assert preview_match is not None, "supermovie-telop-creator Phase 4 preview docs not found"
+    assert cleanup_match is not None, "supermovie-telop-creator Phase 6 cleanup docs not found"
+    preview_text = preview_match.group(1)
+    cleanup_text = cleanup_match.group(1)
+
+    errors: list[str] = []
+    required_preview_snippets = {
+        "preview data": "プレビュー用データ作成",
+        "temporary composition comment": "Root.tsx に一時的なCompositionを追加",
+        "composition tag": "<Composition",
+        "preview id": 'id="TelopPreview"',
+        "preview component": "component={TelopPreviewComponent}",
+        "duration": "durationInFrames={300}",
+        "fps": "fps={30}",
+        "width": "width={1920}",
+        "height": "height={1080}",
+        "dev command": "cd <PROJECT> && npm run dev",
+        "studio selection": "Remotion StudioでComposition「TelopPreview」を選択してプレビュー確認。",
+    }
+    required_cleanup_snippets = {
+        "save path": "src/<カテゴリ>テロップ/<日本語テロップ名>.tsx",
+        "optional integration": "telopStyles.ts への統合（任意）",
+        "cleanup heading": "### 6-3. プレビューCompositionの削除",
+        "cleanup action": "Root.tsx から一時的に追加した TelopPreview Composition を削除。",
+    }
+    for name, snippet in required_preview_snippets.items():
+        if snippet not in preview_text:
+            errors.append(f"telop-creator preview docs missing {name}: {snippet}")
+    for name, snippet in required_cleanup_snippets.items():
+        if snippet not in cleanup_text:
+            errors.append(f"telop-creator cleanup docs missing {name}: {snippet}")
+
+    composition_tags = re.findall(r"<Composition\b", root_text)
+    if len(composition_tags) != 1:
+        errors.append(f"Root.tsx production contract: expected 1 Composition, got {len(composition_tags)}")
+    if "TelopPreview" in root_text:
+        errors.append("Root.tsx must not keep temporary TelopPreview Composition in production template")
+    if "PreviewComposition" in root_text:
+        errors.append("Root.tsx must not keep temporary PreviewComposition helper in production template")
+    if not re.search(r"""\bid\s*=\s*['"]MainVideo['"]""", root_text):
+        errors.append('Root.tsx production Composition id must remain "MainVideo"')
+    if not re.search(r"\bcomponent\s*=\s*\{\s*MainVideo\s*\}", root_text):
+        errors.append("Root.tsx production Composition component must remain {MainVideo}")
+
+    required_obs_snippets = {
+        "step": "| 367 | `skills/supermovie-telop-creator/SKILL.md`",
+        "test name": "test_supermovie_telop_creator_preview_cleanup_docs_match_root_contract_lint",
+        "pr code": "PR-KU",
+        "preview drift": "telop-creator preview artifact",
+    }
+    for name, snippet in required_obs_snippets.items():
+        if snippet not in obs_text:
+            errors.append(f"OBSERVABILITY step 367 missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-telop-creator preview cleanup docs / Root.tsx contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_main_video_staticfile_uses_video_file_lint() -> None:
     """PR-CI: MainVideo.tsx must import VIDEO_FILE from ./videoConfig and use staticFile(VIDEO_FILE).
     Tightens the existing import-only lint; verifies the base video source actually flows through SSoT.
@@ -26600,6 +26690,8 @@ def main() -> int:
         test_root_composition_uses_main_video_component_lint,
         # PR-HS (Root module exports only RemotionRoot): 1 件
         test_root_public_export_surface_contract_lint,
+        # PR-KU (telop-creator preview Composition cleanup stays synced with Root): 1 件
+        test_supermovie_telop_creator_preview_cleanup_docs_match_root_contract_lint,
         test_main_video_staticfile_uses_video_file_lint,
         test_main_video_required_layers_contract_lint,
         test_main_video_canonical_layer_import_paths_lint,
