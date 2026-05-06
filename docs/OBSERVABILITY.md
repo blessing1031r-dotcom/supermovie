@@ -500,6 +500,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 199 | `template/src/SoundEffects/BGM.tsx` が `BGMProps` の optional `volume`、`React.FC<BGMProps>` component の `volume = 0.3` default、`<Audio volume={() => volume} loop />` wiring を保つことを lint (`test_bgm_props_default_volume_contract_lint`、Codex 推奨 PR-EI)。BGM の props/default-volume contract を保護 | PR-EI |
 | 200 | `template/src/videoConfig.ts` が `RESOLUTION_MAP` の youtube/short/square 寸法、`TELOP_CONFIG_MAP` の各 format 別 field/value、`RESOLUTION = RESOLUTION_MAP[FORMAT]` / `TELOP_CONFIG = TELOP_CONFIG_MAP[FORMAT]` の派生 export を保つことを lint (`test_video_config_format_values_contract_lint`、Codex 推奨 PR-EJ)。format 別 render/telop 設定値 contract を保護 | PR-EJ |
 | 201 | `template/src/Title/Title.tsx` が opacity fade envelope、spring config、translateX range、gradient badge background/padding、title typography (`Noto Sans JP`/shadow/skew/nowrap)、`segment.text` render を保つことを lint (`test_title_visual_style_contract_lint`、Codex 推奨 PR-EK)。Title visual style contract を保護 | PR-EK |
+| 202 | `template/src/InsertImage/InsertImage.tsx` が overlay/default branch の `staticFile(\`images/${segment.file}\`)`、overlay backdrop/flex centering/max 80% contain、default full-size image、infographic contain/photo cover、`segment.scale ?? 1` scale fallback を保つことを lint (`test_insert_image_render_variant_style_contract_lint`、Codex 推奨 PR-EL)。InsertImage type 別 render style contract を保護 | PR-EL |
 
 ## Test Requirements
 
