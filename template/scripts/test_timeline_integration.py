@@ -16298,6 +16298,56 @@ def test_insert_image_segment_schema_contract_lint() -> None:
     )
 
 
+def test_insert_image_render_variant_style_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    image_file = template_root / "src" / "InsertImage" / "InsertImage.tsx"
+    assert image_file.is_file(), "template/src/InsertImage/InsertImage.tsx not found"
+    raw = image_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    remotion_import = re.search(r"""import\s*\{([^}]*)\}\s*from\s*['"]remotion['"]""", text)
+    if not remotion_import:
+        errors.append("InsertImage.tsx: no import from 'remotion' found")
+    else:
+        imported = remotion_import.group(1)
+        for sym in ("Img", "staticFile"):
+            if not re.search(rf"\b{sym}\b", imported):
+                errors.append(f"InsertImage.tsx: '{sym}' not imported from 'remotion'")
+    static_image_src_count = len(re.findall(r"src=\{\s*staticFile\s*\(\s*`images/\$\{segment\.file\}`\s*\)\s*\}", text))
+    if static_image_src_count < 2:
+        errors.append(
+            "InsertImage.tsx: overlay and default branches must both use staticFile(`images/${segment.file}`)"
+        )
+    checks = [
+        (r"if\s*\(\s*segment\.type\s*===\s*['\"]overlay['\"]\s*\)", "overlay branch"),
+        (r"\bposition:\s*['\"]absolute['\"]", "absolute wrapper positioning"),
+        (r"\btop:\s*0\s*,\s*left:\s*0\s*,\s*width:\s*['\"]100%['\"]\s*,\s*height:\s*['\"]100%['\"]", "full-frame wrapper bounds"),
+        (r"\bdisplay:\s*['\"]flex['\"]", "overlay flex display"),
+        (r"\bjustifyContent:\s*['\"]center['\"]", "overlay horizontal centering"),
+        (r"\balignItems:\s*['\"]center['\"]", "overlay vertical centering"),
+        (r"\bbackgroundColor:\s*['\"]rgba\(0,\s*0,\s*0,\s*0\.7\)['\"]", "overlay dark backdrop"),
+        (r"\bopacity\s*,", "wrapper opacity binding"),
+        (r"\bzIndex:\s*50\b", "wrapper zIndex 50"),
+        (r"\bmaxWidth:\s*['\"]80%['\"]", "overlay image maxWidth"),
+        (r"\bmaxHeight:\s*['\"]80%['\"]", "overlay image maxHeight"),
+        (r"\bobjectFit:\s*['\"]contain['\"]", "overlay image contain fit"),
+        (r"\btransform:\s*`\s*scale\(\$\{segment\.scale\s*\?\?\s*1\}\)\s*`", "overlay scale fallback"),
+        (r"\bwidth:\s*['\"]100%['\"]", "default image width"),
+        (r"\bheight:\s*['\"]100%['\"]", "default image height"),
+        (r"\bobjectFit:\s*segment\.type\s*===\s*['\"]infographic['\"]\s*\?\s*['\"]contain['\"]\s*:\s*['\"]cover['\"]", "infographic contain/photo cover fit"),
+        (r"\btransform:\s*`\s*scale\(\$\{scale\s*\*\s*\(segment\.scale\s*\?\?\s*1\)\}\)\s*`", "default branch scale composition"),
+    ]
+    for pattern, desc in checks:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"InsertImage.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/InsertImage/InsertImage.tsx render variant style contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_narration_segment_required_fields_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17180,6 +17230,7 @@ def main() -> int:
         test_narration_mode_static_file_lookup_contract_lint,
         test_template_narration_data_exports_typed_empty_array_lint,
         test_insert_image_segment_schema_contract_lint,
+        test_insert_image_render_variant_style_contract_lint,
         test_narration_segment_required_fields_contract_lint,
         test_title_data_toframe_uses_video_config_fps_lint,
         test_telop_segment_schema_contract_lint,
