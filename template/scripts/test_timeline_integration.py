@@ -12376,6 +12376,63 @@ def test_plugin_manifest_marketplace_contract_lint() -> None:
     )
 
 
+def test_skill_readme_command_surface_lint() -> None:
+    """PR-Y: 3-part lint verifying skills/*/SKILL.md names are in sync with README.md.
+    (1) Each non-template SKILL.md has frontmatter 'name:' matching its dir name
+    (2) Each non-template skill name appears as `/{name}` in README.md
+    (3) README.md `/{supermovie-*}` entries must have matching skill dirs
+    (Template skills with '<' in name are skipped — scaffold placeholders.)
+    """
+    import re
+    repo_root = Path(__file__).parents[2]
+    skills_dir = repo_root / "skills"
+    assert skills_dir.is_dir(), f"skills/ dir not found: {skills_dir}"
+
+    readme_path = repo_root / "README.md"
+    assert readme_path.exists(), "README.md not found"
+    readme_text = readme_path.read_text()
+
+    errors: list[str] = []
+    known_skill_names: set[str] = set()
+
+    for skill_path in sorted(skills_dir.iterdir()):
+        if not skill_path.is_dir():
+            continue
+        skill_md = skill_path / "SKILL.md"
+        if not skill_md.exists():
+            continue
+        content = skill_md.read_text()
+        name_m = re.search(r"^name:\s*(.+)$", content, re.MULTILINE)
+        if not name_m:
+            errors.append(f"{skill_path.name}/SKILL.md: missing 'name:' in frontmatter")
+            continue
+        frontmatter_name = name_m.group(1).strip()
+        if "<" in frontmatter_name or ">" in frontmatter_name:
+            continue  # skip template placeholder
+
+        known_skill_names.add(frontmatter_name)
+
+        # (1) dir name == frontmatter name
+        if skill_path.name != frontmatter_name:
+            errors.append(
+                f"{skill_path.name}: dir name != SKILL.md name {frontmatter_name!r}"
+            )
+
+        # (2) /{name} in README.md
+        if f"`/{frontmatter_name}`" not in readme_text:
+            errors.append(f"{frontmatter_name}: `/{frontmatter_name}` not found in README.md")
+
+    # (3) README commands must have matching skill dirs
+    readme_commands = re.findall(r"`/(supermovie-[^`]+)`", readme_text)
+    for cmd in readme_commands:
+        if not (skills_dir / cmd).is_dir():
+            errors.append(f"README.md: `/{cmd}` listed but skills/{cmd}/ dir not found")
+
+    assert not errors, (
+        "skill/README drift:\n" + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12558,6 +12615,8 @@ def main() -> int:
         test_npm_script_package_json_runbook_contract_lint,
         # PR-X (plugin manifest + marketplace contract lint): 1 件
         test_plugin_manifest_marketplace_contract_lint,
+        # PR-Y (skill README command surface lint): 1 件
+        test_skill_readme_command_surface_lint,
     ]
     failed = []
     for t in tests:
