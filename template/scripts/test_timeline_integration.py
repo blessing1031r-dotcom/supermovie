@@ -15212,6 +15212,93 @@ def test_telop_render_timing_and_slide_transform_contract_lint() -> None:
     )
 
 
+def test_telop_char_by_char_text_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    telop_file = template_root / "src" / "テロップテンプレート" / "Telop.tsx"
+    assert telop_file.is_file(), "template/src/テロップテンプレート/Telop.tsx not found"
+    raw = telop_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    for pattern, desc in [
+        (
+            r"const\s+CharByCharText:\s*React\.FC<\{\s*"
+            r"text:\s*string;\s*localFrame:\s*number;\s*fps:\s*number;\s*"
+            r"config:\s*TelopStyleConfig;\s*animation:\s*TelopAnimationConfig;\s*"
+            r"duration:\s*number;\s*\}>\s*=\s*\(\{\s*text\s*,\s*localFrame\s*,\s*"
+            r"fps\s*,\s*config\s*,\s*animation\s*,\s*duration\s*\}\)\s*=>\s*\{",
+            "CharByCharText receives text/localFrame/fps/config/animation/duration props",
+        ),
+        (r"const\s+\{\s*font\s*,\s*textShadow\s*\}\s*=\s*config\s*;", "font and textShadow from config"),
+        (r"const\s+charDelay\s*=\s*animation\.charDelay\s*\?\?\s*2\s*;", "charDelay defaults to 2"),
+        (r"const\s+chars\s*=\s*text\.split\s*\(\s*['\"]{2}\s*\)\s*;", "chars split from text"),
+        (r"const\s+fillGradient\s*=\s*font\.fillGradient\s*;", "fillGradient from font"),
+        (r"const\s+hasFillGradient\s*=\s*fillGradient\?\.enabled\s*;", "hasFillGradient optional access"),
+        (r"const\s+fadeOut\s*=\s*animation\.fadeOutDuration\s*;", "fadeOut from animation.fadeOutDuration"),
+        (
+            r"const\s+overallOpacity\s*=\s*interpolate\s*\(\s*localFrame\s*,\s*"
+            r"\[\s*duration\s*-\s*fadeOut\s*,\s*duration\s*\]\s*,\s*\[\s*1\s*,\s*0\s*\]\s*,\s*"
+            r"\{\s*extrapolateLeft:\s*['\"]clamp['\"]\s*,\s*extrapolateRight:\s*['\"]clamp['\"]\s*\}\s*,?\s*\)",
+            "overall opacity fades out over localFrame with clamps",
+        ),
+        (
+            r"<span\s+style=\{\{\s*display:\s*['\"]inline-flex['\"]\s*,\s*opacity:\s*overallOpacity\s*\}\}>",
+            "wrapper span uses inline-flex and overallOpacity",
+        ),
+        (r"chars\.map\s*\(\s*\(\s*char\s*,\s*index\s*\)\s*=>\s*\{", "maps chars with char/index"),
+        (r"const\s+charFrame\s*=\s*localFrame\s*-\s*index\s*\*\s*charDelay\s*;", "charFrame offsets localFrame by index * charDelay"),
+        (
+            r"const\s+charSpring\s*=\s*spring\s*\(\s*\{\s*frame:\s*Math\.max\s*\(\s*0\s*,\s*charFrame\s*\)\s*,\s*"
+            r"fps\s*,\s*config:\s*animation\.spring\s*,\s*\}\s*\)",
+            "charSpring clamps negative charFrame and uses fps/animation.spring",
+        ),
+        (
+            r"const\s+translateY\s*=\s*interpolate\s*\(\s*charSpring\s*,\s*"
+            r"\[\s*0\s*,\s*1\s*\]\s*,\s*\[\s*-animation\.slideInDistance\s*,\s*0\s*\]\s*,?\s*\)",
+            "translateY interpolates charSpring from slide distance to 0",
+        ),
+        (
+            r"const\s+charOpacity\s*=\s*interpolate\s*\(\s*charFrame\s*,\s*\[\s*0\s*,\s*4\s*\]\s*,\s*\[\s*0\s*,\s*1\s*\]\s*,\s*"
+            r"\{\s*extrapolateLeft:\s*['\"]clamp['\"]\s*,\s*extrapolateRight:\s*['\"]clamp['\"]\s*,?\s*\}\s*,?\s*\)",
+            "charOpacity fades per character with clamps",
+        ),
+        (r"let\s+charColor\s*=\s*font\.color\s*;", "charColor defaults to font.color"),
+        (
+            r"if\s*\(\s*hasFillGradient\s*\)\s*\{\s*const\s+t\s*=\s*chars\.length\s*>\s*1\s*\?\s*"
+            r"index\s*/\s*\(\s*chars\.length\s*-\s*1\s*\)\s*:\s*0\s*;\s*"
+            r"charColor\s*=\s*interpolateColor\s*\(\s*fillGradient\.start\s*,\s*fillGradient\.end\s*,\s*t\s*\)\s*;",
+            "gradient charColor interpolates by character index",
+        ),
+        (r"key=\{index\}", "character span key uses index"),
+        (r"display:\s*['\"]inline-block['\"]", "character span uses inline-block"),
+        (r"transform:\s*`\s*translateY\(\$\{translateY\}px\)\s*`", "character span translateY style"),
+        (r"opacity:\s*charOpacity", "character span opacity uses charOpacity"),
+        (r"fontSize:\s*font\.size", "character span fontSize uses font.size"),
+        (r"fontWeight:\s*font\.weight", "character span fontWeight uses font.weight"),
+        (r"fontFamily:\s*font\.family", "character span fontFamily uses font.family"),
+        (r"fontStyle:\s*font\.style", "character span fontStyle uses font.style"),
+        (
+            r"textShadow:\s*`\s*\$\{textShadow\.offsetX\}px\s+\$\{textShadow\.offsetY\}px\s+"
+            r"\$\{textShadow\.blur\}px\s+\$\{textShadow\.color\}\s*`",
+            "character span textShadow uses config textShadow fields",
+        ),
+        (r"color:\s*charColor", "character span color uses charColor"),
+        (r"\{\s*char\s*===\s*['\"] ['\"]\s*\?\s*['\"]\\u00A0['\"]\s*:\s*char\s*\}", "space characters render as NBSP"),
+        (
+            r"<CharByCharText\s+text=\{segment\.text\}\s+localFrame=\{localFrame\}\s+fps=\{fps\}\s+"
+            r"config=\{config\}\s+animation=\{animation\}\s+duration=\{duration\}\s*/>",
+            "charByChar renderer passes timing/config props to CharByCharText",
+        ),
+    ]:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"Telop.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/テロップテンプレート/Telop.tsx char-by-char text contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_template_registry_file_coverage_lint() -> None:
     """PR-CM: Every .tsx file in メインテロップ/強調テロップ/ネガティブテロップ dirs must be imported by telopTemplateRegistry.tsx.
     Guards against new/renamed telop templates existing on disk but unreachable from TelopPlayer registry.
@@ -16550,6 +16637,7 @@ def main() -> int:
         test_telop_legacy_template_selection_contract_lint,
         test_telop_legacy_animation_selection_contract_lint,
         test_telop_render_timing_and_slide_transform_contract_lint,
+        test_telop_char_by_char_text_contract_lint,
         test_telop_template_registry_file_coverage_lint,
         test_telop_template_registry_metadata_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
