@@ -532,6 +532,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 231 | `template/src/テロップテンプレート/TelopPlayer.tsx` が React `useMemo`、Remotion helper、legacy `Telop`、`telopData`、registry 値/型、`TelopSegment` 型を canonical module から import することを lint (`test_telop_player_canonical_imports_contract_lint`、Codex 推奨 PR-FO)。TelopPlayer import contract を保護 | PR-FO |
 | 232 | `template/src/テロップテンプレート/telopTemplateRegistry.tsx` が type-only React import、`SubtitleItem` / `SubtitleData` / `TelopComponent` / `TelopTemplateEntry` の exported surface、`telopTemplateRegistry` の `as const satisfies Record<string, TelopTemplateEntry>` を保つことを lint (`test_telop_template_registry_type_surface_contract_lint`、Codex 推奨 PR-FP)。Telop registry type surface contract を保護 | PR-FP |
 | 233 | `template/src/テロップテンプレート/telopStyles.ts` の `getTextShadowCSS()` が `subtitleConfig.textShadow` から `offsetX` / `offsetY` / `blur` / `color` を取り CSS shadow string を返し、`getTextStrokeCSS()` が `subtitleConfig.textStroke` から `width` / `gradient` を返すことを lint (`test_telop_styles_css_helper_body_contract_lint`、Codex 推奨 PR-FQ)。Telop style CSS helper body contract を保護 | PR-FQ |
+| 234 | `template/src/Narration/types.ts` の `NarrationSegment` が debug/alignment 用 optional fields `text?: string` / `sourceStartMs?: number` / `sourceEndMs?: number` を保持することを lint (`test_narration_segment_optional_debug_fields_contract_lint`、Codex 推奨 PR-FR)。NarrationSegment optional debug fields contract を保護 | PR-FR |
 
 ## Test Requirements
 

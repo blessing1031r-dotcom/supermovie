@@ -17043,6 +17043,28 @@ def test_narration_segment_required_fields_contract_lint() -> None:
     )
 
 
+def test_narration_segment_optional_debug_fields_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    types_file = template_root / "src" / "Narration" / "types.ts"
+    assert types_file.is_file(), "template/src/Narration/types.ts not found"
+    raw = types_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    for field, typ in (
+        ("text", "string"),
+        ("sourceStartMs", "number"),
+        ("sourceEndMs", "number"),
+    ):
+        if not re.search(rf"\b{field}\??\s*:\s*{typ}\b", text):
+            errors.append(f"NarrationSegment: optional debug field '{field}?: {typ}' not found")
+    assert errors == [], (
+        "template/src/Narration/types.ts NarrationSegment optional debug fields contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_title_data_toframe_uses_video_config_fps_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -18171,6 +18193,7 @@ def main() -> int:
         test_insert_image_canonical_imports_contract_lint,
         test_insert_image_render_variant_style_contract_lint,
         test_narration_segment_required_fields_contract_lint,
+        test_narration_segment_optional_debug_fields_contract_lint,
         test_title_data_toframe_uses_video_config_fps_lint,
         test_telop_segment_schema_contract_lint,
         test_telop_segment_template_id_and_animation_contract_lint,
