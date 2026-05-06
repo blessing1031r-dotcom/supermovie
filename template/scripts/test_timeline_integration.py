@@ -16188,6 +16188,36 @@ def test_root_composition_uses_main_video_component_lint() -> None:
     )
 
 
+def test_root_public_export_surface_contract_lint() -> None:
+    """PR-HS: Root module must export only the RemotionRoot component."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    root_tsx = template_root / "src" / "Root.tsx"
+    assert root_tsx.is_file(), "template/src/Root.tsx not found"
+    raw = root_tsx.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/Root.tsx must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*(?:\*|\{)""", text, re.MULTILINE), (
+        "template/src/Root.tsx must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    expected = {"RemotionRoot"}
+    assert exported == expected, (
+        "template/src/Root.tsx public export surface drift: "
+        f"expected {sorted(expected)}, got {sorted(exported)}"
+    )
+
+
 def test_main_video_staticfile_uses_video_file_lint() -> None:
     """PR-CI: MainVideo.tsx must import VIDEO_FILE from ./videoConfig and use staticFile(VIDEO_FILE).
     Tightens the existing import-only lint; verifies the base video source actually flows through SSoT.
@@ -20378,6 +20408,8 @@ def main() -> int:
         test_template_index_css_tailwind_v4_entrypoint_lint,
         test_root_composition_uses_video_config_lint,
         test_root_composition_uses_main_video_component_lint,
+        # PR-HS (Root module exports only RemotionRoot): 1 件
+        test_root_public_export_surface_contract_lint,
         test_main_video_staticfile_uses_video_file_lint,
         test_main_video_required_layers_contract_lint,
         test_main_video_canonical_layer_import_paths_lint,
