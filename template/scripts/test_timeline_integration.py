@@ -17642,6 +17642,55 @@ def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     )
 
 
+def test_claude_title_data_schema_matches_title_segment_contract_lint() -> None:
+    """PR-IF: CLAUDE.md titleData schema must match the TitleSegment interface."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    claude_path = repo_root / "CLAUDE.md"
+    title_path = template_root / "src" / "Title" / "Title.tsx"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert title_path.is_file(), "template/src/Title/Title.tsx not found"
+
+    def title_segment_fields(type_text: str, source: str) -> list[tuple[str, str, str]]:
+        match = re.search(r"\b(?:export\s+)?interface\s+TitleSegment\s*\{([\s\S]*?)\}", type_text)
+        assert match is not None, f"{source}: TitleSegment interface block not found"
+        return [
+            (name, optional, typ.strip())
+            for name, optional, typ in re.findall(r"^\s*(\w+)(\?)?\s*:\s*([^;]+);", match.group(1), re.MULTILINE)
+        ]
+
+    claude_text = claude_path.read_text(encoding="utf-8")
+    section_match = re.search(
+        r"### titleData\.ts（TitleSegment型）\s*```typescript\s*([\s\S]*?)```",
+        claude_text,
+    )
+    assert section_match is not None, "CLAUDE.md titleData.ts TitleSegment schema code block not found"
+
+    actual_fields = title_segment_fields(section_match.group(1), "CLAUDE.md")
+    implementation_fields = title_segment_fields(
+        title_path.read_text(encoding="utf-8"),
+        "template/src/Title/Title.tsx",
+    )
+    expected_fields = [
+        ("id", "", "number"),
+        ("startFrame", "", "number"),
+        ("endFrame", "", "number"),
+        ("text", "", "string"),
+    ]
+    errors: list[str] = []
+    if implementation_fields != expected_fields:
+        errors.append(f"Title.tsx TitleSegment implementation drift: expected {expected_fields}, got {implementation_fields}")
+    if actual_fields != implementation_fields:
+        errors.append(f"CLAUDE.md TitleSegment schema drift: expected {implementation_fields}, got {actual_fields}")
+
+    assert errors == [], (
+        "CLAUDE.md titleData TitleSegment schema / implementation contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
     """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
     import re
@@ -21098,6 +21147,8 @@ def main() -> int:
         test_supermovie_se_output_schema_docs_match_sound_effect_contract_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
+        # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
+        test_claude_title_data_schema_matches_title_segment_contract_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
