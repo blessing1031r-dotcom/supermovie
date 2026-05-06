@@ -13736,6 +13736,58 @@ def test_plugin_json_keywords_canonical_tokens_lint() -> None:
     assert errors == [], "plugin.json keywords canonical format lint failed:\n" + "\n".join(errors)
 
 
+def test_plugin_json_license_file_consistency_lint() -> None:
+    """PR-AX: plugin.json license field must match LICENSE file:
+    - plugin.json 'license' == 'MIT'
+    - LICENSE first non-empty line == 'MIT License'
+    - LICENSE copyright line contains author.name from plugin.json
+    """
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    manifest_path = repo_root / ".claude-plugin" / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    errors: list[str] = []
+
+    license_val = manifest.get("license", "")
+    author_name = (manifest.get("author") or {}).get("name", "")
+
+    # LICENSE file must exist
+    license_path = repo_root / "LICENSE"
+    if not license_path.is_file():
+        assert False, "LICENSE file not found at repo root"
+
+    license_text = license_path.read_text(encoding="utf-8")
+    license_lines = [ln for ln in license_text.splitlines() if ln.strip()]
+
+    # plugin.json license == "MIT"
+    if license_val != "MIT":
+        errors.append(f"plugin.json 'license' must be 'MIT', got {license_val!r}")
+
+    # LICENSE first line == "MIT License"
+    first_line = license_lines[0] if license_lines else ""
+    if first_line != "MIT License":
+        errors.append(
+            f"LICENSE first non-empty line must be 'MIT License', got {first_line!r}"
+        )
+
+    # Copyright line contains author.name
+    if author_name:
+        copyright_line = next(
+            (ln for ln in license_lines if ln.startswith("Copyright")), None
+        )
+        if copyright_line is None:
+            errors.append("LICENSE has no 'Copyright' line")
+        elif author_name not in copyright_line:
+            errors.append(
+                f"LICENSE copyright line {copyright_line!r} does not contain "
+                f"author.name {author_name!r}"
+            )
+
+    assert errors == [], "plugin.json license file consistency lint failed:\n" + "\n".join(errors)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13968,6 +14020,8 @@ def main() -> int:
         test_plugin_json_top_level_keyset_lint,
         # PR-AW (plugin.json keywords canonical kebab-case format lint): 1 件
         test_plugin_json_keywords_canonical_tokens_lint,
+        # PR-AX (plugin.json license vs LICENSE file consistency lint): 1 件
+        test_plugin_json_license_file_consistency_lint,
     ]
     failed = []
     for t in tests:
