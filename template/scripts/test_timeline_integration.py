@@ -12752,37 +12752,57 @@ def test_readme_quickstart_workflow_matches_claude_pipeline_lint() -> None:
     repo_root = Path(__file__).parents[2]
     readme_text = (repo_root / "README.md").read_text(encoding="utf-8")
 
-    # Find the quickstart 'Claude:' workflow line
+    # Find the クイックスタート section, then locate the 'Claude:' workflow line within it
+    qs_section_m = __import__("re").search(
+        r"#### クイックスタート.*?(?=^####|^###|\Z)",
+        readme_text,
+        __import__("re").MULTILINE | __import__("re").DOTALL,
+    )
+    assert qs_section_m, "README.md: #### クイックスタート section not found"
+    qs_section = qs_section_m.group(0)
+
     quickstart_line = ""
-    for line in readme_text.splitlines():
+    for line in qs_section.splitlines():
         if line.strip().startswith("Claude:") and "→" in line:
             quickstart_line = line.strip()
             break
-    assert quickstart_line, "README.md: no 'Claude: ... → ...' quickstart workflow line found"
+    assert quickstart_line, (
+        "README.md: no 'Claude: ... → ...' workflow line found in #### クイックスタート section"
+    )
+
+    # Split the line into → tokens for unambiguous keyword lookup
+    # e.g. "Claude: A → B → C" → ["Claude: A", "B", "C"]
+    arrow_tokens = [t.strip() for t in quickstart_line.split("→")]
 
     errors: list[str] = []
 
-    # (1) All canonical keywords must appear in the quickstart line
+    # (1) All canonical keywords must appear in some token
+    keyword_token_idx: dict[str, int] = {}
     for step, keyword in CANONICAL_KEYWORD_MAP:
-        if keyword not in quickstart_line:
+        found = False
+        for idx, token in enumerate(arrow_tokens):
+            if keyword in token:
+                keyword_token_idx[keyword] = idx
+                found = True
+                break
+        if not found:
             errors.append(
-                f"README quickstart missing '{keyword}' (for {step}): {quickstart_line!r}"
+                f"README quickstart missing '{keyword}' (for {step}); "
+                f"tokens: {arrow_tokens}"
             )
 
-    # (2) Canonical keywords must appear in monotonically increasing position
-    positions: list[tuple[int, str, str]] = []
+    # (2) Canonical keywords must appear in monotonically increasing token index
+    prev_idx = -1
     for step, keyword in CANONICAL_KEYWORD_MAP:
-        pos = quickstart_line.find(keyword)
-        if pos >= 0:
-            positions.append((pos, step, keyword))
-    for i in range(len(positions) - 1):
-        pos_a, step_a, kw_a = positions[i]
-        pos_b, step_b, kw_b = positions[i + 1]
-        if pos_a > pos_b:
+        if keyword not in keyword_token_idx:
+            continue  # already reported in (1)
+        idx = keyword_token_idx[keyword]
+        if idx < prev_idx:
             errors.append(
-                f"README quickstart has '{kw_a}' ({step_a}) at pos {pos_a} "
-                f"after '{kw_b}' ({step_b}) at pos {pos_b} — violates canonical order"
+                f"README quickstart '{keyword}' ({step}) at token {idx} "
+                f"comes before previous step at token {prev_idx} — violates canonical order"
             )
+        prev_idx = idx
 
     assert not errors, (
         f"README quickstart pipeline drift ({len(errors)} error(s)):\n"
