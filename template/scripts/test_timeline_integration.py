@@ -18019,6 +18019,78 @@ def test_supermovie_transcript_fix_output_schema_docs_match_claude_transcript_co
     )
 
 
+def test_supermovie_cut_vad_result_schema_docs_match_claude_path_contract_lint() -> None:
+    """PR-JM: supermovie-cut vad_result docs must match VAD runner and CLAUDE path contract."""
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    cut_skill_path = repo_root / "skills" / "supermovie-cut" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    assert cut_skill_path.is_file(), "skills/supermovie-cut/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+
+    skill_text = cut_skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    vad_schema_match = re.search(
+        r"### 1-4\. 出力: vad_result\.json\s*```json\n([\s\S]*?)\n```",
+        skill_text,
+    )
+    assert vad_schema_match is not None, "supermovie-cut vad_result.json output schema block not found"
+
+    vad_schema = json.loads(vad_schema_match.group(1))
+    expected_top_keys = ["audio_duration_ms", "speech_segments", "silence_segments", "stats"]
+    expected_speech_keys = ["start", "end"]
+    expected_silence_keys = ["start", "end", "duration"]
+    expected_stats_keys = ["speech_count", "silence_count", "total_speech_ms", "total_silence_ms"]
+    errors: list[str] = []
+    if list(vad_schema.keys()) != expected_top_keys:
+        errors.append(f"vad_result.json top-level keys drift: expected {expected_top_keys}, got {list(vad_schema.keys())}")
+    if not vad_schema.get("speech_segments") or list(vad_schema["speech_segments"][0].keys()) != expected_speech_keys:
+        got = list(vad_schema.get("speech_segments", [{}])[0].keys()) if vad_schema.get("speech_segments") else []
+        errors.append(f"vad_result.json speech_segments[] keys drift: expected {expected_speech_keys}, got {got}")
+    if not vad_schema.get("silence_segments") or list(vad_schema["silence_segments"][0].keys()) != expected_silence_keys:
+        got = list(vad_schema.get("silence_segments", [{}])[0].keys()) if vad_schema.get("silence_segments") else []
+        errors.append(f"vad_result.json silence_segments[] keys drift: expected {expected_silence_keys}, got {got}")
+    if list(vad_schema.get("stats", {}).keys()) != expected_stats_keys:
+        errors.append(f"vad_result.json stats keys drift: expected {expected_stats_keys}, got {list(vad_schema.get('stats', {}).keys())}")
+
+    required_skill_snippets = {
+        "fixed transcript prerequisite": "- [ ] `transcript_fixed.json` が存在し `words` 配列がある",
+        "audio prerequisite": "- [ ] `transcript_audio.wav` が存在",
+        "runner path": "`<PROJECT>/vad_runner.py` を生成して実行",
+        "min silence arg": "min_silence = float(sys.argv[3]) if len(sys.argv) > 3 else 0.5",
+        "silero model": "repo_or_dir='snakers4/silero-vad'",
+        "sampling rate": "sampling_rate=16000",
+        "min silence ms": "min_silence_duration_ms=int(min_silence * 1000)",
+        "speech pad": "speech_pad_ms=100",
+        "min speech duration": "min_speech_duration_ms=250",
+        "speech start ms": "round(ts['start'] / 16000 * 1000)",
+        "speech end ms": "round(ts['end'] / 16000 * 1000)",
+        "audio duration ms": "audio_duration_ms = round(len(wav) / 16000 * 1000)",
+        "silence duration": "'duration': gap_duration",
+        "run audio arg": '"<PROJECT>/transcript_audio.wav"',
+        "run output arg": '"<PROJECT>/vad_result.json"',
+        "min silence default arg": "0.5",
+    }
+    required_claude_snippets = {
+        "audio path": "| 音声ファイル | `<PROJECT>/transcript_audio.wav` |",
+        "vad path": "| VAD結果 | `<PROJECT>/vad_result.json` |",
+        "cut data path": "| カットデータ | `<PROJECT>/src/cutData.ts` |",
+    }
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-cut VAD docs missing {name}: {snippet}")
+    for name, snippet in required_claude_snippets.items():
+        if snippet not in claude_text:
+            errors.append(f"CLAUDE.md cut path docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-cut VAD result docs / CLAUDE.md path contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -23543,6 +23615,8 @@ def main() -> int:
         test_supermovie_transcribe_output_schema_docs_match_claude_transcript_schema_lint,
         # PR-JL (supermovie-transcript-fix output docs stay synced with CLAUDE transcript contract): 1 件
         test_supermovie_transcript_fix_output_schema_docs_match_claude_transcript_contract_lint,
+        # PR-JM (supermovie-cut VAD result docs stay synced with CLAUDE path contract): 1 件
+        test_supermovie_cut_vad_result_schema_docs_match_claude_path_contract_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
