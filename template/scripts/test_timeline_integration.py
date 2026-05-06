@@ -11947,6 +11947,121 @@ def test_observability_emit_json_local_wrapper_positional_type_contract_lint() -
         )
 
 
+def test_observability_v0_status_enumeration_completeness_lint() -> None:
+    """PR-S3: V1_CALLER_SCRIPTS 7 scripts の emit helper call site で使われる全 v0_status 文字列が
+    STATUS_MAP に登録済であることを AST audit で検証。
+
+    3-part validation:
+    (1) SCRIPT_EMIT_HELPERS key set が V1_CALLER_SCRIPTS 7-set と set-equal
+    (2) 各 script の emit helper arg[0] str Constant + v0_status= keyword str Constant が
+        全て STATUS_MAP に登録済 (helper def 内の Call は除外)
+    (3) docs §Status Naming section に enumeration completeness contract keyword presence
+    """
+    import ast
+    import importlib.util
+    import re
+
+    scripts_dir = Path(__file__).parent
+
+    # Load STATUS_MAP from _observability.py
+    spec = importlib.util.spec_from_file_location(
+        "_observability_s3", scripts_dir / "_observability.py"
+    )
+    obs_mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(obs_mod)  # type: ignore[union-attr]
+    status_keys: set[str] = set(obs_mod.STATUS_MAP.keys())
+
+    V1_CALLER_SCRIPTS: set[str] = {
+        "build_slide_data.py",
+        "build_telop_data.py",
+        "preflight_video.py",
+        "compare_telop_split.py",
+        "visual_smoke.py",
+        "generate_slide_plan.py",
+        "voicevox_narration.py",
+    }
+
+    # (1) SCRIPT_EMIT_HELPERS must be set-equal to V1_CALLER_SCRIPTS
+    SCRIPT_EMIT_HELPERS: dict[str, list[str]] = {
+        "build_slide_data.py": ["_emit_error"],
+        "build_telop_data.py": ["_emit_error"],
+        "preflight_video.py": ["_emit"],
+        "compare_telop_split.py": ["_emit_early", "emit_obs"],
+        "visual_smoke.py": ["_emit_early"],
+        "generate_slide_plan.py": ["emit_json"],
+        "voicevox_narration.py": ["emit_json"],
+    }
+    assert set(SCRIPT_EMIT_HELPERS.keys()) == V1_CALLER_SCRIPTS, (
+        f"SCRIPT_EMIT_HELPERS key set != V1_CALLER_SCRIPTS: "
+        f"extra={set(SCRIPT_EMIT_HELPERS.keys()) - V1_CALLER_SCRIPTS}, "
+        f"missing={V1_CALLER_SCRIPTS - set(SCRIPT_EMIT_HELPERS.keys())}"
+    )
+
+    # (2) per-script v0_status enumeration completeness
+    enum_errors: list[str] = []
+    for script_name, helper_names in SCRIPT_EMIT_HELPERS.items():
+        src = (scripts_dir / script_name).read_text()
+        tree = ast.parse(src)
+
+        # Collect id() of Call nodes that are descendants of a helper FunctionDef (to exclude)
+        calls_inside_helper: set[int] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name in helper_names:
+                for inner in ast.walk(node):
+                    if isinstance(inner, ast.Call):
+                        calls_inside_helper.add(id(inner))
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if id(node) in calls_inside_helper:
+                continue
+
+            # Collect arg[0] str Constant from emit helper calls
+            if (
+                isinstance(node.func, ast.Name)
+                and node.func.id in helper_names
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
+                v0s = node.args[0].value
+                if v0s not in status_keys:
+                    enum_errors.append(
+                        f"{script_name}:{node.lineno}: {node.func.id}() arg[0]={v0s!r} not in STATUS_MAP"
+                    )
+
+            # Collect v0_status= keyword str Constant from any call (catches direct build_status calls)
+            for kw in node.keywords:
+                if (
+                    kw.arg == "v0_status"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    v0s = kw.value.value
+                    if v0s not in status_keys:
+                        enum_errors.append(
+                            f"{script_name}:{kw.value.lineno}: v0_status={v0s!r} not in STATUS_MAP"
+                        )
+
+    assert not enum_errors, "v0_status not in STATUS_MAP:\n" + "\n".join(enum_errors)
+
+    # (3) docs §Status Naming section keyword presence
+    obs_doc = scripts_dir.parent.parent / "docs" / "OBSERVABILITY.md"
+    doc_text = obs_doc.read_text()
+    section_m = re.search(
+        r"^### Status Naming[^\n]*\n(?P<body>.*?)(?=^## |^### )",
+        doc_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert section_m, "docs: §Status Naming section not found"
+    section_body = section_m.group("body")
+    for keyword in ("v0_status", "STATUS_MAP", "enumeration completeness"):
+        assert keyword in section_body, (
+            f"docs §Status Naming: missing keyword {keyword!r}"
+        )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -12115,6 +12230,8 @@ def main() -> int:
         test_generate_slide_plan_stderr_proj_path_redacted,
         # PR-S1 (local emit_json wrapper kwargs type contract audit): 1 件
         test_observability_emit_json_local_wrapper_positional_type_contract_lint,
+        # PR-S3 (per-script v0_status enumeration completeness audit): 1 件
+        test_observability_v0_status_enumeration_completeness_lint,
     ]
     failed = []
     for t in tests:
