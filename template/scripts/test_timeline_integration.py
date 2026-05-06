@@ -17547,6 +17547,104 @@ def test_supermovie_subtitles_budoux_docs_match_build_telop_cli_lint() -> None:
     )
 
 
+def test_supermovie_subtitles_linebreak_docs_match_insert_linebreak_contract_lint() -> None:
+    """PR-JH: supermovie-subtitles linebreak docs must match insert_linebreak()."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    subtitles_skill_path = repo_root / "skills" / "supermovie-subtitles" / "SKILL.md"
+    build_telop_path = template_root / "scripts" / "build_telop_data.py"
+    assert subtitles_skill_path.is_file(), "skills/supermovie-subtitles/SKILL.md not found"
+    assert build_telop_path.is_file(), "template/scripts/build_telop_data.py not found"
+
+    skill_text = subtitles_skill_path.read_text(encoding="utf-8")
+    build_text = build_telop_path.read_text(encoding="utf-8")
+    phase3_match = re.search(
+        r"## Phase 3: BudouX改行処理[\s\S]*?"
+        r"## Phase 4: 読了時間チェック",
+        skill_text,
+    )
+    insert_start = build_text.find("def insert_linebreak(")
+    insert_end = build_text.find("# ---------------- BudouX 呼び出し", insert_start)
+    assert phase3_match is not None, "supermovie-subtitles Phase 3 linebreak docs not found"
+    assert insert_start != -1 and insert_end != -1, "build_telop_data.py insert_linebreak() block not found"
+    docs_text = phase3_match.group(0)
+    insert_text = build_text[insert_start:insert_end]
+
+    required_doc_snippets = {
+        "phase title": "## Phase 3: BudouX改行処理",
+        "threshold rule": "テロップテキストの文字数が 2行化の閾値 を超えたら改行する",
+        "short threshold": "short:   10文字超 → 2行",
+        "budoux placement": "### 3-2. BudouXによる改行位置の決定",
+        "budoux guarantees": "### 3-4. BudouXが保証すること",
+        "particle boundary": "助詞の途中で切れない",
+        "proper noun boundary": "固有名詞がまとまる",
+        "no wrap section": "### 3-5. 改行しないケース",
+        "threshold no wrap": "文字数が閾値以下 → 1行のまま",
+    }
+    required_code_snippets = {
+        "max line default": "MAX_CHARS_PER_LINE = 12",
+        "threshold default": "LINE_BREAK_THRESHOLD = 10",
+        "signature": "def insert_linebreak(text, max_per_line=MAX_CHARS_PER_LINE, threshold=LINE_BREAK_THRESHOLD,",
+        "newline guard": 'if len(text) <= threshold or "\\n" in text:',
+        "breakpoints": 'breakpoints = ["、", "。", "！", "？"]',
+        "particles": 'particles_after = ["を", "に", "で", "が", "は", "と", "から", "けど", "ので", "って", "ような", "として"]',
+        "phrase positions": "phrase_pos = _phrase_boundaries(phrases) if phrases else set()",
+        "preserve and ascii guard": "return _is_inside_preserve(text, i, preserve) or _is_inside_word(text, i)",
+        "tier0 phrase strict": "tier0 = [i for i in phrase_pos",
+        "tier1 phrase relaxed": "tier1 = [i for i in phrase_pos",
+        "tier2 non phrase strict": "tier2 = [i for i in range(1, n) if not forbidden(i)",
+        "tier3 non phrase relaxed": "tier3 = [i for i in range(1, n) if not forbidden(i)",
+        "tier order": "for tier in (tier0, tier1, tier2, tier3):",
+        "candidate score": "best = max(candidates, key=lambda i: _candidate_score(text, i, target, breakpoints, particles_after))",
+        "wrapped call": "wrapped = insert_linebreak(part_text, preserve=preserve, phrases=part_phrases)",
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in docs_text:
+            errors.append(f"supermovie-subtitles linebreak docs missing {name}: {snippet}")
+    for name, snippet in required_code_snippets.items():
+        if snippet not in build_text:
+            errors.append(f"build_telop_data.py missing linebreak contract {name}: {snippet}")
+
+    docs_short_threshold_match = re.search(r"short:\s+(\d+)文字超", docs_text)
+    code_threshold_match = re.search(r"^LINE_BREAK_THRESHOLD = (\d+)$", build_text, re.MULTILINE)
+    if docs_short_threshold_match is None or code_threshold_match is None:
+        errors.append("linebreak threshold literal missing from docs or build_telop_data.py")
+    elif docs_short_threshold_match.group(1) != code_threshold_match.group(1):
+        errors.append(
+            "supermovie-subtitles short threshold drift: "
+            f"docs={docs_short_threshold_match.group(1)}, code={code_threshold_match.group(1)}"
+        )
+
+    tier_positions = [
+        insert_text.find("# tier 0:"),
+        insert_text.find("# tier 1:"),
+        insert_text.find("# tier 2:"),
+        insert_text.find("# tier 3:"),
+    ]
+    if any(pos == -1 for pos in tier_positions) or tier_positions != sorted(tier_positions):
+        errors.append("insert_linebreak() tier comments must remain ordered tier 0 -> tier 3")
+    loop_pos = insert_text.find("for tier in (tier0, tier1, tier2, tier3):")
+    best_pos = insert_text.find("best = max(candidates", loop_pos)
+    return_pos = insert_text.find('return text[:best] + "\\n" + text[best:]', best_pos)
+    if loop_pos == -1 or best_pos == -1 or return_pos == -1 or not loop_pos < best_pos < return_pos:
+        errors.append("insert_linebreak() must choose the first available tier before scoring and returning wrapped text")
+
+    phrase_pos = insert_text.find("phrase_pos = _phrase_boundaries(phrases) if phrases else set()")
+    tier0_pos = insert_text.find("tier0 = [i for i in phrase_pos")
+    tier1_pos = insert_text.find("tier1 = [i for i in phrase_pos")
+    if phrase_pos == -1 or tier0_pos == -1 or tier1_pos == -1 or not phrase_pos < tier0_pos < tier1_pos:
+        errors.append("insert_linebreak() must derive BudouX phrase boundaries before phrase-aware tiers")
+
+    assert errors == [], (
+        "supermovie-subtitles Phase 3 linebreak docs / insert_linebreak contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -23061,6 +23159,8 @@ def main() -> int:
         test_supermovie_subtitles_template_id_mapping_matches_registry_lint,
         # PR-JG (supermovie-subtitles BudouX docs stay synced with build_telop_data CLI): 1 件
         test_supermovie_subtitles_budoux_docs_match_build_telop_cli_lint,
+        # PR-JH (supermovie-subtitles linebreak docs stay synced with insert_linebreak): 1 件
+        test_supermovie_subtitles_linebreak_docs_match_insert_linebreak_contract_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
