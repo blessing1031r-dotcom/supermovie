@@ -17217,6 +17217,46 @@ def test_telop_template_registry_lookup_helpers_contract_lint() -> None:
     )
 
 
+def test_telop_template_registry_public_export_surface_contract_lint() -> None:
+    """PR-HM: telopTemplateRegistry module must expose only canonical registry API."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    registry_path = template_root / "src" / "テロップテンプレート" / "telopTemplateRegistry.tsx"
+    assert registry_path.is_file(), "telopTemplateRegistry.tsx not found"
+    raw = registry_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/テロップテンプレート/telopTemplateRegistry.tsx must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*(?:\*|\{)""", text, re.MULTILINE), (
+        "template/src/テロップテンプレート/telopTemplateRegistry.tsx must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    expected = {
+        "SubtitleData",
+        "SubtitleItem",
+        "TelopCategory",
+        "TelopComponent",
+        "TelopTemplateEntry",
+        "TelopTemplateId",
+        "findTemplateIdByDisplayName",
+        "listTemplatesByCategory",
+        "telopTemplateRegistry",
+    }
+    assert exported == expected, (
+        "template/src/テロップテンプレート/telopTemplateRegistry.tsx public export surface drift: "
+        f"expected {sorted(expected)}, got {sorted(exported)}"
+    )
+
+
 def test_telop_template_components_subtitle_data_contract_lint() -> None:
     import re
 
@@ -20212,6 +20252,8 @@ def main() -> int:
         test_telop_template_registry_component_imports_contract_lint,
         test_telop_template_registry_type_surface_contract_lint,
         test_telop_template_registry_lookup_helpers_contract_lint,
+        # PR-HM (telopTemplateRegistry module exports only canonical registry API): 1 件
+        test_telop_template_registry_public_export_surface_contract_lint,
         test_telop_template_components_subtitle_data_contract_lint,
         test_telop_template_components_subtitle_type_surface_contract_lint,
         test_telop_template_components_fade_scale_animation_contract_lint,
