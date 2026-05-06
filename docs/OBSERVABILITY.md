@@ -561,6 +561,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 260 | `template/src/Narration/useNarrationMode.ts` の public export surface が `useNarrationMode` だけに限定され、default export を持たないことを lint (`test_use_narration_mode_public_export_surface_contract_lint`、Codex 推奨 PR-GR)。Narration hook module の API surface creep を保護 | PR-GR |
 | 261 | `template/src/Narration/NarrationAudio.tsx` の public export surface が `NarrationAudioWithMode` / `NarrationAudio` に限定され、default export を持たないことを lint (`test_narration_audio_public_export_surface_contract_lint`、Codex 推奨 PR-GS)。Narration audio module の API surface creep を保護 | PR-GS |
 | 262 | `template/src/Slides/index.tsx` の public export surface が `SlideSequence` / `Slide` / `SlideSegment` / `SlideBullet` / `SlideAlignment` / `slideData` に限定され、default export を持たないことを lint (`test_slides_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GT)。Slides barrel の API surface creep を保護 | PR-GT |
+| 263 | `template/src/Title/index.ts` の public export surface が `TitleSequence` / `TitleSegment` に限定され、default export を持たないことを lint (`test_title_barrel_public_export_surface_contract_lint`、Codex 推奨 PR-GU)。Title barrel の API surface creep を保護 | PR-GU |
 
 ## Test Requirements
 
