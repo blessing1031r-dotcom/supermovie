@@ -546,6 +546,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 245 | `template/src/MainVideo.tsx` が timeline data arrays (`slideData` / `insertImageData` / `titleData` / `telopData` / `seData` / `narrationData`) や各 data module を直接 import せず、layer component / hook / config の composition に留めることを lint (`test_main_video_layer_boundary_no_data_imports_lint`、Codex consult 推奨 PR-GC)。MainVideo layer boundary contract を保護 | PR-GC |
 | 246 | `template/vitest.setup.ts` が `import '@testing-library/jest-dom/vitest';` を保持し、`template/package.json` の `devDependencies` に `@testing-library/jest-dom` が存在することを lint (`test_vitest_setup_jest_dom_import_contract_lint`、Codex 推奨 PR-GD)。Vitest setup の jest-dom matcher extension contract を保護 | PR-GD |
 | 247 | `template/src/MainVideo.tsx` が `useNarrationMode()` を 1 回だけ呼び、戻り値を `const narrationMode` に集約することを lint (`test_main_video_single_narration_hook_call_contract_lint`、Codex 推奨 PR-GE)。Narration watcher の二重登録回避 contract を保護 | PR-GE |
+| 248 | `template` 配下の JS/TS test-like files (`*.test.*` / `*.spec.*`) が `vitest.config.ts` の `include: ['src/**/*.test.{ts,tsx}']` から外れないことを lint (`test_vitest_react_test_files_match_include_contract_lint`、Codex consult 推奨 PR-GF)。React/Vitest test file inventory discovery contract を保護 | PR-GF |
 
 ## Test Requirements
 
