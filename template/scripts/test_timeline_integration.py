@@ -14627,6 +14627,151 @@ def test_template_src_relative_imports_resolve_lint() -> None:
     )
 
 
+def test_static_file_public_relative_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    src_root = template_root / "src"
+    source_files = sorted(src_root.rglob("*.ts")) + sorted(src_root.rglob("*.tsx"))
+    known_dynamic_args = {"seg.file", "mode.file"}
+
+    def uncomment(raw: str) -> str:
+        text = "\n".join(
+            line for line in raw.splitlines() if not line.lstrip().startswith("//")
+        )
+        return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+    text_by_file = {
+        path: uncomment(path.read_text(encoding="utf-8"))
+        for path in source_files
+    }
+
+    def string_consts(path: Path) -> dict[str, str]:
+        text = text_by_file[path]
+        return {
+            name: value
+            for name, _quote, value in re.findall(
+                r"""(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(['"])(.*?)\2\s*;""",
+                text,
+                re.DOTALL,
+            )
+        }
+
+    consts_by_file = {path: string_consts(path) for path in source_files}
+
+    def resolve_module(path: Path, spec: str) -> Path | None:
+        base = (path.parent / spec).resolve()
+        candidates = [base.with_suffix(ext) for ext in (".ts", ".tsx")]
+        candidates.extend(base / f"index{ext}" for ext in (".ts", ".tsx"))
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return None
+
+    def imported_consts(path: Path) -> dict[str, tuple[Path, str]]:
+        imports: dict[str, tuple[Path, str]] = {}
+        for body, spec in re.findall(
+            r"""import\s*\{([^}]*)\}\s*from\s*['"](\.[^'"]+)['"]""",
+            text_by_file[path],
+            re.DOTALL,
+        ):
+            target = resolve_module(path, spec)
+            if target is None:
+                continue
+            for token in body.replace("\n", " ").split(","):
+                token = token.strip()
+                if not token or token.startswith("type "):
+                    continue
+                token = token.removeprefix("type ").strip()
+                if " as " in token:
+                    imported, local = [part.strip() for part in token.split(" as ", 1)]
+                else:
+                    imported = local = token
+                imports[local] = (target, imported)
+        return imports
+
+    imports_by_file = {path: imported_consts(path) for path in source_files}
+
+    def static_file_calls(text: str) -> list[tuple[str, int]]:
+        calls: list[tuple[str, int]] = []
+        for match in re.finditer(r"\bstaticFile\s*\(", text):
+            start = match.end()
+            depth = 1
+            i = start
+            quote: str | None = None
+            while i < len(text):
+                ch = text[i]
+                if quote:
+                    if ch == "\\":
+                        i += 2
+                        continue
+                    if ch == quote:
+                        quote = None
+                    i += 1
+                    continue
+                if ch in ("'", '"', "`"):
+                    quote = ch
+                elif ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                    if depth == 0:
+                        line = text.count("\n", 0, match.start()) + 1
+                        calls.append((text[start:i].strip(), line))
+                        break
+                i += 1
+        return calls
+
+    def check_public_relative(label: str, value: str, errors: list[str]) -> None:
+        if value.startswith("/"):
+            errors.append(f"{label}: staticFile path must not start with '/': {value!r}")
+        if value == "public" or value.startswith("public/"):
+            errors.append(f"{label}: staticFile path must not include public/ prefix: {value!r}")
+        if any(part == ".." for part in value.split("/")):
+            errors.append(f"{label}: staticFile path must not contain '..': {value!r}")
+
+    def resolve_identifier(path: Path, name: str) -> str | None:
+        if name in consts_by_file[path]:
+            return consts_by_file[path][name]
+        imported = imports_by_file[path].get(name)
+        if imported is None:
+            return None
+        target, imported_name = imported
+        return consts_by_file.get(target, {}).get(imported_name)
+
+    errors: list[str] = []
+    for path in source_files:
+        rel = path.relative_to(template_root)
+        for arg, line in static_file_calls(text_by_file[path]):
+            label = f"{rel}:{line}"
+            string_match = re.fullmatch(r"""(['"])(.*?)\1""", arg, re.DOTALL)
+            if string_match:
+                check_public_relative(label, string_match.group(2), errors)
+                continue
+            template_match = re.fullmatch(r"`([\s\S]*)`", arg)
+            if template_match:
+                for part in re.split(r"\$\{[^}]+\}", template_match.group(1)):
+                    if part:
+                        check_public_relative(label, part, errors)
+                continue
+            identifier_match = re.fullmatch(r"[A-Za-z_$][\w$]*", arg)
+            if identifier_match:
+                value = resolve_identifier(path, arg)
+                if value is None:
+                    errors.append(f"{label}: staticFile({arg}) constant could not be resolved")
+                else:
+                    check_public_relative(f"{label} ({arg})", value, errors)
+                continue
+            if arg not in known_dynamic_args:
+                errors.append(
+                    f"{label}: unsupported staticFile argument {arg!r}; "
+                    "use a literal, template literal, or resolvable string constant"
+                )
+    assert errors == [], (
+        "template/src staticFile public-relative contract drift:\n" + "\n".join(errors)
+    )
+
+
 def test_template_component_barrel_exports_contract_lint() -> None:
     import re
 
@@ -18511,6 +18656,8 @@ def main() -> int:
         test_tsconfig_compiler_options_contract_lint,
         # PR-BT (relative imports in template/src must resolve to existing files): 1 件
         test_template_src_relative_imports_resolve_lint,
+        # PR-GA (staticFile args must stay public-relative): 1 件
+        test_static_file_public_relative_contract_lint,
         test_template_component_barrel_exports_contract_lint,
         test_vitest_setup_files_resolve_lint,
         test_eslint_config_no_explicit_any_contract_lint,
