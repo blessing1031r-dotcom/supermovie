@@ -14842,6 +14842,24 @@ def test_videoconfig_required_exports_present_lint() -> None:
     )
 
 
+def test_videoconfig_source_duration_frames_numeric_export_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    vc_path = template_root / "src" / "videoConfig.ts"
+    assert vc_path.is_file(), "template/src/videoConfig.ts not found"
+    raw = vc_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    match = re.search(r"\bexport\s+const\s+SOURCE_DURATION_FRAMES\s*=\s*(\d+)\s*;", text)
+    assert match, (
+        "template/src/videoConfig.ts SOURCE_DURATION_FRAMES contract drift: "
+        "missing numeric 'export const SOURCE_DURATION_FRAMES = <frames>;'"
+    )
+    assert int(match.group(1)) > 0, (
+        "template/src/videoConfig.ts SOURCE_DURATION_FRAMES must be a positive frame count"
+    )
+
+
 def test_package_json_identity_contract_lint() -> None:
     """PR-BZ: template/package.json must have private=true, license=UNLICENSED, non-empty name/version.
     Catches accidental publishability or malformed identity fields that break package managers.
@@ -17472,6 +17490,7 @@ def main() -> int:
         test_package_json_remotion_version_parity_lint,
         test_package_json_tailwind_v4_dependencies_lint,
         test_videoconfig_required_exports_present_lint,
+        test_videoconfig_source_duration_frames_numeric_export_lint,
         test_package_json_identity_contract_lint,
         test_template_src_required_directories_lint,
         test_docs_required_files_present_lint,
