@@ -18129,6 +18129,109 @@ def test_supermovie_slides_tone_style_docs_match_build_slide_data_lint() -> None
     )
 
 
+def test_supermovie_slides_command_docs_match_script_cli_lint() -> None:
+    """PR-IO: supermovie-slides command docs must match slide script CLI."""
+    import ast
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-slides" / "SKILL.md"
+    build_script_path = template_root / "scripts" / "build_slide_data.py"
+    plan_script_path = template_root / "scripts" / "generate_slide_plan.py"
+    assert skill_path.is_file(), "skills/supermovie-slides/SKILL.md not found"
+    assert build_script_path.is_file(), "template/scripts/build_slide_data.py not found"
+    assert plan_script_path.is_file(), "template/scripts/generate_slide_plan.py not found"
+
+    def argparse_call(tree: ast.AST, option: str) -> ast.Call:
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "add_argument"
+                and any(
+                    isinstance(arg, ast.Constant)
+                    and isinstance(arg.value, str)
+                    and arg.value == option
+                    for arg in node.args
+                )
+            ):
+                return node
+        raise AssertionError(f"{option} argparse definition not found")
+
+    def keyword_value(call: ast.Call, name: str):
+        for keyword in call.keywords:
+            if keyword.arg == name:
+                return ast.literal_eval(keyword.value)
+        return None
+
+    def argparse_options(tree: ast.AST) -> set[str]:
+        options: set[str] = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "add_argument"
+            ):
+                for arg in node.args:
+                    if (
+                        isinstance(arg, ast.Constant)
+                        and isinstance(arg.value, str)
+                        and arg.value.startswith("--")
+                    ):
+                        options.add(arg.value)
+        return options
+
+    build_text = build_script_path.read_text(encoding="utf-8")
+    plan_text = plan_script_path.read_text(encoding="utf-8")
+    build_tree = ast.parse(build_text, filename="build_slide_data.py")
+    plan_tree = ast.parse(plan_text, filename="generate_slide_plan.py")
+
+    mode_call = argparse_call(build_tree, "--mode")
+    expected_mode_syntax = "|".join(keyword_value(mode_call, "choices"))
+    assert keyword_value(mode_call, "default") == "topic", (
+        "build_slide_data.py --mode default drifted from supermovie-slides docs"
+    )
+    for option in ("--plan", "--strict-plan"):
+        argparse_call(build_tree, option)
+    argparse_call(plan_tree, "--output")
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    command_match = re.search(
+        r"## 実行コマンド\s*```bash\n([\s\S]*?)\n```",
+        skill_text,
+    )
+    assert command_match is not None, "supermovie-slides command block not found"
+    command_block = command_match.group(1)
+    documented_options = set(re.findall(r"--[a-z][a-z0-9-]*", command_block))
+    implementation_options = argparse_options(build_tree) | argparse_options(plan_tree)
+    expected_command_snippets = {
+        "argument-hint": f"argument-hint: [プロジェクトパス] [--mode {expected_mode_syntax}]",
+        "default build": "python3 <PROJECT>/scripts/build_slide_data.py",
+        "mode topic": "python3 <PROJECT>/scripts/build_slide_data.py --mode topic",
+        "plan generation": "ANTHROPIC_API_KEY=sk-ant-... python3 <PROJECT>/scripts/generate_slide_plan.py \\",
+        "plan output": "--output <PROJECT>/slide_plan.json",
+        "plan build": "python3 <PROJECT>/scripts/build_slide_data.py --plan <PROJECT>/slide_plan.json",
+        "strict plan": "--strict-plan で plan 検証失敗時 exit 2 (default は warning + deterministic fallback)",
+    }
+
+    errors: list[str] = []
+    for option in ("--mode", "--plan", "--strict-plan", "--output"):
+        if option not in documented_options:
+            errors.append(f"supermovie-slides command docs missing option: {option}")
+    for option in sorted(documented_options):
+        if option not in implementation_options:
+            errors.append(f"supermovie-slides command docs mention unimplemented option: {option}")
+    for name, snippet in expected_command_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-slides command docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-slides command docs / script CLI contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
     """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
     import re
@@ -21603,6 +21706,8 @@ def main() -> int:
         test_supermovie_slides_validation_docs_match_build_slide_data_lint,
         # PR-IN (supermovie-slides tone style docs stay synced with build_slide_data): 1 件
         test_supermovie_slides_tone_style_docs_match_build_slide_data_lint,
+        # PR-IO (supermovie-slides command docs stay synced with slide script CLI): 1 件
+        test_supermovie_slides_command_docs_match_script_cli_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
