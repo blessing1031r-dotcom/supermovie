@@ -508,6 +508,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 207 | `template/src/index.css` が Tailwind v4 entrypoint の `@import "tailwindcss";` を保持することを lint (`test_template_index_css_tailwind_v4_entrypoint_lint`、Codex 推奨 PR-EQ)。Tailwind CSS entry contract を保護 | PR-EQ |
 | 208 | `template/package.json` の `dependencies` が `tailwindcss` と `@remotion/tailwind-v4` を含み、両方とも v4-compatible spec であることを lint (`test_package_json_tailwind_v4_dependencies_lint`、Codex 推奨 PR-ER)。Tailwind v4 dependency contract を保護 | PR-ER |
 | 209 | `template/src/メインテロップ` / `強調テロップ` / `ネガティブテロップ` の 30 template component が Props interface の `subtitleData: SubtitleData`、`React.FC<Props>` export、`subtitleData.subtitles.find(...)` active lookup、`currentSubtitle` 不在時 `return null`、`currentSubtitle.lines.map(...)` render を保つことを lint (`test_telop_template_components_subtitle_data_contract_lint`、Codex consult 推奨 PR-ES)。Telop registry component subtitleData contract を保護 | PR-ES |
+| 210 | `template/src/テロップテンプレート/telopTypes.ts` が `TelopTemplateId` を `./telopTemplateRegistry` から type import し、`templateId?: TelopTemplateId` と `animation?: 'none' | 'slideIn' | 'fadeOnly' | 'slideFromLeft' | 'fadeBlurFromBottom' | 'slideLeftFadeBlur' | 'fadeFromRight' | 'fadeFromLeft' | 'charByChar'` を保つことを lint (`test_telop_segment_template_id_and_animation_contract_lint`、Codex 推奨 PR-ET)。TelopSegment registry templateId / animation union contract を保護 | PR-ET |
 
 ## Test Requirements
 

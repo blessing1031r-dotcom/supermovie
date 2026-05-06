@@ -16642,6 +16642,48 @@ def test_telop_segment_schema_contract_lint() -> None:
     )
 
 
+def test_telop_segment_template_id_and_animation_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    types_file = template_root / "src" / "テロップテンプレート" / "telopTypes.ts"
+    assert types_file.is_file(), "template/src/テロップテンプレート/telopTypes.ts not found"
+    raw = types_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    if not re.search(
+        r"""import\s+type\s*\{[^}]*\bTelopTemplateId\b[^}]*\}\s*from\s*['"]\.\/telopTemplateRegistry['"]""",
+        text,
+    ):
+        errors.append("telopTypes.ts: missing type import of TelopTemplateId from './telopTemplateRegistry'")
+    if not re.search(r"\btemplateId\??\s*:\s*TelopTemplateId\b", text):
+        errors.append("TelopSegment: templateId?: TelopTemplateId not found")
+    animation_match = re.search(r"\banimation\??\s*:\s*([^;]+);", text, re.DOTALL)
+    expected_animation_values = {
+        "none",
+        "slideIn",
+        "fadeOnly",
+        "slideFromLeft",
+        "fadeBlurFromBottom",
+        "slideLeftFadeBlur",
+        "fadeFromRight",
+        "fadeFromLeft",
+        "charByChar",
+    }
+    if animation_match is None:
+        errors.append("TelopSegment: animation union not found")
+    else:
+        actual_animation_values = set(re.findall(r"""['"]([^'"]+)['"]""", animation_match.group(1)))
+        missing = sorted(expected_animation_values - actual_animation_values)
+        extra = sorted(actual_animation_values - expected_animation_values)
+        if missing or extra:
+            errors.append(f"TelopSegment: animation union drift (missing={missing}, extra={extra})")
+    assert errors == [], (
+        "template/src/テロップテンプレート/telopTypes.ts templateId/animation contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_telop_config_types_export_style_shape_and_slide_direction_union() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17482,6 +17524,7 @@ def main() -> int:
         test_narration_segment_required_fields_contract_lint,
         test_title_data_toframe_uses_video_config_fps_lint,
         test_telop_segment_schema_contract_lint,
+        test_telop_segment_template_id_and_animation_contract_lint,
         test_telop_config_types_export_style_shape_and_slide_direction_union,
         test_sound_effect_schema_and_se_data_export_lint,
         test_telop_styles_animation_exports_motion_contract_lint,
