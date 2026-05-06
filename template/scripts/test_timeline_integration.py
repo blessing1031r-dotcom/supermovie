@@ -12810,6 +12810,61 @@ def test_readme_quickstart_workflow_matches_claude_pipeline_lint() -> None:
     )
 
 
+def test_skill_frontmatter_required_fields_lint() -> None:
+    """PR-AF: every skills/*/SKILL.md frontmatter must have non-empty required fields:
+    name, description, argument-hint, allowed-tools.
+    Also validates that frontmatter is parseable (--- delimited block exists).
+    """
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    skills_dir = repo_root / "skills"
+    required_fields = ("name", "description", "argument-hint", "allowed-tools")
+    errors: list[str] = []
+
+    for skill_path in sorted(skills_dir.iterdir()):
+        if not skill_path.is_dir():
+            continue
+        skill_md_path = skill_path / "SKILL.md"
+        if not skill_md_path.exists():
+            continue
+        content = skill_md_path.read_text(encoding="utf-8")
+
+        # Check frontmatter block exists
+        fm_m = re.match(r"^---\n(.*?)^---", content, re.MULTILINE | re.DOTALL)
+        if not fm_m:
+            errors.append(f"{skill_path.name}/SKILL.md: missing YAML frontmatter (--- block)")
+            continue
+        fm_block = fm_m.group(1)
+
+        for field in required_fields:
+            # Field key must exist in frontmatter
+            field_m = re.search(rf"^{re.escape(field)}:\s*(.+)", fm_block, re.MULTILINE)
+            if not field_m:
+                # Multi-line value (e.g. description: |)
+                multiline_m = re.search(
+                    rf"^{re.escape(field)}:\s*\|\s*\n(\s+\S)",
+                    fm_block,
+                    re.MULTILINE,
+                )
+                if not multiline_m:
+                    errors.append(
+                        f"{skill_path.name}/SKILL.md: frontmatter missing or empty '{field}'"
+                    )
+            else:
+                # Inline value must be non-empty
+                value = field_m.group(1).strip()
+                if not value:
+                    errors.append(
+                        f"{skill_path.name}/SKILL.md: frontmatter '{field}' is empty"
+                    )
+
+    assert not errors, (
+        f"SKILL.md frontmatter required fields missing ({len(errors)} error(s)):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13006,6 +13061,8 @@ def main() -> int:
         test_claude_pipeline_commands_have_skill_and_readme_coverage_lint,
         # PR-AE (README quickstart workflow sentence includes all pipeline steps in order): 1 件
         test_readme_quickstart_workflow_matches_claude_pipeline_lint,
+        # PR-AF (skill frontmatter required fields lint): 1 件
+        test_skill_frontmatter_required_fields_lint,
     ]
     failed = []
     for t in tests:
