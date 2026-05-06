@@ -550,6 +550,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 249 | `template/src/Root.tsx` の最初の import が `import "./index.css";` であり、global CSS side-effect entrypoint を component/config import より前に保持することを lint (`test_root_css_import_first_contract_lint`、Codex 推奨 PR-GG)。Root global CSS import order contract を保護 | PR-GG |
 | 250 | `template/src/Narration/useNarrationMode*.test.tsx` 各 file が `import { useNarrationMode } from "./useNarrationMode";` より前に `vi.mock("remotion", ...)` を宣言することを lint (`test_vitest_use_narration_mode_tests_mock_remotion_before_sut_import_lint`、Codex consult 推奨 PR-GH)。useNarrationMode React tests の Remotion mock isolation/order contract を保護 | PR-GH |
 | 251 | `template/src/Narration/useNarrationMode*.test.tsx` 各 file が `beforeEach` を `vitest` から import し、`beforeEach` 内で `invalidateNarrationMode()` を呼ぶことを lint (`test_vitest_use_narration_mode_tests_reset_cache_before_each_lint`、Codex 推奨 PR-GI)。useNarrationMode React tests の module-scope mode cache reset contract を保護 | PR-GI |
+| 252 | `template/src/Narration/useNarrationMode*.test.tsx` 各 file が `import { useNarrationMode } from "./useNarrationMode";` より前に `vi.mock("./narrationData", ...)` を宣言することを lint (`test_vitest_use_narration_mode_tests_mock_narration_data_before_sut_import_lint`、Codex consult 推奨 PR-GJ)。useNarrationMode React tests の narrationData fixture mock isolation/order contract を保護 | PR-GJ |
 
 ## Test Requirements
 
