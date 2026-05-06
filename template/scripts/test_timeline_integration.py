@@ -18192,6 +18192,82 @@ def test_supermovie_cut_timeline_helper_docs_match_vad_mapping_contract_lint() -
     )
 
 
+def test_timeline_transcript_segment_validation_docs_match_schema_contract_lint() -> None:
+    """PR-JO: timeline.py transcript segment validation must match transcript schema docs."""
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    claude_path = repo_root / "CLAUDE.md"
+    slides_skill_path = repo_root / "skills" / "supermovie-slides" / "SKILL.md"
+    timeline_path = template_root / "scripts" / "timeline.py"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert slides_skill_path.is_file(), "skills/supermovie-slides/SKILL.md not found"
+    assert timeline_path.is_file(), "template/scripts/timeline.py not found"
+
+    claude_text = claude_path.read_text(encoding="utf-8")
+    slides_text = slides_skill_path.read_text(encoding="utf-8")
+    timeline_text = timeline_path.read_text(encoding="utf-8")
+    claude_schema_match = re.search(
+        r"### transcript\.json / transcript_fixed\.json\s*```json\n([\s\S]*?)\n```",
+        claude_text,
+    )
+    assert claude_schema_match is not None, "CLAUDE.md transcript schema block not found"
+
+    claude_schema = json.loads(claude_schema_match.group(1))
+    expected_segment_keys = ["text", "start", "end"]
+    errors: list[str] = []
+    if not claude_schema.get("segments") or list(claude_schema["segments"][0].keys()) != expected_segment_keys:
+        got = list(claude_schema.get("segments", [{}])[0].keys()) if claude_schema.get("segments") else []
+        errors.append(f"CLAUDE.md transcript segments[] keys drift: expected {expected_segment_keys}, got {got}")
+
+    required_timeline_snippets = {
+        "error class": "class TranscriptSegmentError(ValueError):",
+        "single helper": "def validate_transcript_segment(",
+        "batch helper": "def validate_transcript_segments(",
+        "dict guard": "if not isinstance(seg, dict):",
+        "text getter": 'text = seg.get("text")',
+        "text type": "if text is not None and not isinstance(text, str):",
+        "start getter": 's = seg.get("start")',
+        "end getter": 'e = seg.get("end")',
+        "start end numeric loop": 'for k, v in (("start", s), ("end", e)):',
+        "optional numeric": "if v is not None and not isinstance(v, (int, float)):",
+        "strict timing switch": "if require_timing:",
+        "strict start": "if not isinstance(s, (int, float)):",
+        "strict end": "if not isinstance(e, (int, float)):",
+        "start end order": "if isinstance(s, (int, float)) and isinstance(e, (int, float)) and s > e:",
+        "segments list guard": "if not isinstance(segments, list):",
+        "batch delegates": "validate_transcript_segment(seg, idx=i, require_timing=require_timing)",
+    }
+    required_claude_snippets = {
+        "schema heading": "### transcript.json / transcript_fixed.json",
+        "segments schema": '"segments": [',
+        "time unit": "- `start` / `end` は**ミリ秒**",
+        "fixed has fix_meta": "- transcript_fixed.json は追加で `fix_meta` を持つ",
+    }
+    required_slides_snippets = {
+        "segments input": "- `<PROJECT>/transcript_fixed.json` から `segments[]` (start/end ms + text) と `words[]`",
+        "topic grouping": "連続する segments を「話題」単位にグループ化する",
+        "segment fallback": "1 transcript segment = 1 slide。",
+        "frame fallback": "cutData が存在しない場合は単純に `ms / 1000 * FPS`",
+    }
+    for name, snippet in required_timeline_snippets.items():
+        if snippet not in timeline_text:
+            errors.append(f"template/scripts/timeline.py missing transcript segment validation {name}: {snippet}")
+    for name, snippet in required_claude_snippets.items():
+        if snippet not in claude_text:
+            errors.append(f"CLAUDE.md transcript schema docs missing {name}: {snippet}")
+    for name, snippet in required_slides_snippets.items():
+        if snippet not in slides_text:
+            errors.append(f"supermovie-slides transcript segment docs missing {name}: {snippet}")
+
+    assert errors == [], (
+        "timeline.py transcript segment validation / transcript schema docs drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_se_style_matrix_matches_telop_style_union_lint() -> None:
     """PR-IA: supermovie-se style/SE matrix must match TelopSegment.style."""
     import re
@@ -23720,6 +23796,8 @@ def main() -> int:
         test_supermovie_cut_vad_result_schema_docs_match_claude_path_contract_lint,
         # PR-JN (supermovie-cut docs stay synced with timeline.py VAD mapping helpers): 1 件
         test_supermovie_cut_timeline_helper_docs_match_vad_mapping_contract_lint,
+        # PR-JO (timeline.py transcript segment validation stays synced with transcript schema docs): 1 件
+        test_timeline_transcript_segment_validation_docs_match_schema_contract_lint,
         # PR-IA (supermovie-se style matrix stays synced with TelopSegment.style): 1 件
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
