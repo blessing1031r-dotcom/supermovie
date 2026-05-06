@@ -18819,6 +18819,35 @@ def test_seplayer_public_export_surface_contract_lint() -> None:
     )
 
 
+def test_se_data_public_export_surface_contract_lint() -> None:
+    """PR-HB: seData module must export only the seData array."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    data_file = template_root / "src" / "SoundEffects" / "seData.ts"
+    assert data_file.is_file(), "template/src/SoundEffects/seData.ts not found"
+    raw = data_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/SoundEffects/seData.ts must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*\{""", text, re.MULTILINE), (
+        "template/src/SoundEffects/seData.ts must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    assert exported == {"seData"}, (
+        "template/src/SoundEffects/seData.ts public export surface drift: "
+        f"expected ['seData'], got {sorted(exported)}"
+    )
+
+
 def test_se_data_placeholder_empty_array_contract_lint() -> None:
     import re
 
@@ -19918,6 +19947,8 @@ def main() -> int:
         test_sound_effect_schema_and_se_data_export_lint,
         # PR-HA (SEPlayer module exports only the SoundEffect type): 1 件
         test_seplayer_public_export_surface_contract_lint,
+        # PR-HB (seData module exports only the seData array): 1 件
+        test_se_data_public_export_surface_contract_lint,
         test_se_data_placeholder_empty_array_contract_lint,
         test_telop_styles_animation_exports_motion_contract_lint,
         test_telop_styles_template_exports_and_config_helpers_lint,
