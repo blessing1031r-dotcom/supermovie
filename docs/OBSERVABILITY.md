@@ -574,6 +574,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 273 | `template/src/Title/Title.tsx` の public export surface が `TitleSegment` / `TitleSequence` に限定され、default export / re-export を持たないことを lint (`test_title_public_export_surface_contract_lint`、Codex 推奨 PR-HE)。Title module の API surface creep を保護 | PR-HE |
 | 274 | `template/src/Slides/slideData.ts` の public export surface が `slideData` に限定され、default export / re-export を持たないことを lint (`test_slide_data_public_export_surface_contract_lint`、Codex 推奨 PR-HF)。Slide data module の API surface creep を保護 | PR-HF |
 | 275 | `template/src/Slides/types.ts` の public export surface が `SlideAlignment` / `SlideBullet` / `SlideSegment` に限定され、default export / re-export を持たないことを lint (`test_slide_types_public_export_surface_contract_lint`、Codex 推奨 PR-HG)。Slides type module の API surface creep を保護 | PR-HG |
+| 276 | `template/src/Title/titleData.ts` の public export surface が `toFrame` / `titleData` に限定され、default export / re-export を持たないことを lint (`test_title_data_public_export_surface_contract_lint`、Codex 推奨 PR-HH)。Title data module の API surface creep を保護 | PR-HH |
 
 ## Test Requirements
 

@@ -19130,6 +19130,36 @@ def test_title_data_placeholder_empty_array_and_toframe_export_contract_lint() -
     )
 
 
+def test_title_data_public_export_surface_contract_lint() -> None:
+    """PR-HH: titleData module must export only toFrame and titleData."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    title_data_file = template_root / "src" / "Title" / "titleData.ts"
+    assert title_data_file.is_file(), "template/src/Title/titleData.ts not found"
+    raw = title_data_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/Title/titleData.ts must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*\{""", text, re.MULTILINE), (
+        "template/src/Title/titleData.ts must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    expected = {"toFrame", "titleData"}
+    assert exported == expected, (
+        "template/src/Title/titleData.ts public export surface drift: "
+        f"expected {sorted(expected)}, got {sorted(exported)}"
+    )
+
+
 def test_slide_data_exports_typed_empty_array_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -20107,6 +20137,8 @@ def main() -> int:
         test_telop_styles_css_helper_body_contract_lint,
         test_title_segment_schema_and_title_data_typed_export_contract_lint,
         test_title_data_placeholder_empty_array_and_toframe_export_contract_lint,
+        # PR-HH (titleData module exports only toFrame and titleData): 1 件
+        test_title_data_public_export_surface_contract_lint,
         test_slide_data_exports_typed_empty_array_lint,
         # PR-HF (slideData module exports only the slideData array): 1 件
         test_slide_data_public_export_surface_contract_lint,
