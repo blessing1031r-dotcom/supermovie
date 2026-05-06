@@ -17742,6 +17742,59 @@ def test_claude_insert_image_schema_matches_image_segment_contract_lint() -> Non
     )
 
 
+def test_claude_cut_data_schema_matches_supermovie_cut_skill_lint() -> None:
+    """PR-IH: CLAUDE.md cutData schema must match supermovie-cut's generated schema."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    claude_path = repo_root / "CLAUDE.md"
+    skill_path = repo_root / "skills" / "supermovie-cut" / "SKILL.md"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert skill_path.is_file(), "skills/supermovie-cut/SKILL.md not found"
+
+    def cut_segment_fields(type_text: str, source: str) -> list[tuple[str, str, str]]:
+        match = re.search(r"\b(?:export\s+)?interface\s+CutSegment\s*\{([\s\S]*?)\}", type_text)
+        assert match is not None, f"{source}: CutSegment interface block not found"
+        return [
+            (name, optional, typ.strip())
+            for name, optional, typ in re.findall(r"^\s*(\w+)(\?)?\s*:\s*([^;]+);", match.group(1), re.MULTILINE)
+        ]
+
+    claude_text = claude_path.read_text(encoding="utf-8")
+    claude_match = re.search(
+        r"### cutData\.ts（CutSegment型）\s*```typescript\s*([\s\S]*?)```",
+        claude_text,
+    )
+    assert claude_match is not None, "CLAUDE.md cutData.ts CutSegment schema code block not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    skill_match = re.search(
+        r"### 5-1\. cutData\.ts 生成[\s\S]*?```typescript\s*([\s\S]*?)```",
+        skill_text,
+    )
+    assert skill_match is not None, "supermovie-cut SKILL.md cutData.ts generation code block not found"
+
+    actual_fields = cut_segment_fields(claude_match.group(1), "CLAUDE.md")
+    skill_fields = cut_segment_fields(skill_match.group(1), "skills/supermovie-cut/SKILL.md")
+    expected_fields = [
+        ("id", "", "number"),
+        ("originalStart", "", "number"),
+        ("originalEnd", "", "number"),
+        ("playbackStart", "", "number"),
+        ("playbackEnd", "", "number"),
+    ]
+    errors: list[str] = []
+    if skill_fields != expected_fields:
+        errors.append(f"supermovie-cut CutSegment schema drift: expected {expected_fields}, got {skill_fields}")
+    if actual_fields != skill_fields:
+        errors.append(f"CLAUDE.md CutSegment schema drift: expected {skill_fields}, got {actual_fields}")
+
+    assert errors == [], (
+        "CLAUDE.md cutData CutSegment schema / supermovie-cut skill contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
     """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
     import re
@@ -21202,6 +21255,8 @@ def main() -> int:
         test_claude_title_data_schema_matches_title_segment_contract_lint,
         # PR-IG (CLAUDE.md insertImageData ImageSegment schema stays synced with implementation): 1 件
         test_claude_insert_image_schema_matches_image_segment_contract_lint,
+        # PR-IH (CLAUDE.md cutData CutSegment schema stays synced with supermovie-cut): 1 件
+        test_claude_cut_data_schema_matches_supermovie_cut_skill_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
