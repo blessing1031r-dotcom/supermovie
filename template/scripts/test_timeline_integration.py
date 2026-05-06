@@ -14627,6 +14627,69 @@ def test_template_src_relative_imports_resolve_lint() -> None:
     )
 
 
+def test_template_component_barrel_exports_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    expected = {
+        "src/Slides/index.tsx": {
+            "./SlideSequence": {"SlideSequence"},
+            "./Slide": {"Slide"},
+            "./types": {"SlideSegment", "SlideBullet", "SlideAlignment"},
+            "./slideData": {"slideData"},
+        },
+        "src/Title/index.ts": {
+            "./Title": {"TitleSequence", "TitleSegment"},
+        },
+        "src/InsertImage/index.ts": {
+            "./InsertImage": {"InsertImage"},
+            "./ImageSequence": {"ImageSequence"},
+            "./types": {"ImageSegment"},
+        },
+        "src/Narration/index.ts": {
+            "./NarrationAudio": {"NarrationAudio", "NarrationAudioWithMode"},
+            "./narrationData": {"narrationData"},
+            "./mode": {
+                "getNarrationMode",
+                "invalidateNarrationMode",
+                "NARRATION_LEGACY_FILE",
+                "NarrationMode",
+            },
+            "./useNarrationMode": {"useNarrationMode"},
+            "./types": {"NarrationSegment"},
+        },
+    }
+    export_re = re.compile(
+        r"""export\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]""",
+        re.DOTALL,
+    )
+    errors: list[str] = []
+    for rel_path, source_expectations in expected.items():
+        path = template_root / rel_path
+        assert path.is_file(), f"template/{rel_path} not found"
+        raw = path.read_text(encoding="utf-8")
+        text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+        exports_by_source: dict[str, set[str]] = {}
+        for body, source in export_re.findall(text):
+            names = {
+                token.strip().split(" as ", 1)[0].strip()
+                for token in body.replace("\n", " ").split(",")
+                if token.strip()
+            }
+            exports_by_source.setdefault(source, set()).update(names)
+        for source, names in source_expectations.items():
+            exported = exports_by_source.get(source, set())
+            missing = sorted(names - exported)
+            if missing:
+                errors.append(
+                    f"{rel_path}: missing export(s) from {source}: {missing} "
+                    f"(got {sorted(exported)})"
+                )
+    assert errors == [], (
+        "template component barrel export contract drift:\n" + "\n".join(errors)
+    )
+
+
 def test_vitest_setup_files_resolve_lint() -> None:
     """PR-BU: vitest.config.ts setupFiles entries must resolve to existing files.
     Catches renamed/moved setup files that silently break 'npm run test:react'.
@@ -17226,6 +17289,7 @@ def main() -> int:
         test_tsconfig_compiler_options_contract_lint,
         # PR-BT (relative imports in template/src must resolve to existing files): 1 件
         test_template_src_relative_imports_resolve_lint,
+        test_template_component_barrel_exports_contract_lint,
         test_vitest_setup_files_resolve_lint,
         test_eslint_config_no_explicit_any_contract_lint,
         test_remotion_config_contract_lint,
