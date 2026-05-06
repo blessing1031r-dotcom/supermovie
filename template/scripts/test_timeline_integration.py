@@ -16368,6 +16368,35 @@ def test_bgm_props_default_volume_contract_lint() -> None:
     )
 
 
+def test_slide_canonical_imports_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    slide_file = template_root / "src" / "Slides" / "Slide.tsx"
+    assert slide_file.is_file(), "template/src/Slides/Slide.tsx not found"
+    raw = slide_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    remotion_import = re.search(r"""import\s*\{(?P<body>[^}]*)\}\s*from\s*['"]remotion['"]""", text)
+    if remotion_import is None:
+        errors.append("Slide.tsx: no named import from remotion found")
+    else:
+        remotion_body = remotion_import.group("body")
+        for sym in ("AbsoluteFill", "useCurrentFrame", "interpolate"):
+            if not re.search(rf"\b{sym}\b", remotion_body):
+                errors.append(f"Slide.tsx: {sym} not imported from remotion")
+    if not re.search(
+        r"""import\s+type\s*\{\s*SlideSegment\s*\}\s*from\s*['"]\.\/types['"]""",
+        text,
+    ):
+        errors.append("Slide.tsx: type SlideSegment must be imported from ./types")
+    assert errors == [], (
+        "template/src/Slides/Slide.tsx import contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_slide_uses_sequence_local_frame_without_startframe_offset() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17940,6 +17969,7 @@ def main() -> int:
         # PR-CT (BGM.tsx uses BGM_FILE constant for both presence check and audio src lint): 1 件
         test_bgm_file_constant_is_single_source_for_presence_check_and_audio_src,
         test_bgm_props_default_volume_contract_lint,
+        test_slide_canonical_imports_contract_lint,
         test_slide_uses_sequence_local_frame_without_startframe_offset,
         test_slide_style_defaults_and_alignment_contract_lint,
         test_slide_content_render_contract_lint,
