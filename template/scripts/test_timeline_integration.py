@@ -13999,6 +13999,52 @@ def test_markdown_local_links_resolve_lint() -> None:
     assert errors == [], "Markdown local link resolution lint failed:\n" + "\n".join(errors)
 
 
+def test_markdown_heading_level_skip_lint() -> None:
+    """PR-BE: No heading in README.md, CLAUDE.md, docs/OBSERVABILITY.md, or
+    skills/*/SKILL.md may skip a level (e.g. H1 -> H3 without H2 in between).
+    Fenced code blocks and YAML frontmatter are excluded before checking.
+    """
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    target_files: list[Path] = [
+        repo_root / "README.md",
+        repo_root / "CLAUDE.md",
+        repo_root / "docs" / "OBSERVABILITY.md",
+    ]
+    for skill_path in sorted((repo_root / "skills").iterdir()):
+        if skill_path.is_dir():
+            skill_md = skill_path / "SKILL.md"
+            if skill_md.is_file():
+                target_files.append(skill_md)
+
+    errors: list[str] = []
+    FENCE_RE = re.compile(r"^(?:```|~~~)")
+
+    for fpath in target_files:
+        if not fpath.is_file():
+            continue
+        content = fpath.read_text(encoding="utf-8")
+        # strip YAML frontmatter
+        content = re.sub(r"\A---\s*\n.*?^---\s*\n", "", content, flags=re.MULTILINE | re.DOTALL)
+        prev_level = 0
+        in_fence = False
+        for lineno, line in enumerate(content.splitlines(), 1):
+            if FENCE_RE.match(line):
+                in_fence = not in_fence
+            if in_fence or not line.startswith("#"):
+                continue
+            level = len(line) - len(line.lstrip("#"))
+            if prev_level and level > prev_level + 1:
+                rel = fpath.relative_to(repo_root)
+                errors.append(
+                    f"{rel}:{lineno}: heading level skip H{prev_level} -> H{level}"
+                )
+            prev_level = level
+
+    assert errors == [], "Markdown heading level skip lint failed:\n" + "\n".join(errors)
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -14245,6 +14291,8 @@ def main() -> int:
         test_skill_directory_name_canonical_slug_lint,
         # PR-BD (markdown local links resolve lint: README/CLAUDE.md/OBSERVABILITY/SKILL.md): 1 件
         test_markdown_local_links_resolve_lint,
+        # PR-BE (markdown heading level skip lint: no H1->H3 etc. in doc files): 1 件
+        test_markdown_heading_level_skip_lint,
     ]
     failed = []
     for t in tests:
