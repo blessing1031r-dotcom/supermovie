@@ -16101,6 +16101,61 @@ def test_title_uses_sequence_local_frame_without_startframe_offset_lint() -> Non
     )
 
 
+def test_title_visual_style_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    title_file = template_root / "src" / "Title" / "Title.tsx"
+    assert title_file.is_file(), "template/src/Title/Title.tsx not found"
+    raw = title_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    checks = [
+        (r"\bconst\s+\{\s*fps\s*\}\s*=\s*useVideoConfig\s*\(\s*\)\s*;", "fps from useVideoConfig"),
+        (r"\bconst\s+duration\s*=\s*segment\.endFrame\s*-\s*segment\.startFrame\s*;", "duration from segment frame range"),
+        (
+            r"const\s+opacity\s*=\s*interpolate\s*\(\s*frame\s*,\s*\[\s*0\s*,\s*8\s*,\s*duration\s*-\s*8\s*,\s*duration\s*\]\s*,\s*\[\s*0\s*,\s*1\s*,\s*1\s*,\s*0\s*\]\s*,\s*\{\s*extrapolateLeft:\s*['\"]clamp['\"]\s*,\s*extrapolateRight:\s*['\"]clamp['\"]\s*\}\s*\)",
+            "opacity fade envelope",
+        ),
+        (
+            r"const\s+slideIn\s*=\s*spring\s*\(\s*\{[\s\S]*?frame\s*,[\s\S]*?fps\s*,[\s\S]*?config:\s*\{\s*damping:\s*20\s*,\s*stiffness:\s*100\s*,\s*mass:\s*0\.5\s*\}[\s\S]*?\}\s*\)\s*;",
+            "slideIn spring config",
+        ),
+        (
+            r"\bconst\s+translateX\s*=\s*interpolate\s*\(\s*slideIn\s*,\s*\[\s*0\s*,\s*1\s*\]\s*,\s*\[\s*-50\s*,\s*0\s*\]\s*\)\s*;",
+            "translateX slide range",
+        ),
+        (r"\bposition:\s*['\"]absolute['\"]", "outer absolute position"),
+        (r"\btop:\s*TELOP_CONFIG\.titleTop\b", "top from TELOP_CONFIG.titleTop"),
+        (r"\bleft:\s*TELOP_CONFIG\.titleLeft\b", "left from TELOP_CONFIG.titleLeft"),
+        (r"\btransform:\s*`\s*translateX\(\$\{translateX\}px\)\s*`", "outer translateX transform"),
+        (r"\bzIndex:\s*100\b", "outer zIndex 100"),
+        (
+            r"background:\s*['\"]linear-gradient\(90deg,\s*#B20AFD\s+0%,\s*#087FFF\s+100%\)['\"]",
+            "gradient badge background",
+        ),
+        (r"\bpadding:\s*['\"]8px 5px['\"]", "badge padding"),
+        (r"\bdisplay:\s*['\"]inline-block['\"]", "badge inline-block"),
+        (r"\bcolor:\s*['\"]#ffffff['\"]", "title text white color"),
+        (r"\bfontSize:\s*TELOP_CONFIG\.titleFontSize\b", "font size from TELOP_CONFIG.titleFontSize"),
+        (r"\bfontWeight:\s*800\b", "fontWeight 800"),
+        (r"\bfontFamily:\s*['\"]\\?\"Noto Sans JP\\?\",\s*sans-serif['\"]", "Noto Sans JP font family"),
+        (r"\bmargin:\s*0\b", "paragraph margin reset"),
+        (r"\btextShadow:\s*['\"]2px 2px 8px rgba\(0,\s*0,\s*0,\s*0\.5\)['\"]", "text shadow"),
+        (r"\blineHeight:\s*1\.2\b", "lineHeight 1.2"),
+        (r"\btransform:\s*['\"]skewX\(-8deg\)['\"]", "title skew transform"),
+        (r"\bwhiteSpace:\s*['\"]nowrap['\"]", "nowrap title text"),
+        (r"\{\s*segment\.text\s*\}", "segment.text render"),
+    ]
+    for pattern, desc in checks:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"Title.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/Title/Title.tsx visual style contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_slide_segment_schema_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17119,6 +17174,7 @@ def main() -> int:
         test_slide_uses_sequence_local_frame_without_startframe_offset,
         test_slide_style_defaults_and_alignment_contract_lint,
         test_title_uses_sequence_local_frame_without_startframe_offset_lint,
+        test_title_visual_style_contract_lint,
         test_slide_segment_schema_contract_lint,
         test_narration_mode_invalidate_resets_cached_mode,
         test_narration_mode_static_file_lookup_contract_lint,
