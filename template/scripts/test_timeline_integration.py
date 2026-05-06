@@ -15861,6 +15861,36 @@ def test_narration_watch_uses_mode_constants_and_data_files() -> None:
     )
 
 
+def test_use_narration_mode_imports_mode_exports_contract_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    hook_file = template_root / "src" / "Narration" / "useNarrationMode.ts"
+    assert hook_file.is_file(), "template/src/Narration/useNarrationMode.ts not found"
+    raw = hook_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    mode_import = re.search(
+        r"""import\s*\{([^}]*)\}\s*from\s*['"]\.\/mode['"]""",
+        text,
+        re.DOTALL,
+    )
+    assert mode_import, "useNarrationMode.ts: no import block from './mode' found"
+    body = mode_import.group(1)
+    required = {
+        "NARRATION_LEGACY_FILE": r"\bNARRATION_LEGACY_FILE\b",
+        "NARRATION_READY_FILE": r"\bNARRATION_READY_FILE\b",
+        "type NarrationMode": r"\btype\s+NarrationMode\b",
+        "getNarrationMode": r"\bgetNarrationMode\b",
+        "invalidateNarrationMode": r"\binvalidateNarrationMode\b",
+    }
+    missing = [name for name, pattern in required.items() if not re.search(pattern, body)]
+    assert missing == [], (
+        "template/src/Narration/useNarrationMode.ts mode import contract drift: "
+        f"missing from './mode' import: {missing}"
+    )
+
+
 def test_use_narration_mode_watch_dedup_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -17346,6 +17376,7 @@ def main() -> int:
         test_telop_player_active_segment_range_and_subtitle_item_contract_lint,
         # PR-CQ (useNarrationMode.ts watches mode constants + narrationData files lint): 1 件
         test_narration_watch_uses_mode_constants_and_data_files,
+        test_use_narration_mode_imports_mode_exports_contract_lint,
         test_use_narration_mode_watch_dedup_contract_lint,
         # PR-CR (NarrationAudioWithMode is pure mode-prop renderer, no internal hook call lint): 1 件
         test_narration_audio_with_mode_is_pure_mode_prop_renderer,

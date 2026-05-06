@@ -504,6 +504,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 203 | `template/src/Slides/Slide.tsx` が opacity fade envelope、AbsoluteFill wrapper、title `h1` typography、subtitle conditional paragraph、bullets conditional map、bullet emphasis fontWeight/text render を保つことを lint (`test_slide_content_render_contract_lint`、Codex 推奨 PR-EM)。Slide content render contract を保護 | PR-EM |
 | 204 | `template/src/Slides` / `Title` / `InsertImage` / `Narration` の barrel `index` が MainVideo や外部 skill から使う named exports (`SlideSequence`/`TitleSequence`/`InsertImage`/`ImageSequence`/`NarrationAudioWithMode`/mode helpers/types 等) を保つことを lint (`test_template_component_barrel_exports_contract_lint`、Codex 推奨 PR-EN)。template component barrel export surface を保護 | PR-EN |
 | 205 | `template/src/SoundEffects/SESequence.tsx` の `<Audio>` が `staticFile(\`se/${se.file}\`)` で SE asset directory prefix を保つことを lint (`test_se_sequence_asset_path_prefix_contract_lint`、Codex 推奨 PR-EO)。SE audio asset path contract を保護 | PR-EO |
+| 206 | `template/src/Narration/useNarrationMode.ts` が `NARRATION_LEGACY_FILE` / `NARRATION_READY_FILE` / `type NarrationMode` / `getNarrationMode` / `invalidateNarrationMode` を `./mode` import block から取得することを lint (`test_use_narration_mode_imports_mode_exports_contract_lint`、Codex 推奨 PR-EP)。Narration hook の mode SSoT import contract を保護 | PR-EP |
 
 ## Test Requirements
 
