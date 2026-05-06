@@ -15012,6 +15012,26 @@ def test_main_video_imports_video_config_lint() -> None:
     )
 
 
+def test_main_video_imports_remotion_primitives_lint() -> None:
+    import re
+
+    template_root = Path(__file__).parents[1]
+    main_video_path = template_root / "src" / "MainVideo.tsx"
+    assert main_video_path.is_file(), "template/src/MainVideo.tsx not found"
+    raw = main_video_path.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    import_match = re.search(r"""import\s*\{([^}]+)\}\s*from\s*['"]remotion['"]""", text)
+    assert import_match, "MainVideo.tsx: no named import block from 'remotion'"
+    imported = {name.strip() for name in import_match.group(1).split(",")}
+    required = {"AbsoluteFill", "Video", "staticFile"}
+    missing = sorted(required - imported)
+    assert not missing, (
+        f"MainVideo.tsx: missing remotion imports {missing}; "
+        "composition shell must import AbsoluteFill, Video, and staticFile from remotion"
+    )
+
+
 def test_scripts_required_files_executable_lint() -> None:
     """PR-CE: scripts/ must contain check_release_ready.sh and regen_phase3_progress.sh, both executable.
     Catches release/preflight drift where automation scripts are missing or lose execute permissions.
@@ -17718,6 +17738,7 @@ def main() -> int:
         test_docs_required_files_present_lint,
         test_context_anchor_required_sections_lint,
         test_main_video_imports_video_config_lint,
+        test_main_video_imports_remotion_primitives_lint,
         test_scripts_required_files_executable_lint,
         test_sm_claude_entrypoint_executable_lint,
         test_template_css_entrypoint_side_effects_lint,
