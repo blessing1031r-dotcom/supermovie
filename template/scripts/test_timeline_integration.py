@@ -13181,6 +13181,60 @@ def test_claude_filepath_table_data_files_lint() -> None:
     )
 
 
+def test_claude_terms_table_canonical_pairs_lint() -> None:
+    """PR-AL: CLAUDE.md ## 用語統一ルール table must contain each required canonical
+    name (in backticks, left column) paired with its forbidden alias (right column).
+    Both canonical and forbidden must appear in the same table row.
+    """
+    import re
+
+    REQUIRED_PAIRS: list[tuple[str, str]] = [
+        ("TelopSegment", "SubtitleSegment"),
+        ("telopData", "subtitleData"),
+        ("テロップテンプレート/", "Subtitles/"),
+        ("transcript_fixed.json", "transcript_corrected.json"),
+        ("transcript_audio.wav", "/tmp/supermovie_audio.wav"),
+    ]
+
+    repo_root = Path(__file__).parents[2]
+    claude_md = (repo_root / "CLAUDE.md").read_text(encoding="utf-8")
+
+    # Anchor to ## 用語統一ルール section (up to next ## heading)
+    terms_section_m = re.search(
+        r"^##\s+用語統一ルール[^\n]*\n(.*?)(?=^##\s|\Z)",
+        claude_md,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert terms_section_m, "CLAUDE.md: '## 用語統一ルール' section not found"
+    section_body = terms_section_m.group(1)
+
+    # Only inspect table rows
+    table_rows = [
+        line for line in section_body.splitlines()
+        if line.strip().startswith("|") and "|---" not in line
+    ]
+
+    errors: list[str] = []
+    for canonical, forbidden in REQUIRED_PAIRS:
+        # Look for a row where canonical appears in backticks AND forbidden appears as text
+        matched = False
+        for row in table_rows:
+            backtick_vals = re.findall(r"`([^`]+)`", row)
+            if canonical in backtick_vals and forbidden in row:
+                matched = True
+                break
+        if not matched:
+            errors.append(
+                f"CLAUDE.md 用語統一ルール: missing row with canonical "
+                f"`{canonical}` and forbidden '{forbidden}'"
+            )
+
+    assert not errors, (
+        f"CLAUDE.md terms table violations ({len(errors)} error(s)):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13389,6 +13443,8 @@ def main() -> int:
         test_claude_data_schema_sections_lint,
         # PR-AK (CLAUDE.md filepath table data files canonical path lint): 1 件
         test_claude_filepath_table_data_files_lint,
+        # PR-AL (CLAUDE.md 用語統一ルール table canonical pairs lint): 1 件
+        test_claude_terms_table_canonical_pairs_lint,
     ]
     failed = []
     for t in tests:
