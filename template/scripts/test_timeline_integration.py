@@ -18076,6 +18076,59 @@ def test_supermovie_slides_validation_docs_match_build_slide_data_lint() -> None
     )
 
 
+def test_supermovie_slides_tone_style_docs_match_build_slide_data_lint() -> None:
+    """PR-IN: supermovie-slides tone table must match build_slide_data styles."""
+    import ast
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-slides" / "SKILL.md"
+    script_path = template_root / "scripts" / "build_slide_data.py"
+    assert skill_path.is_file(), "skills/supermovie-slides/SKILL.md not found"
+    assert script_path.is_file(), "template/scripts/build_slide_data.py not found"
+
+    script_text = script_path.read_text(encoding="utf-8")
+    table_match = re.search(r"def\s+style_for_tone[\s\S]*?table\s*=\s*(\{[\s\S]*?\n\s*\})\s*\n\s*return", script_text)
+    assert table_match is not None, "build_slide_data.py style_for_tone table not found"
+    style_table = ast.literal_eval(table_match.group(1))
+    emphasis_label_by_ratio = {
+        0.2: "0-1 / slide",
+        0.3: "1 / slide",
+        0.4: "1-2 / slide",
+    }
+    expected_docs = {
+        tone: (
+            style["align"],
+            style["bg"],
+            emphasis_label_by_ratio[style["emphasis_ratio"]],
+        )
+        for tone, style in style_table.items()
+    }
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    section_match = re.search(
+        r"トーン別の見た目:\s*([\s\S]*?)videoLayer:",
+        skill_text,
+    )
+    assert section_match is not None, "supermovie-slides tone style section not found"
+    documented_rows = {
+        tone: (align, bg, emphasis.strip())
+        for tone, align, bg, emphasis in re.findall(
+            r"^\|\s*([^|`]+?)\s*\|\s*([a-z]+)\s*\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|",
+            section_match.group(1),
+            re.MULTILINE,
+        )
+        if tone.strip() != "トーン"
+        for tone in [tone.strip()]
+    }
+
+    assert documented_rows == expected_docs, (
+        "supermovie-slides tone style docs / build_slide_data style_for_tone drift:\n"
+        f"expected {expected_docs}, got {documented_rows}"
+    )
+
+
 def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
     """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
     import re
@@ -21548,6 +21601,8 @@ def main() -> int:
         test_supermovie_image_gen_type_docs_match_image_segment_union_lint,
         # PR-IM (supermovie-slides validation docs stay synced with build_slide_data guards): 1 件
         test_supermovie_slides_validation_docs_match_build_slide_data_lint,
+        # PR-IN (supermovie-slides tone style docs stay synced with build_slide_data): 1 件
+        test_supermovie_slides_tone_style_docs_match_build_slide_data_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
