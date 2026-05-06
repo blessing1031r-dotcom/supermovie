@@ -18168,6 +18168,72 @@ def test_supermovie_narration_synthesis_docs_match_voicevox_api_contract_lint() 
     )
 
 
+def test_supermovie_narration_cleanup_docs_match_stale_reset_contract_lint() -> None:
+    """PR-JA: supermovie-narration cleanup docs must match stale reset behavior."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-narration" / "SKILL.md"
+    voicevox_path = template_root / "scripts" / "voicevox_narration.py"
+    assert skill_path.is_file(), "skills/supermovie-narration/SKILL.md not found"
+    assert voicevox_path.is_file(), "template/scripts/voicevox_narration.py not found"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    voicevox_text = voicevox_path.read_text(encoding="utf-8")
+    cleanup_match = re.search(
+        r"stale chunk \+ 旧 narration\.wav[\s\S]*?stale\s+legacy 再生事故防止\)。",
+        skill_text,
+    )
+    error_row_match = re.search(r"\|\s*stale narration\.wav 削除失敗 \(StaleCleanupError\)\s*\|\s*([^|]+?)\s*\|", skill_text)
+    main_pos = voicevox_text.find("def main():")
+    assert cleanup_match is not None, "supermovie-narration stale cleanup docs not found"
+    assert error_row_match is not None, "supermovie-narration stale cleanup error row not found"
+    assert main_pos != -1, "voicevox_narration.py main() not found"
+    docs_text = "\n".join([cleanup_match.group(0), error_row_match.group(1)])
+    main_text = voicevox_text[main_pos:]
+
+    required_doc_snippets = {
+        "stale chunk": "stale chunk + 旧 narration.wav",
+        "before synthesis": "synthesis 開始前に必ず\ncleanup",
+        "legacy failure": "legacy `narration.wav` の削除失敗は exit 7",
+        "exception name": "StaleCleanupError",
+        "stale legacy reason": "stale legacy 再生事故防止",
+        "error row exit": "exit 7",
+    }
+    required_code_snippets = {
+        "exception class": "class StaleCleanupError(RuntimeError):",
+        "cleanup function": "def cleanup_stale_all() -> None:",
+        "chunk glob": 'NARRATION_DIR.glob("chunk_*.wav")',
+        "chunk meta unlink": "CHUNK_META_JSON.unlink()",
+        "legacy wav unlink": "NARRATION_LEGACY_WAV.unlink()",
+        "legacy failure raises": "raise StaleCleanupError(",
+        "ready sentinel unlink": "NARRATION_READY_JSON.unlink()",
+        "data reset call": "reset_narration_data_ts()",
+        "empty data atomic reset": "atomic_write_text(NARRATION_DATA_TS, EMPTY_NARRATION_DATA)",
+        "main catches cleanup failure": "except StaleCleanupError as e:",
+        "cleanup failure status": 'return emit_json("stale_cleanup_fail", 7, error=str(e))',
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        if snippet not in docs_text:
+            errors.append(f"supermovie-narration cleanup docs missing {name}: {snippet}")
+    for name, snippet in required_code_snippets.items():
+        if snippet not in voicevox_text:
+            errors.append(f"voicevox_narration.py missing {name}: {snippet}")
+
+    cleanup_pos = main_text.find("cleanup_stale_all()")
+    synth_pos = main_text.find("wav_bytes = synthesize(text, args.speaker)")
+    if cleanup_pos == -1 or synth_pos == -1 or not cleanup_pos < synth_pos:
+        errors.append("voicevox_narration.py must call cleanup_stale_all() before synthesis loop")
+
+    assert errors == [], (
+        "supermovie-narration cleanup docs / stale reset contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -22525,6 +22591,8 @@ def main() -> int:
         test_supermovie_narration_engine_docs_match_require_engine_contract_lint,
         # PR-IZ (supermovie-narration synthesis docs stay synced with VOICEVOX API): 1 件
         test_supermovie_narration_synthesis_docs_match_voicevox_api_contract_lint,
+        # PR-JA (supermovie-narration cleanup docs stay synced with stale reset behavior): 1 件
+        test_supermovie_narration_cleanup_docs_match_stale_reset_contract_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
