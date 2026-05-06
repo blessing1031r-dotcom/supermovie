@@ -19141,6 +19141,55 @@ def test_telop_styles_css_helper_body_contract_lint() -> None:
     )
 
 
+def test_telop_styles_public_export_surface_contract_lint() -> None:
+    """PR-HL: telopStyles module must expose only canonical templates and helpers."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    styles_file = template_root / "src" / "テロップテンプレート" / "telopStyles.ts"
+    assert styles_file.is_file(), "template/src/テロップテンプレート/telopStyles.ts not found"
+    raw = styles_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/テロップテンプレート/telopStyles.ts must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*(?:\*|\{)""", text, re.MULTILINE), (
+        "template/src/テロップテンプレート/telopStyles.ts must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    expected = {
+        "animation_charByChar",
+        "animation_fadeBlurFromBottom",
+        "animation_fadeFromLeft",
+        "animation_fadeFromRight",
+        "animation_fadeOnly",
+        "animation_none",
+        "animation_slideFromLeft",
+        "animation_slideIn",
+        "animation_slideLeftFadeBlur",
+        "getTextShadowCSS",
+        "getTextStrokeCSS",
+        "subtitleConfig",
+        "template1_gradient",
+        "template2_purpleStroke",
+        "template3_gradientText",
+        "template4_negative",
+        "template4_negative_v2",
+        "template6_whiteGradientText",
+    }
+    assert exported == expected, (
+        "template/src/テロップテンプレート/telopStyles.ts public export surface drift: "
+        f"expected {sorted(expected)}, got {sorted(exported)}"
+    )
+
+
 def test_title_segment_schema_and_title_data_typed_export_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -20240,6 +20289,8 @@ def main() -> int:
         test_telop_styles_animation_exports_motion_contract_lint,
         test_telop_styles_template_exports_and_config_helpers_lint,
         test_telop_styles_css_helper_body_contract_lint,
+        # PR-HL (telopStyles module exports only canonical templates/helpers): 1 件
+        test_telop_styles_public_export_surface_contract_lint,
         test_title_segment_schema_and_title_data_typed_export_contract_lint,
         test_title_data_placeholder_empty_array_and_toframe_export_contract_lint,
         # PR-HH (titleData module exports only toFrame and titleData): 1 件
