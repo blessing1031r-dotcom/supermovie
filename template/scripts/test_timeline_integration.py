@@ -17593,6 +17593,82 @@ def test_supermovie_se_output_schema_docs_match_sound_effect_contract_lint() -> 
     )
 
 
+def test_supermovie_se_asset_path_docs_match_sequence_contract_lint() -> None:
+    """PR-IS: supermovie-se asset path docs must match SESequence contract."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    se_skill_path = repo_root / "skills" / "supermovie-se" / "SKILL.md"
+    se_data_path = template_root / "src" / "SoundEffects" / "seData.ts"
+    se_sequence_path = template_root / "src" / "SoundEffects" / "SESequence.tsx"
+    assert se_skill_path.is_file(), "skills/supermovie-se/SKILL.md not found"
+    assert se_data_path.is_file(), "template/src/SoundEffects/seData.ts not found"
+    assert se_sequence_path.is_file(), "template/src/SoundEffects/SESequence.tsx not found"
+
+    skill_text = se_skill_path.read_text(encoding="utf-8")
+    se_data_text = se_data_path.read_text(encoding="utf-8")
+    se_sequence_text = se_sequence_path.read_text(encoding="utf-8")
+    asset_section_match = re.search(
+        r"### 2-1\. 素材チェック\s*([\s\S]*?)### 2-2\.",
+        skill_text,
+    )
+    assert asset_section_match is not None, "supermovie-se asset preparation section not found"
+    output_sample_match = re.search(
+        r"### 4-1\. seData\.ts 出力形式\s*```typescript\s*([\s\S]*?)```",
+        skill_text,
+    )
+    assert output_sample_match is not None, "supermovie-se seData output sample not found"
+    validation_match = re.search(
+        r"### 4-2\. バリデーション（必須）\s*([\s\S]*?)\n---\n",
+        skill_text,
+    )
+    assert validation_match is not None, "supermovie-se validation section not found"
+
+    asset_section = asset_section_match.group(1)
+    sample_text = output_sample_match.group(1)
+    validation_text = validation_match.group(1)
+    catalog_files = {
+        filename.strip()
+        for filename in re.findall(r"^│\s*([^│]+?\.mp3)\s*│", skill_text, re.MULTILINE)
+    }
+    sample_files = re.findall(r"\bfile:\s*'([^']+)'", sample_text)
+    data_comment_files = re.findall(r"\bfile:\s*'([^']+)'", se_data_text)
+
+    required_doc_snippets = {
+        "asset dir": "`public/se/` の中身を確認",
+        "copy source": "/Users/tonodukaren/movie/YT/03_AI×動画編集革命_YT/public/se/*",
+        "copy target": '"<PROJECT>/public/se/"',
+        "validation file exists": "public/se/ に全ファイルあり",
+        "missing file action": "不在ファイルを報告",
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_doc_snippets.items():
+        haystack = asset_section if name.startswith("copy") or name == "asset dir" else validation_text
+        if snippet not in haystack:
+            errors.append(f"supermovie-se asset path docs missing {name}: {snippet}")
+    if not re.search(r"staticFile\s*\(\s*`se/\$\{se\.file\}`\s*\)", se_sequence_text):
+        errors.append("SESequence.tsx must resolve SoundEffect.file via staticFile(`se/${se.file}`)")
+    for file_path in sample_files:
+        if "/" in file_path:
+            errors.append(f"supermovie-se seData sample file must be a bare filename, got {file_path}")
+        if not file_path.endswith(".mp3"):
+            errors.append(f"supermovie-se seData sample file must be .mp3, got {file_path}")
+        if catalog_files and file_path not in catalog_files:
+            errors.append(f"supermovie-se seData sample file missing from catalog: {file_path}")
+    for file_path in data_comment_files:
+        if "/" in file_path:
+            errors.append(f"seData.ts placeholder file must be a bare filename, got {file_path}")
+    if "public/se/" not in validation_text:
+        errors.append("supermovie-se validation table must mention public/se/")
+
+    assert errors == [], (
+        "supermovie-se asset path docs / SESequence contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_se_data_schema_matches_sound_effect_contract_lint() -> None:
     """PR-IE: CLAUDE.md seData schema must match the SoundEffect type."""
     import re
@@ -21934,6 +22010,8 @@ def main() -> int:
         test_supermovie_se_style_matrix_matches_telop_style_union_lint,
         # PR-ID (supermovie-se output docs stay synced with SoundEffect/seData schema): 1 件
         test_supermovie_se_output_schema_docs_match_sound_effect_contract_lint,
+        # PR-IS (supermovie-se asset path docs stay synced with SESequence): 1 件
+        test_supermovie_se_asset_path_docs_match_sequence_contract_lint,
         # PR-IE (CLAUDE.md seData SoundEffect schema stays synced with implementation): 1 件
         test_claude_se_data_schema_matches_sound_effect_contract_lint,
         # PR-IF (CLAUDE.md titleData TitleSegment schema stays synced with implementation): 1 件
