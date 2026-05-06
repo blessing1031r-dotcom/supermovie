@@ -13329,6 +13329,34 @@ def test_skill_frontmatter_name_plugin_namespace_lint() -> None:
     )
 
 
+def test_plugin_docs_no_merge_conflict_markers_lint() -> None:
+    """PR-AO: plugin docs/manifest surfaces must not contain unresolved git merge markers.
+    Checks CLAUDE.md, .claude-plugin/plugin.json, docs/OBSERVABILITY.md,
+    and all skills/*/SKILL.md files.
+    """
+    repo_root = Path(__file__).parents[2]
+    paths = [
+        repo_root / "CLAUDE.md",
+        repo_root / ".claude-plugin" / "plugin.json",
+        repo_root / "docs" / "OBSERVABILITY.md",
+        *sorted((repo_root / "skills").glob("*/SKILL.md")),
+    ]
+    errors: list[str] = []
+
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        rel = path.relative_to(repo_root)
+        for lineno, line in enumerate(text.splitlines(), 1):
+            # Use exact match for '=======' to avoid false positives on Setext headings
+            if line.startswith(("<<<<<<<", ">>>>>>>")) or line == "=======":
+                errors.append(f"{rel}:{lineno}: unresolved merge marker {line[:40]!r}")
+
+    assert not errors, (
+        f"plugin/docs merge conflict marker violations ({len(errors)}):\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -13543,6 +13571,8 @@ def main() -> int:
         test_skill_frontmatter_argument_hint_shape_lint,
         # PR-AN (SKILL.md frontmatter name == dir name + plugin namespace prefix lint): 1 件
         test_skill_frontmatter_name_plugin_namespace_lint,
+        # PR-AO (plugin docs/manifest no unresolved merge conflict markers lint): 1 件
+        test_plugin_docs_no_merge_conflict_markers_lint,
     ]
     failed = []
     for t in tests:
