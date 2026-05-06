@@ -19463,6 +19463,36 @@ def test_telop_data_placeholder_empty_array_contract_lint() -> None:
     )
 
 
+def test_telop_data_public_export_surface_contract_lint() -> None:
+    """PR-HI: telopData module must export only FPS, TOTAL_FRAMES, and telopData."""
+    import re
+
+    template_root = Path(__file__).parents[1]
+    data_file = template_root / "src" / "テロップテンプレート" / "telopData.ts"
+    assert data_file.is_file(), "template/src/テロップテンプレート/telopData.ts not found"
+    raw = data_file.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    assert not re.search(r"""^\s*export\s+default\b""", text, re.MULTILINE), (
+        "template/src/テロップテンプレート/telopData.ts must not use a default export"
+    )
+    assert not re.search(r"""^\s*export\s*\{""", text, re.MULTILINE), (
+        "template/src/テロップテンプレート/telopData.ts must not re-export additional symbols"
+    )
+    exported = set(
+        re.findall(
+            r"""^\s*export\s+(?:const|let|var|function|class|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b""",
+            text,
+            re.MULTILINE,
+        )
+    )
+    expected = {"FPS", "TOTAL_FRAMES", "telopData"}
+    assert exported == expected, (
+        "template/src/テロップテンプレート/telopData.ts public export surface drift: "
+        f"expected {sorted(expected)}, got {sorted(exported)}"
+    )
+
+
 def test_se_sequence_wraps_sound_effects_in_sequence_audio_contract_lint() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -20153,6 +20183,8 @@ def main() -> int:
         test_image_sequence_canonical_imports_contract_lint,
         test_telop_data_typed_export_and_video_config_ssot_contract_lint,
         test_telop_data_placeholder_empty_array_contract_lint,
+        # PR-HI (telopData module exports only FPS/TOTAL_FRAMES/telopData): 1 件
+        test_telop_data_public_export_surface_contract_lint,
         test_se_sequence_wraps_sound_effects_in_sequence_audio_contract_lint,
         test_se_sequence_asset_path_prefix_contract_lint,
         test_se_sequence_volume_callback_contract_lint,
