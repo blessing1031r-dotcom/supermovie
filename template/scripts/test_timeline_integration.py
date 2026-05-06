@@ -21884,6 +21884,119 @@ def test_supermovie_image_gen_validation_docs_match_image_sequence_contract_lint
     )
 
 
+def test_supermovie_image_gen_completion_handoff_docs_match_sequence_contract_lint() -> None:
+    """PR-KN: supermovie-image-gen completion docs must match preview/SE handoff."""
+    import json
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    image_skill_path = repo_root / "skills" / "supermovie-image-gen" / "SKILL.md"
+    se_skill_path = repo_root / "skills" / "supermovie-se" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    package_path = template_root / "package.json"
+    data_path = template_root / "src" / "InsertImage" / "insertImageData.ts"
+    sequence_path = template_root / "src" / "InsertImage" / "ImageSequence.tsx"
+    assert image_skill_path.is_file(), "skills/supermovie-image-gen/SKILL.md not found"
+    assert se_skill_path.is_file(), "skills/supermovie-se/SKILL.md not found"
+    assert claude_path.is_file(), "CLAUDE.md not found"
+    assert package_path.is_file(), "template/package.json not found"
+    assert data_path.is_file(), "template/src/InsertImage/insertImageData.ts not found"
+    assert sequence_path.is_file(), "template/src/InsertImage/ImageSequence.tsx not found"
+
+    image_skill_text = image_skill_path.read_text(encoding="utf-8")
+    se_skill_text = se_skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    package_json = json.loads(package_path.read_text(encoding="utf-8"))
+    data_text = data_path.read_text(encoding="utf-8")
+    sequence_text = sequence_path.read_text(encoding="utf-8")
+    completion_match = re.search(
+        r"## 完了時の報告フォーマット\s*```([\s\S]*?)```\s*\n---\n\n## エラーハンドリング",
+        image_skill_text,
+    )
+    map_match = re.search(r"## 連携マップ\s*```([\s\S]*?)```", image_skill_text)
+    assert completion_match is not None, "supermovie-image-gen completion report block not found"
+    assert map_match is not None, "supermovie-image-gen linkage map block not found"
+    completion_text = completion_match.group(1)
+    map_text = map_match.group(1)
+
+    required_completion_snippets = {
+        "done heading": "画像生成・配置完了",
+        "generated count": "生成画像: <N>枚",
+        "infographic count": "- infographic: <n>枚",
+        "photo count": "- photo: <n>枚",
+        "overlay count": "- overlay: <n>枚",
+        "asset root": "保存先: public/images/generated/",
+        "data updated": "insertImageData.ts 更新済み",
+        "preview": "→ npm run dev で画像の表示タイミングを確認",
+        "se handoff": "→ /supermovie-se でSE配置（画像出現タイミングにもSE付与）",
+    }
+    required_map_snippets = {
+        "current step": "/supermovie-image-gen         ← ★ここ: 画像生成 + 配置データ",
+        "data handoff": "↓ insertImageData.ts",
+        "se step": "/supermovie-se                ← SE自動配置",
+        "preview step": "npm run dev                   ← プレビュー",
+    }
+    required_data_snippets = {
+        "type import": "import type { ImageSegment } from './types';",
+        "fps import": "import { FPS } from '../videoConfig';",
+        "toFrame": "export const toFrame = (seconds: number) => Math.round(seconds * FPS);",
+        "generated comment": "// /supermovie-image-gen で自動生成されます",
+        "typed export": "export const insertImageData: ImageSegment[] = [",
+        "generated example": "file: 'generated/example.png'",
+    }
+    required_sequence_snippets = {
+        "sequence import": "import { Sequence } from 'remotion';",
+        "insert renderer import": "import { InsertImage } from './InsertImage';",
+        "data import": "import { insertImageData } from './insertImageData';",
+        "data map": "insertImageData.map((segment) =>",
+        "sequence from": "from={segment.startFrame}",
+        "sequence duration": "durationInFrames={segment.endFrame - segment.startFrame}",
+        "renderer handoff": "<InsertImage segment={segment} />",
+    }
+    required_external_snippets = {
+        "se optional prereq": "- [ ] /supermovie-image-gen で画像生成済み（任意）",
+        "se insert data prereq": "- [ ] src/InsertImage/insertImageData.ts が存在（任意：画像出現タイミングにSE付与）",
+        "workflow image gen": "/supermovie-image-gen         ← テロップ分析 → 画像生成 + insertImageData.ts (Roku 課金判断)",
+        "workflow se": "/supermovie-se                ← telopData.ts + insertImageData.ts → seData.ts (Roku 素材判断)",
+    }
+
+    errors: list[str] = []
+    for name, snippet in required_completion_snippets.items():
+        if snippet not in completion_text:
+            errors.append(f"supermovie-image-gen completion docs missing {name}: {snippet}")
+    for name, snippet in required_map_snippets.items():
+        if snippet not in map_text:
+            errors.append(f"supermovie-image-gen linkage map missing {name}: {snippet}")
+    for name, snippet in required_data_snippets.items():
+        if snippet not in data_text:
+            errors.append(f"insertImageData.ts missing completion-backed surface {name}: {snippet}")
+    for name, snippet in required_sequence_snippets.items():
+        if snippet not in sequence_text:
+            errors.append(f"ImageSequence.tsx missing completion-backed surface {name}: {snippet}")
+    for name, snippet in required_external_snippets.items():
+        haystack = se_skill_text if name.startswith("se ") else claude_text
+        if snippet not in haystack:
+            errors.append(f"downstream handoff docs missing {name}: {snippet}")
+
+    if package_json.get("scripts", {}).get("dev") != "remotion studio":
+        errors.append(f"template/package.json scripts.dev drift: {package_json.get('scripts', {}).get('dev')!r}")
+
+    map_order = [
+        map_text.find("/supermovie-image-gen"),
+        map_text.find("↓ insertImageData.ts"),
+        map_text.find("/supermovie-se"),
+        map_text.find("npm run dev"),
+    ]
+    if any(pos == -1 for pos in map_order) or map_order != sorted(map_order):
+        errors.append("supermovie-image-gen linkage map must keep image-gen -> insertImageData -> se -> preview order")
+
+    assert errors == [], (
+        "supermovie-image-gen completion handoff docs / ImageSequence contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_slides_validation_docs_match_build_slide_data_lint() -> None:
     """PR-IM: supermovie-slides validation docs must match build_slide_data guards."""
     import re
@@ -26050,6 +26163,8 @@ def main() -> int:
         test_supermovie_image_gen_asset_path_docs_match_insert_image_contract_lint,
         # PR-JV (supermovie-image-gen validation docs stay synced with ImageSequence): 1 件
         test_supermovie_image_gen_validation_docs_match_image_sequence_contract_lint,
+        # PR-KN (supermovie-image-gen completion docs stay synced with preview/SE handoff): 1 件
+        test_supermovie_image_gen_completion_handoff_docs_match_sequence_contract_lint,
         # PR-IM (supermovie-slides validation docs stay synced with build_slide_data guards): 1 件
         test_supermovie_slides_validation_docs_match_build_slide_data_lint,
         # PR-IN (supermovie-slides tone style docs stay synced with build_slide_data): 1 件
