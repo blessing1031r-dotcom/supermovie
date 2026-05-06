@@ -15,6 +15,14 @@ effort: high
 Senior visual content designer として、テロップの内容を分析し、
 視聴者の理解を助ける画像を自動生成・最適タイミングに配置する。
 
+## Remotion Bridge Note
+
+Remotion の `.tsx` component / Composition / Sequence / Audio / `staticFile` /
+animation / media timing を変更・新規設計する場合だけ、official Remotion
+Codex plugin の `remotion-best-practices` を参照する。
+SuperMovie の schema、file path、Japanese workflow、Python lint gate はこの
+repo を source of truth とする。
+
 ## ワークフロー概要
 
 ```

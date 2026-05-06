@@ -16,6 +16,14 @@ Senior video subtitle designer として、修正済み文字起こしデータ�
 LLM意味分割 → 改行処理 → 読了時間チェック → スタイル割当の4段階で
 視聴者が自然に読めるテロップに変換する。
 
+## Remotion Bridge Note
+
+Remotion の `.tsx` component / Composition / Sequence / Audio / `staticFile` /
+animation / media timing を変更・新規設計する場合だけ、official Remotion
+Codex plugin の `remotion-best-practices` を参照する。
+SuperMovie の schema、file path、Japanese workflow、Python lint gate はこの
+repo を source of truth とする。
+
 **注意: このスキルは文字起こしを行わない。** `/supermovie-transcribe` → `/supermovie-transcript-fix` で事前に完了していること。
 
 ## ワークフロー概要
