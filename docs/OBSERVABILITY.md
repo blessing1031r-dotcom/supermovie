@@ -527,6 +527,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 226 | `template/src/Title/Title.tsx` が `useCurrentFrame` / `interpolate` / `spring` / `useVideoConfig` / `Sequence` を `remotion` から、`titleData` を `./titleData` から、`TELOP_CONFIG` を `../videoConfig` から named import することを lint (`test_title_canonical_imports_contract_lint`、Codex 推奨 PR-FJ)。Title import contract を保護 | PR-FJ |
 | 227 | `template/src/Narration/NarrationAudio.tsx` が `Audio` / `Sequence` / `staticFile` を `remotion` から、`useNarrationMode` を `./useNarrationMode` から、`NarrationMode` 型を `./mode` から import することを lint (`test_narration_audio_canonical_imports_contract_lint`、Codex 推奨 PR-FK)。NarrationAudio import contract を保護 | PR-FK |
 | 228 | `template/src/Slides/Slide.tsx` が `AbsoluteFill` / `useCurrentFrame` / `interpolate` を `remotion` から、`SlideSegment` 型を `./types` から import することを lint (`test_slide_canonical_imports_contract_lint`、Codex 推奨 PR-FL)。Slide import contract を保護 | PR-FL |
+| 229 | `template/src/InsertImage/InsertImage.tsx` が `useCurrentFrame` / `interpolate` / `Img` / `staticFile` を `remotion` から、`ImageSegment` 型を `./types` から import することを lint (`test_insert_image_canonical_imports_contract_lint`、Codex 推奨 PR-FM)。InsertImage import contract を保護 | PR-FM |
 
 ## Test Requirements
 
