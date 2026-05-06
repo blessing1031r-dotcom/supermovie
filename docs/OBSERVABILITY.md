@@ -505,6 +505,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 204 | `template/src/Slides` / `Title` / `InsertImage` / `Narration` の barrel `index` が MainVideo や外部 skill から使う named exports (`SlideSequence`/`TitleSequence`/`InsertImage`/`ImageSequence`/`NarrationAudioWithMode`/mode helpers/types 等) を保つことを lint (`test_template_component_barrel_exports_contract_lint`、Codex 推奨 PR-EN)。template component barrel export surface を保護 | PR-EN |
 | 205 | `template/src/SoundEffects/SESequence.tsx` の `<Audio>` が `staticFile(\`se/${se.file}\`)` で SE asset directory prefix を保つことを lint (`test_se_sequence_asset_path_prefix_contract_lint`、Codex 推奨 PR-EO)。SE audio asset path contract を保護 | PR-EO |
 | 206 | `template/src/Narration/useNarrationMode.ts` が `NARRATION_LEGACY_FILE` / `NARRATION_READY_FILE` / `type NarrationMode` / `getNarrationMode` / `invalidateNarrationMode` を `./mode` import block から取得することを lint (`test_use_narration_mode_imports_mode_exports_contract_lint`、Codex 推奨 PR-EP)。Narration hook の mode SSoT import contract を保護 | PR-EP |
+| 207 | `template/src/index.css` が Tailwind v4 entrypoint の `@import "tailwindcss";` を保持することを lint (`test_template_index_css_tailwind_v4_entrypoint_lint`、Codex 推奨 PR-EQ)。Tailwind CSS entry contract を保護 | PR-EQ |
 
 ## Test Requirements
 
