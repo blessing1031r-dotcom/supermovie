@@ -17971,6 +17971,60 @@ def test_supermovie_image_gen_aspect_table_matches_video_config_lint() -> None:
     )
 
 
+def test_supermovie_image_gen_type_docs_match_image_segment_union_lint() -> None:
+    """PR-IL: supermovie-image-gen type docs must match ImageSegment.type."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-image-gen" / "SKILL.md"
+    types_path = template_root / "src" / "InsertImage" / "types.ts"
+    assert skill_path.is_file(), "skills/supermovie-image-gen/SKILL.md not found"
+    assert types_path.is_file(), "template/src/InsertImage/types.ts not found"
+
+    types_text = types_path.read_text(encoding="utf-8")
+    type_match = re.search(r"\btype\s*:\s*([^;]+);", types_text)
+    assert type_match is not None, "InsertImage/types.ts ImageSegment.type union not found"
+    allowed_types = set(re.findall(r"'([^']+)'", type_match.group(1)))
+    expected_types = {"infographic", "photo", "overlay"}
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    prompt_section_match = re.search(
+        r"### 3-2\. タイプ別プロンプトテンプレート\s*([\s\S]*?)### 3-3\.",
+        skill_text,
+    )
+    assert prompt_section_match is not None, "supermovie-image-gen prompt template section not found"
+    prompt_types = set(re.findall(r"^\*\*([a-z]+)（", prompt_section_match.group(1), re.MULTILINE))
+
+    display_section_match = re.search(
+        r"### 4-2\. タイプ別表示ロジック（InsertImage\.tsx連携）\s*([\s\S]*?)## Phase 5:",
+        skill_text,
+    )
+    assert display_section_match is not None, "supermovie-image-gen type display table section not found"
+    display_types = {
+        typ
+        for typ in re.findall(
+            r"^\|\s*`([^`]+)`\s*\|",
+            display_section_match.group(1),
+            re.MULTILINE,
+        )
+        if typ != "type"
+    }
+
+    errors: list[str] = []
+    if allowed_types != expected_types:
+        errors.append(f"ImageSegment.type union drift: expected {sorted(expected_types)}, got {sorted(allowed_types)}")
+    if prompt_types != allowed_types:
+        errors.append(f"supermovie-image-gen prompt template type drift: expected {sorted(allowed_types)}, got {sorted(prompt_types)}")
+    if display_types != allowed_types:
+        errors.append(f"supermovie-image-gen display table type drift: expected {sorted(allowed_types)}, got {sorted(display_types)}")
+
+    assert errors == [], (
+        "supermovie-image-gen type docs / ImageSegment union contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
     """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
     import re
@@ -21439,6 +21493,8 @@ def main() -> int:
         test_supermovie_image_gen_output_sample_matches_image_segment_contract_lint,
         # PR-IK (supermovie-image-gen aspect table stays synced with videoConfig): 1 件
         test_supermovie_image_gen_aspect_table_matches_video_config_lint,
+        # PR-IL (supermovie-image-gen type docs stay synced with ImageSegment union): 1 件
+        test_supermovie_image_gen_type_docs_match_image_segment_union_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
