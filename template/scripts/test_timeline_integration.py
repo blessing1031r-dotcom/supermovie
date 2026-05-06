@@ -8795,14 +8795,25 @@ def test_observability_composite_7gate_release_note_drift_lint() -> None:
     audit と同型を release readiness gate axis に展開)。
 
     `scripts/check_release_ready.sh` は Phase 3 release readiness の composite
-    gate runner で、`echo "--- xxx ---"` 形式の 7 section header を持つ:
-      gate 1: env (git + python3 available 確認)
-      gate 2: worktree clean 確認
-      gate 3: regen verify (--verify pass 確認)
-      gate 4: integration smoke test (pure python timeline test)
-      gate 5: TS compile surface (optional)
-      gate 6: React component test (optional)
-      gate 7: anchor drift check (Codex 12:54 consult Step 3 で追加)
+    gate runner で、7 gate を 2 style 混在で実装する:
+      gate 1: env (git + python3 available) — `echo "  [OK]   env:..."`
+              implicit 結果 line style
+      gate 2: worktree clean — `echo "  [OK]   worktree:..."` implicit
+              結果 line style
+      gate 3: regen verify (--verify pass) — `echo "--- regen verify ---"`
+              section header style
+      gate 4: integration smoke test (pure python timeline) — `echo
+              "--- integration smoke test ---"` section header style
+      gate 5: TS compile surface (optional) — `--- TS compile surface
+              (optional) ---` section header style
+      gate 6: React component test (optional) — `--- React component
+              test (optional) ---` section header style
+      gate 7: anchor drift check (Codex 12:54 consult Step 3 で追加) —
+              `--- anchor drift check ---` section header style
+    つまり gates 1-2 は implicit `[OK]` style、gates 3-7 は explicit
+    `--- xxx ---` section header style の 2 style 混在。lint の section
+    header 抽出は gates 3-7 の 5 件を期待し、gates 1-2 は別途 regex で
+    検出する。
 
     `docs/PHASE3_RELEASE_NOTE.md` line 76 / 145 / 160 は「7 gate composite」
     と明記、line 145 で「**ALL PASS** 維持 (gate 7 anchor drift 追加)」、
