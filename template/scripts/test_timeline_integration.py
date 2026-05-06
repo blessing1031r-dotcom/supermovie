@@ -17913,6 +17913,64 @@ def test_supermovie_image_gen_output_sample_matches_image_segment_contract_lint(
     )
 
 
+def test_supermovie_image_gen_aspect_table_matches_video_config_lint() -> None:
+    """PR-IK: supermovie-image-gen aspect table must match videoConfig formats."""
+    import math
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    template_root = Path(__file__).parents[1]
+    skill_path = repo_root / "skills" / "supermovie-image-gen" / "SKILL.md"
+    video_config_path = template_root / "src" / "videoConfig.ts"
+    assert skill_path.is_file(), "skills/supermovie-image-gen/SKILL.md not found"
+    assert video_config_path.is_file(), "template/src/videoConfig.ts not found"
+
+    video_config_text = video_config_path.read_text(encoding="utf-8")
+    map_match = re.search(r"const\s+RESOLUTION_MAP\s*=\s*\{([\s\S]*?)\}\s*as\s+const", video_config_text)
+    assert map_match is not None, "videoConfig.ts RESOLUTION_MAP block not found"
+    aspect_by_format: dict[str, str] = {}
+    for fmt, width, height in re.findall(
+        r"^\s*(\w+):\s*\{\s*width:\s*(\d+),\s*height:\s*(\d+)\s*\}",
+        map_match.group(1),
+        re.MULTILINE,
+    ):
+        width_i = int(width)
+        height_i = int(height)
+        divisor = math.gcd(width_i, height_i)
+        aspect_by_format[fmt] = f"{width_i // divisor}:{height_i // divisor}"
+
+    skill_text = skill_path.read_text(encoding="utf-8")
+    table_match = re.search(
+        r"### 3-1\. フォーマット別アスペクト比\s*([\s\S]*?)### 3-2\.",
+        skill_text,
+    )
+    assert table_match is not None, "supermovie-image-gen format aspect table section not found"
+    documented_aspects = {
+        fmt: aspect
+        for fmt, aspect in re.findall(
+            r"^\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|",
+            table_match.group(1),
+            re.MULTILINE,
+        )
+        if fmt != "format"
+    }
+    expected_aspects = {
+        "youtube": "16:9",
+        "short": "9:16",
+        "square": "1:1",
+    }
+    errors: list[str] = []
+    if aspect_by_format != expected_aspects:
+        errors.append(f"videoConfig.ts RESOLUTION_MAP aspect drift: expected {expected_aspects}, got {aspect_by_format}")
+    if documented_aspects != aspect_by_format:
+        errors.append(f"supermovie-image-gen Gemini aspect table drift: expected {aspect_by_format}, got {documented_aspects}")
+
+    assert errors == [], (
+        "supermovie-image-gen aspect ratio docs / videoConfig format contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_claude_project_config_telop_style_defaults_match_registry_lint() -> None:
     """PR-IB: CLAUDE.md project-config telopStyle defaults must match registry."""
     import re
@@ -21379,6 +21437,8 @@ def main() -> int:
         test_supermovie_slides_schema_docs_match_slide_segment_contract_lint,
         # PR-IJ (supermovie-image-gen insertImageData sample stays synced with ImageSegment): 1 件
         test_supermovie_image_gen_output_sample_matches_image_segment_contract_lint,
+        # PR-IK (supermovie-image-gen aspect table stays synced with videoConfig): 1 件
+        test_supermovie_image_gen_aspect_table_matches_video_config_lint,
         # PR-IB (CLAUDE.md project-config telopStyle defaults stay synced with registry): 1 件
         test_claude_project_config_telop_style_defaults_match_registry_lint,
         # PR-IC (supermovie-init project-config sample stays synced with CLAUDE.md): 1 件
