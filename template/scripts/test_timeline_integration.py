@@ -15234,6 +15234,39 @@ def test_telop_player_bridges_telop_data_to_registry_templates() -> None:
     )
 
 
+def test_telop_player_active_segment_range_and_subtitle_item_contract_lint() -> None:
+    import re
+    template_root = Path(__file__).parents[1]
+    telop_player = template_root / "src" / "テロップテンプレート" / "TelopPlayer.tsx"
+    assert telop_player.is_file(), "template/src/テロップテンプレート/TelopPlayer.tsx not found"
+    raw = telop_player.read_text(encoding="utf-8")
+    text = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    errors: list[str] = []
+    for pattern, desc in [
+        (r"function\s+segmentToSubtitleItem\s*\(\s*segment:\s*TelopSegment\s*,\s*fps:\s*number\s*\):\s*SubtitleItem", "segmentToSubtitleItem(segment, fps): SubtitleItem helper"),
+        (r"\bconst\s+startSec\s*=\s*segment\.startFrame\s*/\s*fps\s*;", "startSec = segment.startFrame / fps"),
+        (r"\bconst\s+endSec\s*=\s*segment\.endFrame\s*/\s*fps\s*;", "endSec = segment.endFrame / fps"),
+        (r"\bconst\s+lines\s*=\s*segment\.text\.split\(\s*['\"]\\n['\"]\s*\)\s*;", "lines = segment.text.split('\\n')"),
+        (r"\btext:\s*segment\.text\b", "SubtitleItem.text = segment.text"),
+        (r"\blines\s*,", "SubtitleItem.lines"),
+        (r"\bstart:\s*startSec\b", "SubtitleItem.start = startSec"),
+        (r"\bend:\s*endSec\b", "SubtitleItem.end = endSec"),
+        (r"\bstartFrame:\s*segment\.startFrame\b", "SubtitleItem.startFrame = segment.startFrame"),
+        (r"\bendFrame:\s*segment\.endFrame\b", "SubtitleItem.endFrame = segment.endFrame"),
+        (r"\bconst\s+\{\s*fps\s*\}\s*=\s*useVideoConfig\s*\(\s*\)", "fps from useVideoConfig()"),
+        (r"\btelopData\.find\s*\(\s*\(\s*s\s*\)\s*=>\s*frame\s*>=\s*s\.startFrame\s*&&\s*frame\s*<\s*s\.endFrame\s*\)", "active segment half-open frame range"),
+        (r"if\s*\(\s*!current\s*\)\s*\{\s*return\s*<AbsoluteFill\s*/>\s*;?\s*\}", "empty AbsoluteFill fallback when no segment is active"),
+        (r"\bsubtitles\s*:\s*\[\s*segmentToSubtitleItem\s*\(\s*current\s*,\s*fps\s*\)\s*\]", "registry SubtitleData wraps current segment"),
+    ]:
+        if not re.search(pattern, text, re.DOTALL):
+            errors.append(f"TelopPlayer.tsx: missing {desc}")
+    assert errors == [], (
+        "template/src/テロップテンプレート/TelopPlayer.tsx active segment / SubtitleItem contract drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_narration_watch_uses_mode_constants_and_data_files() -> None:
     import re
     template_root = Path(__file__).parents[1]
@@ -16380,6 +16413,7 @@ def main() -> int:
         test_sequence_components_are_data_driven_from_local_arrays,
         # PR-CP (TelopPlayer bridges telopData to registry templates lint): 1 件
         test_telop_player_bridges_telop_data_to_registry_templates,
+        test_telop_player_active_segment_range_and_subtitle_item_contract_lint,
         # PR-CQ (useNarrationMode.ts watches mode constants + narrationData files lint): 1 件
         test_narration_watch_uses_mode_constants_and_data_files,
         # PR-CR (NarrationAudioWithMode is pure mode-prop renderer, no internal hook call lint): 1 件
