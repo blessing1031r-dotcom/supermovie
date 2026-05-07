@@ -247,6 +247,38 @@ def test_transcript_segment_validation() -> None:
     )
 
 
+def test_timeline_validation_rejects_bool_timing_values() -> None:
+    """PR-LI: bool must not pass timing numeric validation."""
+    assert_raises(
+        lambda: timeline.validate_vad_schema(
+            {"speech_segments": [{"start": False, "end": 100}]}
+        ),
+        timeline.VadSchemaError,
+        "vad bool start",
+    )
+    assert_raises(
+        lambda: timeline.validate_vad_schema(
+            {"speech_segments": [{"start": 0, "end": True}]}
+        ),
+        timeline.VadSchemaError,
+        "vad bool end",
+    )
+    assert_raises(
+        lambda: timeline.validate_transcript_segment(
+            {"text": "hi", "start": True, "end": 100}, 0
+        ),
+        timeline.TranscriptSegmentError,
+        "transcript bool start",
+    )
+    assert_raises(
+        lambda: timeline.validate_transcript_segment(
+            {"text": "hi", "start": 0, "end": False}, 0, require_timing=True
+        ),
+        timeline.TranscriptSegmentError,
+        "transcript bool end strict",
+    )
+
+
 def test_voicevox_collect_chunks_validation() -> None:
     """voicevox_narration.collect_chunks が壊れた transcript で raise する."""
     import voicevox_narration as vn
@@ -19620,7 +19652,8 @@ def test_supermovie_cut_timeline_helper_docs_match_vad_mapping_contract_lint() -
         "validate vad getter": 'segments = vad.get("speech_segments")',
         "validate list": "if not isinstance(segments, list):",
         "validate start end loop": 'for key in ("start", "end"):',
-        "validate numeric": "if not isinstance(v, (int, float)):",
+        "timing numeric helper": "def _is_timing_number(value: object) -> bool:",
+        "validate numeric": "if not _is_timing_number(v):",
         "validate order": 'if seg["start"] > seg["end"]:',
         "load vad path": 'vad_path = proj / "vad_result.json"',
         "load build helper": "return build_cut_segments_from_vad(validated, fps)",
@@ -19892,11 +19925,12 @@ def test_timeline_transcript_segment_validation_docs_match_schema_contract_lint(
         "start getter": 's = seg.get("start")',
         "end getter": 'e = seg.get("end")',
         "start end numeric loop": 'for k, v in (("start", s), ("end", e)):',
-        "optional numeric": "if v is not None and not isinstance(v, (int, float)):",
+        "timing numeric helper": "def _is_timing_number(value: object) -> bool:",
+        "optional numeric": "if v is not None and not _is_timing_number(v):",
         "strict timing switch": "if require_timing:",
-        "strict start": "if not isinstance(s, (int, float)):",
-        "strict end": "if not isinstance(e, (int, float)):",
-        "start end order": "if isinstance(s, (int, float)) and isinstance(e, (int, float)) and s > e:",
+        "strict start": "if not _is_timing_number(s):",
+        "strict end": "if not _is_timing_number(e):",
+        "start end order": "if _is_timing_number(s) and _is_timing_number(e) and s > e:",
         "segments list guard": "if not isinstance(segments, list):",
         "batch delegates": "validate_transcript_segment(seg, idx=i, require_timing=require_timing)",
     }
@@ -27463,6 +27497,7 @@ def main() -> int:
         test_load_cut_segments_edge_cases,
         test_build_cut_segments_multi_with_gaps,
         test_transcript_segment_validation,
+        test_timeline_validation_rejects_bool_timing_values,
         test_voicevox_collect_chunks_validation,
         test_voicevox_write_narration_data_alignment,
         test_voicevox_write_order_narrationdata_before_wav,

@@ -53,6 +53,14 @@ class VadSchemaError(ValueError):
     """vad_result.json schema 不整合 (Codex P1 #2 反映、fail-fast 用)."""
 
 
+def _is_timing_number(value: object) -> bool:
+    """timestamp/duration numeric guard.
+
+    bool は int subclass だが、timing 値としては typo を隠すため除外する。
+    """
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def validate_vad_schema(vad: object) -> dict:
     """vad_result.json の最低限 schema を検査して dict を返す.
 
@@ -72,7 +80,7 @@ def validate_vad_schema(vad: object) -> dict:
             raise VadSchemaError(f"segment[{i}] must be dict, got {type(seg).__name__}")
         for key in ("start", "end"):
             v = seg.get(key)
-            if not isinstance(v, (int, float)):
+            if not _is_timing_number(v):
                 raise VadSchemaError(
                     f"segment[{i}].{key} must be int|float, got {type(v).__name__}"
                 )
@@ -178,20 +186,20 @@ def validate_transcript_segment(
     s = seg.get("start")
     e = seg.get("end")
     for k, v in (("start", s), ("end", e)):
-        if v is not None and not isinstance(v, (int, float)):
+        if v is not None and not _is_timing_number(v):
             raise TranscriptSegmentError(
                 f"{label}.{k} must be int|float|None, got {type(v).__name__}"
             )
     if require_timing:
-        if not isinstance(s, (int, float)):
+        if not _is_timing_number(s):
             raise TranscriptSegmentError(
                 f"{label}.start required (int|float), got {type(s).__name__}"
             )
-        if not isinstance(e, (int, float)):
+        if not _is_timing_number(e):
             raise TranscriptSegmentError(
                 f"{label}.end required (int|float), got {type(e).__name__}"
             )
-    if isinstance(s, (int, float)) and isinstance(e, (int, float)) and s > e:
+    if _is_timing_number(s) and _is_timing_number(e) and s > e:
         raise TranscriptSegmentError(f"{label} start={s} > end={e}")
     return seg
 
