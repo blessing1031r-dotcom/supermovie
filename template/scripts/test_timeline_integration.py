@@ -2849,6 +2849,65 @@ def test_generate_slide_plan_rate_rejects_nan_inf() -> None:
             gsp.PROJ = original_proj
 
 
+def test_generate_slide_plan_rate_input_cli_rejects_underscore_value() -> None:
+    """--rate-input の underscore decimal を float() の緩い解釈に任せず exit 4 で拒否。"""
+    import contextlib
+    import generate_slide_plan as gsp
+    import io as _io
+    import os as _os
+
+    RATE_ENVS = (
+        "SUPERMOVIE_RATE_INPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
+    )
+
+    original_proj = gsp.PROJ
+    original_api_key = _os.environ.get("ANTHROPIC_API_KEY")
+    saved_rate_envs = {k: _os.environ.get(k) for k in RATE_ENVS}
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        gsp.PROJ = proj
+        _os.environ["ANTHROPIC_API_KEY"] = "fake"
+        for k in RATE_ENVS:
+            _os.environ.pop(k, None)
+        try:
+            import sys as _sys
+
+            old_argv = _sys.argv
+            _sys.argv = [
+                "generate_slide_plan.py",
+                "--json-log",
+                "--rate-input",
+                "1_000.5",
+            ]
+            out_buf = _io.StringIO()
+            err_buf = _io.StringIO()
+            try:
+                with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+                    ret = gsp.main()
+                assert_eq(ret, 4, "--rate-input=1_000.5 → exit 4")
+                tail = json.loads(out_buf.getvalue().strip().splitlines()[-1])
+                assert_eq(tail.get("category"), "cost_guard_arg_invalid", "underscore rate-input category")
+                assert "invalid token" in err_buf.getvalue(), \
+                    f"underscore rate-input stderr should mention invalid token: {err_buf.getvalue()!r}"
+            finally:
+                _sys.argv = old_argv
+        finally:
+            if original_api_key is None:
+                _os.environ.pop("ANTHROPIC_API_KEY", None)
+            else:
+                _os.environ["ANTHROPIC_API_KEY"] = original_api_key
+            for k, v in saved_rate_envs.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
+            gsp.PROJ = original_proj
+
+
 def test_generate_slide_plan_rate_v0_v1_alias_precedence() -> None:
     """Codex 21:54 PR-D verdict: v1 canonical (SUPERMOVIE_RATE_ANTHROPIC_*_USD_PER_MTOK)
     + v0 alias (SUPERMOVIE_RATE_*_PER_MTOK) の precedence + alias 動作を検証。
@@ -30569,6 +30628,7 @@ def main() -> int:
         test_generate_slide_plan_json_log_status_path,
         test_generate_slide_plan_skip_preserves_with_bad_env,
         test_generate_slide_plan_rate_rejects_nan_inf,
+        test_generate_slide_plan_rate_input_cli_rejects_underscore_value,
         test_generate_slide_plan_rate_v0_v1_alias_precedence,
         test_generate_slide_plan_max_input_caps_prompt,
         test_generate_slide_plan_api_invalid_json,
