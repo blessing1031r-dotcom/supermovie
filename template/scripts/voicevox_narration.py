@@ -629,10 +629,15 @@ def main():
     print(f"VOICEVOX engine OK (version: {info})")
 
     if args.list_speakers:
-        speakers = list_speakers()
-        for s in speakers:
-            for style in s.get("styles", []):
-                print(f"  [{style.get('id'):3}] {s.get('name')} / {style.get('name')}")
+        try:
+            speakers = list_speakers()
+            for s in speakers:
+                for style in s.get("styles", []):
+                    print(f"  [{style.get('id'):3}] {s.get('name')} / {style.get('name')}")
+        except (urllib.error.HTTPError, urllib.error.URLError, OSError, json.JSONDecodeError,  # PR-PM step 509
+                UnicodeDecodeError, TypeError, AttributeError) as e:
+            print(f"ERROR: list_speakers failed: {type(e).__name__}: {e}", file=sys.stderr)
+            return emit_json("list_speakers_error", 4, error=f"{type(e).__name__}: {e}")
         return emit_json("list_speakers", 0)
 
     transcript_path = PROJ / "transcript_fixed.json"
