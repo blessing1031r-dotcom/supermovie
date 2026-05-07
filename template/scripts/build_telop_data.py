@@ -342,8 +342,12 @@ def main():
     cut_segments = build_cut_segments_from_vad(vad)
     cut_total_frames = cut_segments[-1]["playbackEnd"] if cut_segments else 0
 
-    words = transcript["words"]
-    segments = transcript["segments"]
+    words = transcript.get("words", [])
+    segments = transcript.get("segments")
+    if not isinstance(segments, list):
+        msg = f"transcript.segments must be list, got {type(segments).__name__}"
+        print(f"ERROR: transcript validation failed: {msg}", file=_sys.stderr)
+        _sys.exit(_emit_error("build_telop_transcript_invalid", 3, error=msg))
 
     # Phase 3-K (Codex Phase 3-I review P2 #3 拡張): build_telop でも transcript
     # 壊れたデータを早期検出。
