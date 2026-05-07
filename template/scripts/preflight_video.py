@@ -320,13 +320,17 @@ def validate_finite_float(value, label: str) -> float:
 def validate_rate_string(value, label: str) -> str:
     if isinstance(value, bool) or not isinstance(value, str):
         raise ValueError(f"{label} must be rate string, got {type(value).__name__}")
-    parts = value.strip().split("/")
+    raw_value = value
+    if raw_value.strip() != raw_value:
+        raise ValueError(f"{label} must be rate string, got str")
+    parts = raw_value.split("/")
     if len(parts) != 2:
         raise ValueError(f"{label} must be rate string, got str")
     parsed_parts = []
     for part in parts:
-        text = part.strip()
-        if not text.isascii() or "_" in text or text.startswith("+"):
+        raw_text = part
+        text = raw_text.strip()
+        if text != raw_text or not text.isascii() or "_" in text or text.startswith("+"):
             raise ValueError(f"{label} must be rate string, got str")
         try:
             parsed = float(text)
