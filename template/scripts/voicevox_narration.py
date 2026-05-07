@@ -701,7 +701,7 @@ def main():
         text = ch["text"]
         try:
             wav_bytes = synthesize(text, args.speaker)
-        except (urllib.error.HTTPError, urllib.error.URLError) as e:
+        except (urllib.error.HTTPError, urllib.error.URLError, OSError) as e:  # PR-PM step 507: OSError from urlopen
             print(f"WARN: synth failed for chunk {i}: {e}", file=sys.stderr)
             continue
         p = NARRATION_DIR / f"chunk_{i:03d}.wav"
@@ -761,6 +761,14 @@ def main():
     ]
     try:
         segments, ts_path, meta_path = write_narration_data(pairs, fps, cut_segments)
+    except OSError as e:  # PR-PM step 507: OSError from atomic_write_text (mkdir/write_text/os.replace)
+        print(f"ERROR: narration data write failed: {type(e).__name__}: {e}", file=sys.stderr)
+        for p in chunk_paths:
+            try:
+                p.unlink()
+            except OSError:
+                pass
+        return emit_json("write_narration_data_write_error", 6, error=f"{type(e).__name__}: {e}")
     except (wave.Error, EOFError) as e:
         print(f"ERROR: WAV duration probe failed (wave.Error / EOFError): {e}", file=sys.stderr)
         for p in chunk_paths:
