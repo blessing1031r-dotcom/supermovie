@@ -644,7 +644,12 @@ def main():
         return emit_json("llm_json_invalid", 5, error=str(e))
 
     out_path = Path(args.output)
-    out_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        out_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError as e:
+        err = redact_error_message(str(e))
+        print(f"ERROR: slide_plan.json write failed: {err}", file=sys.stderr)
+        return emit_json("generate_slide_plan_write_error", 3, error=err)
     # PR-I: default redact、--unsafe-keep-abs-path で raw。
     _safe_out = safe_artifact_path(out_path, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
     print(f"wrote: {_safe_out}")

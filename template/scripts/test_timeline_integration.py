@@ -2558,6 +2558,86 @@ def test_generate_slide_plan_rejects_malformed_json_inputs() -> None:
                 gsp.PROJ = original_proj
 
 
+def test_generate_slide_plan_rejects_write_error() -> None:
+    """step 502: generate_slide_plan.py が slide_plan.json write 失敗を generate_slide_plan_write_error exit 3 で reject."""
+    import generate_slide_plan as gsp
+    import contextlib
+    import io as _io
+    import os as _os
+    import sys as _sys
+    import urllib.request as _urlreq
+
+    valid_plan_text = json.dumps({"slides": []})
+    fake_body = json.dumps(
+        {"content": [{"type": "text", "text": valid_plan_text}]}
+    ).encode("utf-8")
+
+    class FakeResponse:
+        def __init__(self, body):
+            self._body = body
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            pass
+        def read(self):
+            return self._body
+
+    def mock_urlopen(req, timeout=60):
+        return FakeResponse(fake_body)
+
+    original_urlopen = _urlreq.urlopen
+    original_proj = gsp.PROJ
+    original_api_key = _os.environ.get("ANTHROPIC_API_KEY")
+    old_argv = _sys.argv
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        gsp.PROJ = proj
+        (proj / "transcript_fixed.json").write_text(
+            json.dumps({"words": [], "segments": []}), encoding="utf-8"
+        )
+        (proj / "project-config.json").write_text(
+            json.dumps({"format": "youtube"}), encoding="utf-8"
+        )
+        # Create read-only placeholder to force write failure
+        out_path = proj / "slide_plan.json"
+        out_path.write_text("{}", encoding="utf-8")
+        _os.chmod(str(out_path), 0o444)
+
+        _os.environ["ANTHROPIC_API_KEY"] = "fake-key"
+        _urlreq.urlopen = mock_urlopen
+        _sys.argv = ["generate_slide_plan.py", "--json-log"]
+        out_buf = _io.StringIO()
+        err_buf = _io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+                ret = gsp.main()
+            assert ret == 3, (
+                f"Expected exit code 3, got: {ret}\n"
+                f"stdout={out_buf.getvalue()!r}\nstderr={err_buf.getvalue()!r}"
+            )
+            stderr_str = err_buf.getvalue()
+            assert "slide_plan.json write failed" in stderr_str, (
+                f"Expected 'slide_plan.json write failed' in stderr, got: {stderr_str!r}"
+            )
+            stdout_str = out_buf.getvalue()
+            lines = [ln for ln in stdout_str.splitlines() if ln.strip().startswith("{")]
+            assert lines, f"No JSON tail found in stdout: {stdout_str!r}"
+            tail = json.loads(lines[-1])
+            assert tail.get("category") == "slide-plan-write-error", (
+                f"Expected category='slide-plan-write-error', got {tail.get('category')!r}"
+            )
+        finally:
+            _os.chmod(str(out_path), 0o644)
+            _sys.argv = old_argv
+            if original_api_key is None:
+                _os.environ.pop("ANTHROPIC_API_KEY", None)
+            else:
+                _os.environ["ANTHROPIC_API_KEY"] = original_api_key
+            _urlreq.urlopen = original_urlopen
+            gsp.PROJ = original_proj
+
+
 def test_generate_slide_plan_rejects_malformed_prompt_lists() -> None:
     """generate_slide_plan.py: prompt preview 用 words / segments の shape 破損を reject."""
     import generate_slide_plan as gsp
@@ -32674,6 +32754,7 @@ def main() -> int:
         test_generate_slide_plan_rejects_non_dict_transcript_root,
         test_generate_slide_plan_rejects_non_dict_project_config_root,
         test_generate_slide_plan_rejects_malformed_json_inputs,
+        test_generate_slide_plan_rejects_write_error,
         test_generate_slide_plan_rejects_malformed_prompt_lists,
         test_generate_slide_plan_api_mock_success,
         test_generate_slide_plan_api_rate_limited_429,
