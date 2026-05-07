@@ -10054,6 +10054,116 @@ def test_observability_provider_notes_routing_docs_code_lint() -> None:
     )
 
 
+def test_observability_local_engine_cost_policy_stays_open_lint() -> None:
+    """PR-LH: non-VOICEVOX local engine cost policy must stay open.
+
+    現行 Provider Notes で local engine として扱うのは VOICEVOX だけで、
+    VOICEVOX は `cost=None` / telemetry 対象外。VOICEVOX 以外の local
+    engine が増えた場合の `cost null vs 削除` は Open Questions のまま
+    残し、実装済み方針として docs や runtime に混入させない。
+    """
+    import re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_path = repo_root / "docs" / "OBSERVABILITY.md"
+    vox_path = repo_root / "template" / "scripts" / "voicevox_narration.py"
+    md = obs_path.read_text(encoding="utf-8")
+    vox_src = vox_path.read_text(encoding="utf-8")
+
+    provider_notes_match = re.search(
+        r"^### Provider Notes[^\n]*\n(?P<body>.*?)"
+        r"(?=^## |^### )",
+        md,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert provider_notes_match is not None, (
+        "docs: §Provider Notes section not found"
+    )
+    provider_rows = [
+        line for line in provider_notes_match.group("body").splitlines()
+        if line.startswith("| ")
+        and not line.startswith("|---")
+        and "provider" not in line
+    ]
+    local_engine_rows = [row for row in provider_rows if "local engine" in row]
+    assert len(local_engine_rows) == 1, (
+        f"Provider Notes must keep exactly one current local engine row "
+        f"(VOICEVOX only until Open Questions policy is resolved), got "
+        f"{local_engine_rows!r}"
+    )
+    voicevox_row = local_engine_rows[0]
+    for snippet in (
+        "VOICEVOX (narration)",
+        "local engine、cost なし",
+        "telemetry 対象外",
+    ):
+        assert snippet in voicevox_row, (
+            f"VOICEVOX Provider Notes row missing {snippet!r}: "
+            f"{voicevox_row!r}"
+        )
+
+    open_questions_match = re.search(
+        r"^## Open Questions[^\n]*\n(?P<body>[\s\S]*)",
+        md,
+        re.MULTILINE,
+    )
+    assert open_questions_match is not None, (
+        "docs: §Open Questions section not found"
+    )
+    local_engine_bullets = [
+        line for line in open_questions_match.group("body").splitlines()
+        if line.startswith("- ")
+        and "VOICEVOX 以外の local engine" in line
+    ]
+    assert len(local_engine_bullets) == 1, (
+        f"docs §Open Questions must keep exactly one non-VOICEVOX local "
+        f"engine cost policy bullet, got {local_engine_bullets!r}"
+    )
+    local_engine_policy = local_engine_bullets[0]
+    for snippet in ("cost null vs 削除", "VOICEVOX 以外の local engine"):
+        assert snippet in local_engine_policy, (
+            f"local engine cost policy bullet missing {snippet!r}: "
+            f"{local_engine_policy!r}"
+        )
+    assert "resolved" not in local_engine_policy.lower(), (
+        f"local engine cost policy must remain open until a real "
+        f"non-VOICEVOX local engine is implemented: {local_engine_policy!r}"
+    )
+
+    for forbidden in (
+        "build_cost_payload",
+        "estimated_cost_usd",
+        "cost_abort_at",
+        "rate_missing",
+        "SUPERMOVIE_RATE_",
+    ):
+        assert forbidden not in vox_src, (
+            f"voicevox_narration.py must not grow cost/rate implementation "
+            f"while local-engine cost policy is still open; found "
+            f"{forbidden!r}"
+        )
+
+    step_rows = [
+        line for line in md.splitlines()
+        if line.startswith("| 380 |")
+    ]
+    assert len(step_rows) == 1, (
+        f"docs §Migration steps must have exactly one step 380 row, "
+        f"got {step_rows!r}"
+    )
+    step_row = step_rows[0]
+    for snippet in (
+        "test_observability_local_engine_cost_policy_stays_open_lint",
+        "VOICEVOX 以外の local engine",
+        "cost null vs 削除",
+        "PR-LH",
+    ):
+        assert snippet in step_row, (
+            f"docs step 380 row missing {snippet!r}: {step_row!r}"
+        )
+
+
 def test_observability_cost_abort_threshold_docs_code_lint() -> None:
     """`docs/OBSERVABILITY.md §Cost Abort Threshold` ↔
     `STATUS_MAP["cost_guard_aborted"]` / `generate_slide_plan.py` の
@@ -27476,6 +27586,7 @@ def main() -> int:
         test_observability_missing_rate_behavior_docs_code_lint,
         test_observability_cost_abort_threshold_docs_code_lint,
         test_observability_provider_notes_routing_docs_code_lint,
+        test_observability_local_engine_cost_policy_stays_open_lint,
         test_observability_emit_json_tail_invariant_caller_ast_lint,
         test_observability_emit_json_disabled_silent_caller_ast_lint,
         test_observability_trace_context_precedence_semantics_lint,
