@@ -2336,6 +2336,42 @@ def test_build_telop_data_rejects_write_error() -> None:
             btd.call_budoux = original_call
 
 
+def test_build_telop_data_budoux_timeout_raises_runtime_error() -> None:
+    """step 505: call_budoux が subprocess.TimeoutExpired を RuntimeError('timed out') に変換.
+
+    The caller's except Exception fallback (build_telop_data.py:408) then uses legacy
+    splitting, so the pipeline continues without hanging.
+    """
+    import build_telop_data as btd
+    import subprocess as _sp
+
+    original_run = btd.subprocess.run
+    original_proj = btd.PROJ
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp)
+            scripts_dir = proj / "scripts"
+            scripts_dir.mkdir()
+            (scripts_dir / "budoux_split.mjs").write_text("// stub", encoding="utf-8")
+            btd.PROJ = proj
+
+            def mock_run_timeout(*args, **kwargs):
+                raise _sp.TimeoutExpired(cmd=args[0] if args else [], timeout=30)
+
+            btd.subprocess.run = mock_run_timeout
+            try:
+                btd.call_budoux(["テスト"])
+                raise AssertionError("Expected RuntimeError from TimeoutExpired")
+            except RuntimeError as e:
+                assert "timed out" in str(e), (
+                    f"Expected 'timed out' in RuntimeError, got: {e!r}"
+                )
+    finally:
+        btd.subprocess.run = original_run
+        btd.PROJ = original_proj
+
+
 def test_generate_slide_plan_skip_no_api_key() -> None:
     """generate_slide_plan.py: ANTHROPIC_API_KEY 未設定で exit 0 (skip)."""
     import generate_slide_plan as gsp
@@ -32862,6 +32898,7 @@ def main() -> int:
         test_build_telop_data_rejects_invalid_transcript_load,
         test_build_telop_data_rejects_invalid_typo_dict_load,
         test_build_telop_data_rejects_write_error,
+        test_build_telop_data_budoux_timeout_raises_runtime_error,
         test_generate_slide_plan_skip_no_api_key,
         test_generate_slide_plan_missing_inputs,
         test_generate_slide_plan_rejects_non_dict_transcript_root,
