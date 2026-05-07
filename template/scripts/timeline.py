@@ -104,6 +104,8 @@ def _validate_frame(value: object, label: str) -> int:
             f"{label} must be int frame (bool / float / str reject), "
             f"got {type(value).__name__}"
         )
+    if value < 0:
+        raise ValueError(f"{label} must be >= 0, got {value!r}")
     return value
 
 
@@ -127,6 +129,16 @@ def _validate_cut_segments_shape(cut_segments: object) -> list[dict]:
             _validate_ms(cs[key], f"cut_segments[{i}].{key}")
         for key in ("playbackStart", "playbackEnd"):
             _validate_frame(cs[key], f"cut_segments[{i}].{key}")
+        if cs["originalStartMs"] > cs["originalEndMs"]:
+            raise ValueError(
+                f"cut_segments[{i}] originalStartMs={cs['originalStartMs']!r} "
+                f"> originalEndMs={cs['originalEndMs']!r}"
+            )
+        if cs["playbackStart"] > cs["playbackEnd"]:
+            raise ValueError(
+                f"cut_segments[{i}] playbackStart={cs['playbackStart']!r} "
+                f"> playbackEnd={cs['playbackEnd']!r}"
+            )
     return cut_segments
 
 
