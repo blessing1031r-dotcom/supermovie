@@ -2520,6 +2520,39 @@ def test_generate_slide_plan_resolve_int_rejects_unicode_digit_tokens() -> None:
             _os.environ[env_name] = original_env
 
 
+def test_generate_slide_plan_resolve_int_rejects_whitespace_tokens() -> None:
+    """generate_slide_plan._resolve_int が whitespace 付き int token を reject."""
+    import generate_slide_plan as gsp
+    import os as _os
+
+    env_name = "SUPERMOVIE_MAX_TOKENS"
+    original_env = _os.environ.get(env_name)
+    cases = [
+        ("env", lambda: gsp._resolve_int(None, env_name, 4096, 1, 16384, "max-tokens")),
+        ("cli", lambda: gsp._resolve_int("4096 ", env_name, 4096, 1, 16384, "max-tokens")),
+    ]
+    try:
+        _os.environ[env_name] = " 4096"
+        for label, call in cases:
+            try:
+                call()
+            except ValueError as e:
+                msg = str(e)
+                if "int" not in msg or "invalid token" not in msg:
+                    raise AssertionError(
+                        f"unexpected _resolve_int whitespace {label} error: {msg!r}"
+                    )
+            else:
+                raise AssertionError(
+                    f"_resolve_int should reject whitespace {label} int token"
+                )
+    finally:
+        if original_env is None:
+            _os.environ.pop(env_name, None)
+        else:
+            _os.environ[env_name] = original_env
+
+
 def test_generate_slide_plan_max_input_segments_env_rejects_underscore_value() -> None:
     """generate_slide_plan が SUPERMOVIE_MAX_INPUT_SEGMENTS の underscore 数値を reject."""
     import generate_slide_plan as gsp
@@ -31189,6 +31222,7 @@ def main() -> int:
         test_generate_slide_plan_max_tokens_cap_rejects,
         test_generate_slide_plan_resolve_int_rejects_underscore_env_value,
         test_generate_slide_plan_resolve_int_rejects_unicode_digit_tokens,
+        test_generate_slide_plan_resolve_int_rejects_whitespace_tokens,
         test_generate_slide_plan_max_input_segments_env_rejects_underscore_value,
         test_generate_slide_plan_max_input_segments_cli_rejects_underscore_value,
         test_generate_slide_plan_max_input_words_cli_rejects_underscore_value,
