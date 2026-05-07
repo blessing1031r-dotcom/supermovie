@@ -426,6 +426,28 @@ def test_timeline_validation_rejects_non_finite_timing_values() -> None:
         )
 
 
+def test_timeline_validation_rejects_negative_timing_values() -> None:
+    """PR-MB: VAD/transcript timing values must be non-negative."""
+    for key in ("start", "end"):
+        vad = {"speech_segments": [{"start": 0, "end": 100}]}
+        vad["speech_segments"][0][key] = -1
+        assert_raises(
+            lambda vad=vad: timeline.validate_vad_schema(vad),
+            timeline.VadSchemaError,
+            f"vad {key} negative",
+        )
+
+        transcript = {"text": "hi", "start": 0, "end": 100}
+        transcript[key] = -1
+        assert_raises(
+            lambda transcript=transcript: timeline.validate_transcript_segment(
+                transcript, 0, require_timing=True
+            ),
+            timeline.TranscriptSegmentError,
+            f"transcript {key} negative",
+        )
+
+
 def test_vad_schema_rejects_non_monotonic_speech_segments() -> None:
     """PR-LU: VAD speech_segments must be ordered and non-overlapping."""
     timeline.validate_vad_schema(
@@ -28196,6 +28218,7 @@ def main() -> int:
         test_transcript_validation_rejects_non_bool_require_timing,
         test_timeline_validation_rejects_bool_timing_values,
         test_timeline_validation_rejects_non_finite_timing_values,
+        test_timeline_validation_rejects_negative_timing_values,
         test_vad_schema_rejects_non_monotonic_speech_segments,
         test_timeline_rejects_invalid_fps_values,
         test_build_cut_segments_from_vad_validates_input_schema_directly,
