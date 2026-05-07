@@ -2371,6 +2371,67 @@ def test_generate_slide_plan_rejects_non_dict_project_config_root() -> None:
             gsp.PROJ = original_proj
 
 
+def test_generate_slide_plan_rejects_malformed_json_inputs() -> None:
+    """generate_slide_plan.py が malformed transcript / config JSON を structured tail で reject."""
+    import generate_slide_plan as gsp
+    import contextlib
+    import io as _io
+    import os as _os
+    import sys as _sys
+
+    valid_transcript = json.dumps({"words": [], "segments": []})
+    valid_config = json.dumps({"format": "short"})
+
+    cases = [
+        ("malformed_transcript", "not-json{{{", valid_config, "transcript_invalid", 3, "transcript_fixed.json load failed"),
+        ("malformed_config", valid_transcript, "not-json{{{", "config_invalid", 3, "project-config.json load failed"),
+    ]
+
+    original_proj = gsp.PROJ
+    original_api_key = _os.environ.get("ANTHROPIC_API_KEY")
+    old_argv = _sys.argv
+
+    for label, transcript_content, config_content, expected_category, expected_exit, expected_stderr_substr in cases:
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp)
+            gsp.PROJ = proj
+            (proj / "transcript_fixed.json").write_text(transcript_content, encoding="utf-8")
+            (proj / "project-config.json").write_text(config_content, encoding="utf-8")
+            _os.environ.pop("ANTHROPIC_API_KEY", None)
+            _sys.argv = ["generate_slide_plan.py", "--dry-run", "--json-log"]
+            out_buf = _io.StringIO()
+            err_buf = _io.StringIO()
+            try:
+                with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+                    ret = gsp.main()
+                if ret != expected_exit:
+                    raise AssertionError(
+                        f"case={label!r}: Expected exit {expected_exit}, got: {ret}"
+                    )
+                err_text = err_buf.getvalue()
+                if expected_stderr_substr not in err_text:
+                    raise AssertionError(
+                        f"case={label!r}: Expected {expected_stderr_substr!r} in stderr, got: {err_text!r}"
+                    )
+                lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                payload = json.loads(lines[-1])
+                assert_eq(payload.get("status"), "error", f"gsp malformed {label} status")
+                assert_eq(payload.get("category"), expected_category, f"gsp malformed {label} category")
+                assert_eq(payload.get("exit_code"), expected_exit, f"gsp malformed {label} exit_code")
+                raw_error = payload.get("error", "")
+                if tmp in str(raw_error):
+                    raise AssertionError(
+                        f"case={label!r}: raw abs path leaked in error field: {raw_error!r}"
+                    )
+            finally:
+                _sys.argv = old_argv
+                if original_api_key is None:
+                    _os.environ.pop("ANTHROPIC_API_KEY", None)
+                else:
+                    _os.environ["ANTHROPIC_API_KEY"] = original_api_key
+                gsp.PROJ = original_proj
+
+
 def test_generate_slide_plan_rejects_malformed_prompt_lists() -> None:
     """generate_slide_plan.py: prompt preview 用 words / segments の shape 破損を reject."""
     import generate_slide_plan as gsp
@@ -32408,6 +32469,7 @@ def main() -> int:
         test_generate_slide_plan_missing_inputs,
         test_generate_slide_plan_rejects_non_dict_transcript_root,
         test_generate_slide_plan_rejects_non_dict_project_config_root,
+        test_generate_slide_plan_rejects_malformed_json_inputs,
         test_generate_slide_plan_rejects_malformed_prompt_lists,
         test_generate_slide_plan_api_mock_success,
         test_generate_slide_plan_api_rate_limited_429,
