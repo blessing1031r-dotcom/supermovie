@@ -6650,6 +6650,74 @@ def test_vn_collect_chunks_script_read_oserror_raises_transcript_error() -> None
         _sys.path.pop(0)
 
 
+def test_vn_unicode_decode_error_guard() -> None:
+    """PR-PM step 514: voicevox_narration.py の 3 箇所 (script-json load / transcript_fixed.json load /
+    vad_result.json load) の except tuple に UnicodeDecodeError を追加。
+    corrupted (non-UTF-8) ファイルで read_text() が raise する UnicodeDecodeError が
+    以前の except (OSError, json.JSONDecodeError) を素通りし top-level に uncaught で伝播していた。
+    """
+    import sys as _sys
+    import importlib
+
+    INVALID_UTF8 = b"\x80\x81\x82"
+    vn_dir = (Path(__file__).parent)
+    _sys.path.insert(0, str(vn_dir))
+    try:
+        import voicevox_narration as vn
+        importlib.reload(vn)
+
+        # (1) code text: PR-PM step 514 comments present in all 3 locations
+        vn_text = (vn_dir / "voicevox_narration.py").read_text(encoding="utf-8")
+        assert vn_text.count("PR-PM step 514") >= 3, (
+            f"voicevox_narration.py must contain at least 3 PR-PM step 514 guards, "
+            f"found {vn_text.count('PR-PM step 514')}"
+        )
+
+        # (2) collect_chunks --script-json path: UnicodeDecodeError is in except tuple
+        #     i.e., except (OSError, UnicodeDecodeError, json.JSONDecodeError)
+        script_json_block = vn_text[vn_text.find("if args.script_json:"):]
+        # Extract up to the first raise TranscriptSegmentError
+        block_end = script_json_block.find("raise TranscriptSegmentError")
+        excerpt = script_json_block[:block_end]
+        assert "UnicodeDecodeError" in excerpt, (
+            "collect_chunks --script-json except tuple must include UnicodeDecodeError (step 514)"
+        )
+
+        # (3) transcript_fixed.json load: UnicodeDecodeError in except tuple
+        transcript_block_pos = vn_text.find("transcript = load_json(transcript_path)")
+        transcript_except = vn_text[transcript_block_pos:transcript_block_pos + 200]
+        assert "UnicodeDecodeError" in transcript_except, (
+            "transcript_fixed.json load except must include UnicodeDecodeError (step 514)"
+        )
+
+        # (4) vad load: UnicodeDecodeError in except tuple
+        vad_block_pos = vn_text.find("cut_segments = project_load_cut_segments(fps)")
+        vad_except = vn_text[vad_block_pos:vad_block_pos + 300]
+        assert "UnicodeDecodeError" in vad_except, (
+            "vad_result.json load except must include UnicodeDecodeError (step 514)"
+        )
+
+        # (5) runtime: collect_chunks with invalid UTF-8 script-json raises TranscriptSegmentError
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            f.write(INVALID_UTF8)
+            bad_json_path = f.name
+        try:
+            class _Args514:
+                script = None
+                script_json = bad_json_path
+                transcript = None
+            try:
+                vn.collect_chunks(_Args514(), {})
+                assert False, "expected TranscriptSegmentError for invalid UTF-8 script-json"
+            except vn.TranscriptSegmentError as e:
+                assert "script-json load failed" in str(e), f"unexpected message: {e}"
+        finally:
+            import os as _os514
+            _os514.unlink(bad_json_path)
+    finally:
+        _sys.path.pop(0)
+
+
 def test_vn_list_speakers_error_guard() -> None:
     """PR-PM step 509: list_speakers() call is wrapped in try/except for HTTPError/URLError/OSError/JSONDecodeError.
 
@@ -28319,7 +28387,7 @@ def test_supermovie_narration_vad_docs_match_cut_aware_failfast_contract_lint() 
         "cut fallback warning": "cut 範囲外",
         "cut aware metadata": '"cut_aware": bool(cut_segments)',
         "main load call": "cut_segments = project_load_cut_segments(fps)",
-        "vad exception tuple": "except (VadSchemaError, OSError, json.JSONDecodeError) as e:",
+        "vad exception tuple": "except (VadSchemaError, OSError, UnicodeDecodeError, json.JSONDecodeError) as e:",
         "vad status": 'return emit_json("vad_invalid", 8, error=str(e))',
         "cut-aware stdout": "cut-aware mapping:",
     }
@@ -33734,6 +33802,7 @@ def main() -> int:
         test_vn_synthesize_json_decode_error_is_caught_as_synth_failure,  # PR-PM step 508
         test_vn_list_speakers_error_guard,  # PR-PM step 509
         test_vn_collect_chunks_script_read_oserror_raises_transcript_error,  # PR-PM step 510
+        test_vn_unicode_decode_error_guard,  # PR-PM step 514
         test_voicevox_write_order_narrationdata_before_wav,
         test_voicevox_cleanup_stale_unlinks_sentinel,
         test_voicevox_sentinel_written_after_wav,

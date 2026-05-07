@@ -467,7 +467,7 @@ def collect_chunks(args, transcript: dict) -> list[dict]:
     if args.script_json:
         try:
             plan = load_json(_resolve_path(args.script_json))
-        except (OSError, json.JSONDecodeError) as e:
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 514
             raise TranscriptSegmentError(
                 f"script-json load failed: {redact_error_message(str(e))}"
             ) from e
@@ -652,7 +652,7 @@ def main():
     if transcript_path.exists():
         try:
             transcript = load_json(transcript_path)
-        except (OSError, json.JSONDecodeError) as e:
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 514
             err = redact_error_message(str(e))
             print(f"ERROR: transcript_fixed.json load failed: {err}", file=sys.stderr)
             return emit_json("transcript_invalid", 3, error=err)
@@ -693,7 +693,7 @@ def main():
     # narration.wav / chunk wav / 非空 narrationData.ts は一切作らず exit 8」が正しい契約。
     try:
         cut_segments = project_load_cut_segments(fps)
-    except (VadSchemaError, OSError, json.JSONDecodeError) as e:
+    except (VadSchemaError, OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 514
         print(
             f"ERROR: vad_result.json schema invalid or unreadable: {e}",
             file=sys.stderr,
