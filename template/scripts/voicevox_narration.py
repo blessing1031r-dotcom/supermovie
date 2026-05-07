@@ -451,7 +451,12 @@ def collect_chunks(args, transcript: dict) -> list[dict]:
     optional で受け付ける。
     """
     if args.script:
-        text = _resolve_path(args.script).read_text(encoding="utf-8")
+        try:
+            text = _resolve_path(args.script).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:  # PR-PM step 510
+            raise TranscriptSegmentError(
+                f"script read failed: {redact_error_message(str(e))}"
+            ) from e
         return [
             {"text": line.strip(), "sourceStartMs": None, "sourceEndMs": None}
             for line in text.splitlines() if line.strip()
