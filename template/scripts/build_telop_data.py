@@ -325,6 +325,10 @@ def main():
         msg = f"transcript must be dict, got {type(transcript).__name__}"
         print(f"ERROR: transcript validation failed: {msg}", file=_sys.stderr)
         _sys.exit(_emit_error("build_telop_transcript_invalid", 3, error=msg))
+    if not isinstance(typo_dict, dict):
+        msg = f"typo_dict must be dict, got {type(typo_dict).__name__}"
+        print(f"ERROR: typo_dict.json validation failed: {msg}", file=_sys.stderr)
+        _sys.exit(_emit_error("typo_dict_invalid", 3, error=msg))
     preserve = typo_dict.get("preserve", [])
     cut_segments = build_cut_segments_from_vad(vad)
     cut_total_frames = cut_segments[-1]["playbackEnd"] if cut_segments else 0
