@@ -189,6 +189,10 @@ def main():
     except (json.JSONDecodeError, OSError) as e:
         print(f"ERROR: transcript_fixed.json parse failed: {e}", file=sys.stderr)
         return _emit_early("transcript_invalid", 3, error=redact_error_message(str(e)))
+    if not isinstance(transcript, dict):
+        msg = f"transcript must be dict, got {type(transcript).__name__}"
+        print(f"ERROR: transcript_fixed.json validation failed: {msg}", file=sys.stderr)
+        return _emit_early("transcript_invalid", 3, error=msg)
 
     typo = (PROJ / "typo_dict.json")
     try:
