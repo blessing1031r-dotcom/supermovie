@@ -1277,6 +1277,62 @@ def test_build_slide_data_validates_bad_transcript() -> None:
             bsd.PROJ = original_proj
 
 
+def test_build_slide_data_rejects_non_dict_transcript_root() -> None:
+    """build_slide_data.py が transcript root 非 dict を transcript invalid として reject."""
+    import build_slide_data as bsd
+    import contextlib as _contextlib
+    import io as _io
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = _setup_temp_project(Path(tmp))
+        (proj / "transcript_fixed.json").write_text(
+            json.dumps(["not", "a", "dict"]),
+            encoding="utf-8",
+        )
+        (proj / "project-config.json").write_text(
+            json.dumps({"format": "short", "tone": "プロフェッショナル"}),
+            encoding="utf-8",
+        )
+
+        original_proj = bsd.PROJ
+        bsd.PROJ = proj
+        try:
+            import sys as _sys
+            old_argv = _sys.argv
+            _sys.argv = ["build_slide_data.py", "--json-log"]
+            try:
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                    try:
+                        bsd.main()
+                        raise AssertionError(
+                            "build_slide_data should fail with non-dict transcript root"
+                        )
+                    except SystemExit as e:
+                        if e.code != 3:
+                            raise AssertionError(f"Expected exit code 3, got: {e.code}")
+                err_text = err_buf.getvalue()
+                if "transcript validation failed" not in err_text:
+                    raise AssertionError(
+                        f"Expected validation error in stderr, got: {err_text!r}"
+                    )
+                lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                tail = json.loads(lines[-1])
+                assert_eq(tail.get("status"), "error", "build_slide non-dict root status")
+                assert_eq(tail.get("category"), "transcript-invalid", "build_slide non-dict root category")
+                assert_eq(tail.get("exit_code"), 3, "build_slide non-dict root exit_code")
+                assert_eq(
+                    tail.get("error"),
+                    "transcript must be dict, got list",
+                    "build_slide non-dict root error",
+                )
+            finally:
+                _sys.argv = old_argv
+        finally:
+            bsd.PROJ = original_proj
+
+
 def test_build_telop_data_main_e2e() -> None:
     """build_telop_data.py を temp project で main() 実行、call_budoux stub.
 
@@ -28448,6 +28504,7 @@ def main() -> int:
         test_build_scripts_wiring,
         test_build_slide_data_main_e2e,
         test_build_slide_data_validates_bad_transcript,
+        test_build_slide_data_rejects_non_dict_transcript_root,
         test_build_telop_data_main_e2e,
         test_build_telop_data_validates_bad_transcript,
         test_generate_slide_plan_skip_no_api_key,
