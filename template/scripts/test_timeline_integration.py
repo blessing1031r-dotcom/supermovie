@@ -323,6 +323,32 @@ def test_transcript_segments_reject_non_monotonic_timing() -> None:
         )
 
 
+def test_transcript_validation_rejects_non_bool_require_timing() -> None:
+    """PR-LY: require_timing must be an explicit bool flag."""
+    segment = {"text": "hi", "start": 0, "end": 1000}
+    segments = [segment]
+    timeline.validate_transcript_segment(segment, 0, require_timing=False)
+    timeline.validate_transcript_segment(segment, 0, require_timing=True)
+    timeline.validate_transcript_segments(segments, require_timing=False)
+    timeline.validate_transcript_segments(segments, require_timing=True)
+
+    for bad_flag in (0, 1, "false", "true", None, [], {}):
+        assert_raises(
+            lambda bad_flag=bad_flag: timeline.validate_transcript_segment(
+                segment, 0, require_timing=bad_flag
+            ),
+            TypeError,
+            f"transcript segment invalid require_timing {bad_flag!r}",
+        )
+        assert_raises(
+            lambda bad_flag=bad_flag: timeline.validate_transcript_segments(
+                [], require_timing=bad_flag
+            ),
+            TypeError,
+            f"transcript segments invalid require_timing {bad_flag!r}",
+        )
+
+
 def test_timeline_validation_rejects_bool_timing_values() -> None:
     """PR-LI: bool must not pass timing numeric validation."""
     assert_raises(
@@ -28134,6 +28160,7 @@ def main() -> int:
         test_build_cut_segments_multi_with_gaps,
         test_transcript_segment_validation,
         test_transcript_segments_reject_non_monotonic_timing,
+        test_transcript_validation_rejects_non_bool_require_timing,
         test_timeline_validation_rejects_bool_timing_values,
         test_timeline_validation_rejects_non_finite_timing_values,
         test_vad_schema_rejects_non_monotonic_speech_segments,

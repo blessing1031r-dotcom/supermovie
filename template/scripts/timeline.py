@@ -111,6 +111,13 @@ def _validate_frame(value: object, label: str) -> int:
     return value
 
 
+def _validate_bool_flag(value: object, label: str) -> bool:
+    """boolean option guard."""
+    if not isinstance(value, bool):
+        raise TypeError(f"{label} must be bool, got {type(value).__name__}")
+    return value
+
+
 def _validate_cut_segments_shape(cut_segments: object) -> list[dict]:
     """cut-aware frame conversion shape guard."""
     if not isinstance(cut_segments, list):
@@ -286,6 +293,7 @@ def validate_transcript_segment(
     build_slide_data / build_telop_data など timing 駆動の script で使う
     (Codex Phase 3-J review Part B 設計概要 反映)。
     """
+    require_timing = _validate_bool_flag(require_timing, "require_timing")
     label = f"segment[{idx}]" if idx >= 0 else "segment"
     if not isinstance(seg, dict):
         raise TranscriptSegmentError(f"{label} must be dict, got {type(seg).__name__}")
@@ -323,6 +331,7 @@ def validate_transcript_segments(
     segments が list でない / 各要素が validate に通らない場合 raise。
     require_timing=True で start/end 必須の strict mode (slide / telop 用)。
     """
+    require_timing = _validate_bool_flag(require_timing, "require_timing")
     if not isinstance(segments, list):
         raise TranscriptSegmentError(
             f"segments must be list, got {type(segments).__name__}"
