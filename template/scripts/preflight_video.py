@@ -542,6 +542,13 @@ def main():
         msg = str(e)
         print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
         sys.exit(_emit("ffprobe_failed", 3, error=msg))
+    for aspect_field in ("sample_aspect_ratio", "display_aspect_ratio"):
+        try:
+            validate_optional_str(video.get(aspect_field), f"ffprobe video.{aspect_field}")
+        except ValueError as e:
+            msg = str(e)
+            print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+            sys.exit(_emit("ffprobe_failed", 3, error=msg))
     tags = video.get("tags") or {}
     for rotation_label, rotation_value in (
         ("ffprobe video.tags.rotate", tags.get("rotate")),
