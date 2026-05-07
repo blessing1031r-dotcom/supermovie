@@ -7586,6 +7586,53 @@ def test_preflight_video_write_config_rejects_non_dict_root() -> None:
         _shutil_mod.rmtree(tmp_dir, ignore_errors=True)
 
 
+def test_preflight_video_rejects_malformed_ffprobe_streams() -> None:
+    """preflight_video が ffprobe root / streams shape 破損を tail + exit 3 で reject."""
+    import io
+    import sys as _sys
+    from contextlib import redirect_stdout, redirect_stderr
+
+    import preflight_video as pv
+
+    cases = [
+        (["not a dict"], "ffprobe output must be dict, got list"),
+        ({"streams": "not a list"}, "ffprobe streams must be list, got str"),
+        ({"streams": ["not a dict"]}, "ffprobe streams[0] must be dict, got str"),
+    ]
+
+    saved_argv = list(_sys.argv)
+    original_run_ffprobe = pv.run_ffprobe
+    try:
+        for probe_payload, expected_error in cases:
+            with tempfile.TemporaryDirectory() as tmp:
+                src = Path(tmp) / "in.mp4"
+                src.write_bytes(b"not a real mp4; run_ffprobe is monkeypatched")
+                pv.run_ffprobe = lambda _path, payload=probe_payload: payload
+                _sys.argv = ["preflight_video.py", str(src), "--json-log"]
+
+                out_buf = io.StringIO()
+                err_buf = io.StringIO()
+                with redirect_stdout(out_buf), redirect_stderr(err_buf):
+                    try:
+                        pv.main()
+                        raise AssertionError("preflight_video should reject malformed ffprobe output")
+                    except SystemExit as e:
+                        if e.code != 3:
+                            raise AssertionError(f"Expected exit code 3, got: {e.code}")
+
+                err_text = err_buf.getvalue()
+                assert "ffprobe output validation failed" in err_text, err_text
+                lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+                v1_tail = json.loads(lines[-1])
+                assert v1_tail["status"] == "error"
+                assert v1_tail["category"] == "ffprobe-failed"
+                assert v1_tail["exit_code"] == 3
+                assert v1_tail["error"] == expected_error
+    finally:
+        pv.run_ffprobe = original_run_ffprobe
+        _sys.argv = saved_argv
+
+
 def test_observability_redact_error_message_strips_abs_path() -> None:
     """PR-G review P1 #2: redact_error_message が error 文字列内の abs path を placeholder 化する。
 
@@ -29403,6 +29450,7 @@ def main() -> int:
         test_compare_telop_split_rejects_malformed_typo_preserve,
         test_preflight_video_write_config_parse_error_emits_tail,
         test_preflight_video_write_config_rejects_non_dict_root,
+        test_preflight_video_rejects_malformed_ffprobe_streams,
         test_observability_redact_error_message_strips_abs_path,
         test_observability_redact_error_message_windows_path,
         test_observability_redact_error_message_ipv6_and_data_uri_safe,

@@ -378,7 +378,20 @@ def main():
         # PR-J fix iter (Codex 00:28 P1 #1): stderr 側も redact、`FFprobeError` は path を内包する。
         print(f"ERROR: {redact_error_message(str(e))}", file=sys.stderr)
         sys.exit(_emit("ffprobe_failed", 3, error=redact_error_message(str(e))))
+    if not isinstance(probe, dict):
+        msg = f"ffprobe output must be dict, got {type(probe).__name__}"
+        print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+        sys.exit(_emit("ffprobe_failed", 3, error=msg))
     streams = probe.get("streams", []) or []
+    if not isinstance(streams, list):
+        msg = f"ffprobe streams must be list, got {type(streams).__name__}"
+        print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+        sys.exit(_emit("ffprobe_failed", 3, error=msg))
+    for i, stream in enumerate(streams):
+        if not isinstance(stream, dict):
+            msg = f"ffprobe streams[{i}] must be dict, got {type(stream).__name__}"
+            print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+            sys.exit(_emit("ffprobe_failed", 3, error=msg))
     video_streams = [s for s in streams if s.get("codec_type") == "video"]
     audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
     subtitle_streams = [s for s in streams if s.get("codec_type") == "subtitle"]
