@@ -100,6 +100,36 @@ def test_fps_consistency() -> None:
         assert_eq(timeline.read_video_config_fps(proj), timeline.DEFAULT_FPS, "FPS=0 fallback")
 
 
+def test_read_video_config_fps_rejects_invalid_default() -> None:
+    """PR-LX: read_video_config_fps fallback default must be positive int."""
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+
+        assert_eq(
+            timeline.read_video_config_fps(proj, default=24),
+            24,
+            "valid explicit FPS default",
+        )
+
+        for bad_default in (True, False, 30.0, "30", None, [], {}):
+            assert_raises(
+                lambda bad_default=bad_default: timeline.read_video_config_fps(
+                    proj, default=bad_default
+                ),
+                TypeError,
+                f"invalid FPS default type {bad_default!r}",
+            )
+
+        for bad_default in (0, -1):
+            assert_raises(
+                lambda bad_default=bad_default: timeline.read_video_config_fps(
+                    proj, default=bad_default
+                ),
+                ValueError,
+                f"invalid FPS default value {bad_default!r}",
+            )
+
+
 def test_vad_schema_validation() -> None:
     """VadSchemaError が部分破損を全て検出する."""
     # 非 dict
@@ -28095,6 +28125,7 @@ def test_bgm_asset_gate_and_audio_loop_contract_lint() -> None:
 def main() -> int:
     tests = [
         test_fps_consistency,
+        test_read_video_config_fps_rejects_invalid_default,
         test_vad_schema_validation,
         test_ms_to_playback_frame,
         test_ms_to_playback_frame_edge_cases,

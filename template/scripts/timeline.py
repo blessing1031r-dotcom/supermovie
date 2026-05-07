@@ -37,8 +37,10 @@ CUT_SEGMENT_KEYS = (
 def read_video_config_fps(proj: Path, default: int = DEFAULT_FPS) -> int:
     """`<proj>/src/videoConfig.ts` の `export const FPS = N;` を読む.
 
-    読めなければ default。`FPS <= 0` も default に倒す (P2 #4 反映)。
+    読めなければ positive int default。`FPS <= 0` も default に倒す
+    (P2 #4 反映)。
     """
+    default = _validate_fps(default)
     video_config = proj / "src" / "videoConfig.ts"
     if not video_config.exists():
         return default
