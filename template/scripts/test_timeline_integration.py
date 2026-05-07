@@ -2437,6 +2437,30 @@ def test_generate_slide_plan_max_tokens_cap_rejects() -> None:
             gsp.PROJ = original_proj
 
 
+def test_generate_slide_plan_resolve_int_rejects_underscore_env_value() -> None:
+    """generate_slide_plan._resolve_int が env の underscore 数値を reject."""
+    import generate_slide_plan as gsp
+    import os as _os
+
+    env_name = "SUPERMOVIE_MAX_TOKENS"
+    original_env = _os.environ.get(env_name)
+    _os.environ[env_name] = "4_096"
+    try:
+        try:
+            gsp._resolve_int(None, env_name, 4096, 1, 16384, "max-tokens")
+        except ValueError as e:
+            msg = str(e)
+            if env_name not in msg or "int" not in msg:
+                raise AssertionError(f"unexpected _resolve_int error: {msg!r}")
+        else:
+            raise AssertionError("_resolve_int should reject underscore env int token")
+    finally:
+        if original_env is None:
+            _os.environ.pop(env_name, None)
+        else:
+            _os.environ[env_name] = original_env
+
+
 def test_generate_slide_plan_json_log_status_path() -> None:
     """Phase 3-V P3 logging 拡張 (Codex P2 design §4): --json-log で全 return path に
     status / exit_code 付き JSON emit を確認 (success / api_key_skipped 2 path)."""
@@ -30392,6 +30416,7 @@ def main() -> int:
         test_generate_slide_plan_dry_run_no_api_key,
         test_generate_slide_plan_max_tokens_override_cli_env_precedence,
         test_generate_slide_plan_max_tokens_cap_rejects,
+        test_generate_slide_plan_resolve_int_rejects_underscore_env_value,
         test_generate_slide_plan_json_log_status_path,
         test_generate_slide_plan_skip_preserves_with_bad_env,
         test_generate_slide_plan_rate_rejects_nan_inf,
