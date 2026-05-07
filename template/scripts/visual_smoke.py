@@ -107,6 +107,7 @@ def probe_dim(png: Path) -> tuple[int, int]:
             str(png),
         ],
         text=True,
+        timeout=30,
     )
     info = json.loads(out)
     if not isinstance(info, dict):
@@ -170,6 +171,7 @@ def render_still(project: Path, frame: int, png_out: Path) -> None:
             str(frame),
         ],
         cwd=str(project),
+        timeout=120,
     )
 
 
@@ -181,9 +183,10 @@ def has_drawtext_filter() -> bool:
     """
     try:
         out = subprocess.check_output(
-            ["ffmpeg", "-hide_banner", "-filters"], text=True, stderr=subprocess.STDOUT
+            ["ffmpeg", "-hide_banner", "-filters"], text=True, stderr=subprocess.STDOUT,
+            timeout=30,
         )
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return False
     for line in out.splitlines():
         if " drawtext " in f" {line} ":
@@ -272,7 +275,7 @@ def make_grid(
             str(grid_out),
         ]
     )
-    subprocess.check_call(cmd)
+    subprocess.check_call(cmd, timeout=60)
 
 
 def cli() -> int:
@@ -440,9 +443,10 @@ def cli() -> int:
                 png = out_dir / f"smoke_{fmt}_f{frame:04d}.png"
                 try:
                     render_still(PROJ, frame, png)
-                except subprocess.CalledProcessError as e:
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                     # P1 #1: render 失敗は環境問題 (exit 3) として即終了
                     # PR-J fix iter 2 (Codex 00:28 P1 #2): CalledProcessError str は cmd args 含む raw path leak、redact 必須。
+                    # PR-PM step 506: TimeoutExpired を追加 (120 s guard、hung remotion still を捕捉)。
                     print(
                         f"  ERROR: remotion still failed (fmt={fmt}, frame={frame}): {redact_error_message(str(e))}",
                         file=sys.stderr,
@@ -454,7 +458,7 @@ def cli() -> int:
                     break
                 try:
                     w, h = probe_dim(png)
-                except (subprocess.CalledProcessError, json.JSONDecodeError, ValueError) as e:
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError, ValueError) as e:
                     # PR-J: png is abs path under out_dir.resolve()、redact applied.
                     _safe_png = safe_artifact_path(png, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
                     print(f"  ERROR: ffprobe failed for {_safe_png}: {redact_error_message(str(e))}", file=sys.stderr)
@@ -506,9 +510,10 @@ def cli() -> int:
             _safe_grid = safe_artifact_path(grid_out, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
             print(f"\n[smoke] grid: {_safe_grid}")
             grid_status = "ok"
-        except subprocess.CalledProcessError as e:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             # P1 #2: grid 失敗は環境問題として exit 3 (silent WARN にしない)
             # PR-J fix iter 2 (Codex 00:28 P1 #2): CalledProcessError str redact + grid_error も redact 形で保存。
+            # PR-PM step 506: TimeoutExpired を追加 (60 s guard、hung ffmpeg を捕捉)。
             redacted_err = redact_error_message(str(e))
             print(f"ERROR: ffmpeg grid 合成失敗: {redacted_err}", file=sys.stderr)
             grid_status = "failed"

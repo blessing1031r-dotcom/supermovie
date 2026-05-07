@@ -5912,6 +5912,283 @@ def test_visual_smoke_format_dims_completeness() -> None:
         )
 
 
+def test_visual_smoke_render_still_timeout_exits_3() -> None:
+    """PR-PM step 506: render_still の check_call が TimeoutExpired を上げた時 cli() が exit 3 で env_error=still_failed。
+    check_call に timeout=120 が渡されているかも検証 (Codex P2 fix)。"""
+    import subprocess as _subprocess
+    import visual_smoke as vs
+    import shutil as _shutil
+    import io as _io
+    import contextlib as _contextlib
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        (proj / "src").mkdir()
+        config_path = proj / "src" / "videoConfig.ts"
+        config_path.write_text(
+            "export const FORMAT: VideoFormat = 'youtube';\nexport const FPS = 30;\n",
+            encoding="utf-8",
+        )
+        main_video = proj / "public" / "main.mp4"
+        main_video.parent.mkdir()
+        main_video.touch()
+        remotion_bin = proj / "node_modules" / ".bin" / "remotion"
+        remotion_bin.parent.mkdir(parents=True)
+        remotion_bin.touch()
+        out_dir = proj / "out" / "visual_smoke"
+
+        timeout_kwarg_seen = []
+
+        def fake_check_call_timeout(*args, **kwargs):
+            timeout_kwarg_seen.append(kwargs.get("timeout"))
+            raise _subprocess.TimeoutExpired(cmd=args[0] if args else [], timeout=kwargs.get("timeout", 0))
+
+        bak = {
+            "PROJ": vs.PROJ,
+            "VIDEO_CONFIG": vs.VIDEO_CONFIG,
+            "MAIN_VIDEO": vs.MAIN_VIDEO,
+            "REMOTION_BIN": vs.REMOTION_BIN,
+            "has_drawtext_filter": vs.has_drawtext_filter,
+        }
+        original_which = _shutil.which
+        original_check_call = vs.subprocess.check_call
+        try:
+            vs.PROJ = proj
+            vs.VIDEO_CONFIG = config_path
+            vs.MAIN_VIDEO = main_video
+            vs.REMOTION_BIN = remotion_bin
+            vs.has_drawtext_filter = lambda: False
+            vs.subprocess.check_call = fake_check_call_timeout
+            _shutil.which = lambda cmd: "/usr/bin/" + cmd
+
+            import sys as _sys
+            old_argv = _sys.argv
+            _sys.argv = [
+                "visual_smoke.py",
+                "--formats", "youtube",
+                "--frames", "30",
+                "--no-grid",
+                "--out-dir", str(out_dir),
+            ]
+            try:
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                    ret = vs.cli()
+            finally:
+                _sys.argv = old_argv
+
+            assert_eq(ret, 3, "render_still TimeoutExpired → cli exit 3")
+            assert "ERROR" in err_buf.getvalue(), err_buf.getvalue()
+            summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+            assert_eq(summary.get("env_error"), "still_failed", "render timeout → env_error=still_failed")
+            assert timeout_kwarg_seen and timeout_kwarg_seen[0] == 120, (
+                f"render_still must call check_call with timeout=120, got {timeout_kwarg_seen}"
+            )
+        finally:
+            vs.subprocess.check_call = original_check_call
+            for k, v in bak.items():
+                setattr(vs, k, v)
+            _shutil.which = original_which
+
+
+def test_visual_smoke_probe_dim_timeout_exits_3() -> None:
+    """PR-PM step 506: probe_dim の check_output が TimeoutExpired を上げた時 cli() が exit 3 で env_error=probe_failed。
+    check_output に timeout=30 が渡されているかも検証 (Codex P2 fix)。"""
+    import subprocess as _subprocess
+    import visual_smoke as vs
+    import shutil as _shutil
+    import io as _io
+    import contextlib as _contextlib
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        (proj / "src").mkdir()
+        config_path = proj / "src" / "videoConfig.ts"
+        config_path.write_text(
+            "export const FORMAT: VideoFormat = 'youtube';\nexport const FPS = 30;\n",
+            encoding="utf-8",
+        )
+        main_video = proj / "public" / "main.mp4"
+        main_video.parent.mkdir()
+        main_video.touch()
+        remotion_bin = proj / "node_modules" / ".bin" / "remotion"
+        remotion_bin.parent.mkdir(parents=True)
+        remotion_bin.touch()
+        out_dir = proj / "out" / "visual_smoke"
+
+        def fake_render(project, frame, png_out):
+            png_out.parent.mkdir(parents=True, exist_ok=True)
+            png_out.write_bytes(b"fake-png")
+
+        timeout_kwarg_seen = []
+
+        def fake_check_output_timeout(*args, **kwargs):
+            timeout_kwarg_seen.append(kwargs.get("timeout"))
+            raise _subprocess.TimeoutExpired(cmd=args[0] if args else ["ffprobe"], timeout=kwargs.get("timeout", 0))
+
+        bak = {
+            "PROJ": vs.PROJ,
+            "VIDEO_CONFIG": vs.VIDEO_CONFIG,
+            "MAIN_VIDEO": vs.MAIN_VIDEO,
+            "REMOTION_BIN": vs.REMOTION_BIN,
+            "render_still": vs.render_still,
+            "has_drawtext_filter": vs.has_drawtext_filter,
+        }
+        original_which = _shutil.which
+        original_check_output = vs.subprocess.check_output
+        try:
+            vs.PROJ = proj
+            vs.VIDEO_CONFIG = config_path
+            vs.MAIN_VIDEO = main_video
+            vs.REMOTION_BIN = remotion_bin
+            vs.render_still = fake_render
+            vs.has_drawtext_filter = lambda: False
+            vs.subprocess.check_output = fake_check_output_timeout
+            _shutil.which = lambda cmd: "/usr/bin/" + cmd
+
+            import sys as _sys
+            old_argv = _sys.argv
+            _sys.argv = [
+                "visual_smoke.py",
+                "--formats", "youtube",
+                "--frames", "30",
+                "--no-grid",
+                "--out-dir", str(out_dir),
+            ]
+            try:
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                    ret = vs.cli()
+            finally:
+                _sys.argv = old_argv
+
+            assert_eq(ret, 3, "probe_dim TimeoutExpired → cli exit 3")
+            assert "ERROR" in err_buf.getvalue(), err_buf.getvalue()
+            summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+            assert_eq(summary.get("env_error"), "probe_failed", "probe timeout → env_error=probe_failed")
+            assert timeout_kwarg_seen and timeout_kwarg_seen[0] == 30, (
+                f"probe_dim must call check_output with timeout=30, got {timeout_kwarg_seen}"
+            )
+        finally:
+            vs.subprocess.check_output = original_check_output
+            for k, v in bak.items():
+                setattr(vs, k, v)
+            _shutil.which = original_which
+
+
+def test_visual_smoke_has_drawtext_filter_timeout_returns_false() -> None:
+    """PR-PM step 506: has_drawtext_filter の check_output が TimeoutExpired を上げた時 False を返す。
+    check_output に timeout=30 が渡されているかも検証 (Codex P2 fix)。"""
+    import subprocess as _subprocess
+    import visual_smoke as vs
+
+    timeout_kwarg_seen = []
+
+    def _raise_timeout(*args, **kwargs):
+        timeout_kwarg_seen.append(kwargs.get("timeout"))
+        raise _subprocess.TimeoutExpired(cmd=["ffmpeg", "-filters"], timeout=kwargs.get("timeout", 0))
+
+    original_check_output = vs.subprocess.check_output
+    try:
+        vs.subprocess.check_output = _raise_timeout
+        result = vs.has_drawtext_filter()
+        assert result is False, f"has_drawtext_filter should return False on TimeoutExpired, got {result!r}"
+        assert timeout_kwarg_seen and timeout_kwarg_seen[0] == 30, (
+            f"has_drawtext_filter must call check_output with timeout=30, got {timeout_kwarg_seen}"
+        )
+    finally:
+        vs.subprocess.check_output = original_check_output
+
+
+def test_visual_smoke_make_grid_timeout_exits_3() -> None:
+    """PR-PM step 506: make_grid の check_call が TimeoutExpired を上げた時 cli() が grid_status=failed で exit 3。
+    check_call に timeout=60 が渡されているかも検証 (Codex P2 fix)。"""
+    import subprocess as _subprocess
+    import visual_smoke as vs
+    import shutil as _shutil
+    import io as _io
+    import contextlib as _contextlib
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        (proj / "src").mkdir()
+        config_path = proj / "src" / "videoConfig.ts"
+        config_path.write_text(
+            "export const FORMAT: VideoFormat = 'youtube';\nexport const FPS = 30;\n",
+            encoding="utf-8",
+        )
+        main_video = proj / "public" / "main.mp4"
+        main_video.parent.mkdir()
+        main_video.touch()
+        remotion_bin = proj / "node_modules" / ".bin" / "remotion"
+        remotion_bin.parent.mkdir(parents=True)
+        remotion_bin.touch()
+        out_dir = proj / "out" / "visual_smoke"
+
+        def fake_render(project, frame, png_out):
+            png_out.parent.mkdir(parents=True, exist_ok=True)
+            png_out.write_bytes(b"fake-png")
+
+        timeout_kwarg_seen = []
+
+        def fake_check_call_timeout(*args, **kwargs):
+            timeout_kwarg_seen.append(kwargs.get("timeout"))
+            raise _subprocess.TimeoutExpired(cmd=args[0] if args else [], timeout=kwargs.get("timeout", 0))
+
+        bak = {
+            "PROJ": vs.PROJ,
+            "VIDEO_CONFIG": vs.VIDEO_CONFIG,
+            "MAIN_VIDEO": vs.MAIN_VIDEO,
+            "REMOTION_BIN": vs.REMOTION_BIN,
+            "render_still": vs.render_still,
+            "probe_dim": vs.probe_dim,
+            "has_drawtext_filter": vs.has_drawtext_filter,
+        }
+        original_which = _shutil.which
+        original_check_call = vs.subprocess.check_call
+        try:
+            vs.PROJ = proj
+            vs.VIDEO_CONFIG = config_path
+            vs.MAIN_VIDEO = main_video
+            vs.REMOTION_BIN = remotion_bin
+            vs.render_still = fake_render
+            vs.probe_dim = lambda png: (1920, 1080)
+            vs.has_drawtext_filter = lambda: False
+            vs.subprocess.check_call = fake_check_call_timeout
+            _shutil.which = lambda cmd: "/usr/bin/" + cmd
+
+            import sys as _sys
+            old_argv = _sys.argv
+            _sys.argv = [
+                "visual_smoke.py",
+                "--formats", "youtube",
+                "--frames", "30",
+                "--out-dir", str(out_dir),
+            ]
+            try:
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                    ret = vs.cli()
+            finally:
+                _sys.argv = old_argv
+
+            assert_eq(ret, 3, "make_grid TimeoutExpired → cli exit 3")
+            assert "ERROR" in err_buf.getvalue(), err_buf.getvalue()
+            summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+            assert_eq(summary.get("grid", {}).get("status"), "failed", "make_grid timeout → grid.status=failed")
+            assert timeout_kwarg_seen and timeout_kwarg_seen[0] == 60, (
+                f"make_grid must call check_call with timeout=60, got {timeout_kwarg_seen}"
+            )
+        finally:
+            vs.subprocess.check_call = original_check_call
+            for k, v in bak.items():
+                setattr(vs, k, v)
+            _shutil.which = original_which
+
+
 def test_observability_helper_status_map() -> None:
     """v0 → v1 status mapping が doc table と整合しているか検証。
 
@@ -32879,6 +33156,10 @@ def main() -> int:
         test_visual_smoke_patch_format_no_match_raises,
         test_visual_smoke_patch_format_round_trip,
         test_visual_smoke_format_dims_completeness,
+        test_visual_smoke_render_still_timeout_exits_3,
+        test_visual_smoke_probe_dim_timeout_exits_3,
+        test_visual_smoke_has_drawtext_filter_timeout_returns_false,
+        test_visual_smoke_make_grid_timeout_exits_3,
         test_build_scripts_wiring,
         test_build_slide_data_main_e2e,
         test_build_slide_data_validates_bad_transcript,
