@@ -298,6 +298,8 @@ def validate_int(value, label: str) -> int:
 def validate_finite_float(value, label: str) -> float:
     if isinstance(value, bool) or value is None:
         raise ValueError(f"{label} must be finite number, got {type(value).__name__}")
+    if isinstance(value, str) and "_" in value.strip():
+        raise ValueError(f"{label} must be finite number, got str")
     try:
         parsed = float(value)
     except (TypeError, ValueError):
