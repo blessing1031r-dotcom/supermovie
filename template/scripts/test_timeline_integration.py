@@ -3026,6 +3026,68 @@ def test_generate_slide_plan_rate_input_cli_rejects_plus_value() -> None:
             gsp.PROJ = original_proj
 
 
+def test_generate_slide_plan_decimal_tokens_reject_unicode_digits() -> None:
+    """cost rate decimal token の Unicode digit を float() の正規化に任せず reject."""
+    import contextlib
+    import generate_slide_plan as gsp
+    import io as _io
+    import os as _os
+    import sys as _sys
+
+    RATE_ENVS = (
+        "SUPERMOVIE_RATE_INPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
+        "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
+    )
+
+    original_proj = gsp.PROJ
+    original_api_key = _os.environ.get("ANTHROPIC_API_KEY")
+    saved_rate_envs = {k: _os.environ.get(k) for k in RATE_ENVS}
+    old_argv = list(_sys.argv)
+
+    def run_case(argv_tail: list[str], env_patch: dict[str, str], label: str) -> None:
+        for k in RATE_ENVS:
+            _os.environ.pop(k, None)
+        for k, v in env_patch.items():
+            _os.environ[k] = v
+        _sys.argv = ["generate_slide_plan.py", "--json-log", *argv_tail]
+        out_buf = _io.StringIO()
+        err_buf = _io.StringIO()
+        with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+            ret = gsp.main()
+        assert_eq(ret, 4, f"{label} unicode decimal token → exit 4")
+        tail = json.loads(out_buf.getvalue().strip().splitlines()[-1])
+        assert_eq(tail.get("category"), "cost_guard_arg_invalid", f"{label} category")
+        assert "invalid token" in err_buf.getvalue(), (
+            f"{label} stderr should mention invalid token: {err_buf.getvalue()!r}"
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        gsp.PROJ = proj
+        _os.environ["ANTHROPIC_API_KEY"] = "fake"
+        try:
+            run_case(["--rate-input", "１.０"], {}, "cli rate-input fullwidth")
+            run_case(
+                [],
+                {"SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK": "١.٠"},
+                "env rate-output arabic-indic",
+            )
+        finally:
+            _sys.argv = old_argv
+            if original_api_key is None:
+                _os.environ.pop("ANTHROPIC_API_KEY", None)
+            else:
+                _os.environ["ANTHROPIC_API_KEY"] = original_api_key
+            for k, v in saved_rate_envs.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
+            gsp.PROJ = original_proj
+
+
 def test_generate_slide_plan_rate_output_cli_rejects_underscore_value() -> None:
     """--rate-output の underscore decimal を float() の緩い解釈に任せず exit 4 で拒否。"""
     import contextlib
@@ -31109,6 +31171,7 @@ def main() -> int:
         test_generate_slide_plan_rate_rejects_nan_inf,
         test_generate_slide_plan_rate_input_cli_rejects_underscore_value,
         test_generate_slide_plan_rate_input_cli_rejects_plus_value,
+        test_generate_slide_plan_decimal_tokens_reject_unicode_digits,
         test_generate_slide_plan_rate_output_cli_rejects_underscore_value,
         test_generate_slide_plan_cost_abort_cli_rejects_underscore_value,
         test_generate_slide_plan_rate_v0_v1_alias_precedence,
