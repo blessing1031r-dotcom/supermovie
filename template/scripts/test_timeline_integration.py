@@ -33883,16 +33883,16 @@ def test_vn_synthesize_unicode_guard_contract_lint() -> None:
 
 def test_gsp_api_unicode_guard_contract_lint() -> None:
     """PR-PM step 519: generate_slide_plan.py の Anthropic API 呼び出しブロックで
-    UnicodeDecodeError が URLError/OSError 句に追加されていることを確認する (code-text check)。
+    UnicodeDecodeError と json.JSONDecodeError が URLError/OSError 句に追加されていることを確認する。
 
-    resp.read().decode("utf-8") が非 UTF-8 バイト列で UnicodeDecodeError を送出した場合、
-    既存の except (URLError, OSError) が捕捉できず main() を emit_json なしに終了させる。
+    resp.read().decode("utf-8") が非 UTF-8 バイト列 → UnicodeDecodeError、
+    json.loads() が malformed JSON → JSONDecodeError いずれも捕捉できず emit_json をスキップする gap。
     """
     gsp_path = Path(__file__).parent / "generate_slide_plan.py"
     gsp_text = gsp_path.read_text(encoding="utf-8")
-    snippet = "except (urllib.error.URLError, OSError, UnicodeDecodeError) as e:  # PR-PM step 519: resp.read().decode"
+    snippet = "except (urllib.error.URLError, OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 519: decode/json.loads"
     assert snippet in gsp_text, (
-        f"generate_slide_plan.py API UnicodeDecodeError guard missing (step 519): {snippet!r}"
+        f"generate_slide_plan.py API UnicodeDecodeError+JSONDecodeError guard missing (step 519): {snippet!r}"
     )
 
 
