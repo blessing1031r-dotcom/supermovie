@@ -260,6 +260,23 @@ def eval_fps(rate_str: str) -> float:
         return 0.0
 
 
+def validate_positive_int(value, label: str) -> int:
+    if isinstance(value, bool) or value is None:
+        raise ValueError(f"{label} must be positive int, got {type(value).__name__}")
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text.isdigit():
+            raise ValueError(f"{label} must be positive int, got str")
+        parsed = int(text)
+    else:
+        raise ValueError(f"{label} must be positive int, got {type(value).__name__}")
+    if parsed <= 0:
+        raise ValueError(f"{label} must be positive int, got {parsed}")
+    return parsed
+
+
 def build_risks(source: dict) -> list[str]:
     risks = []
     rotation_norm = (source.get("rotation") or {}).get("normalized")
@@ -407,6 +424,13 @@ def main():
         print("ERROR: no video stream", file=sys.stderr)
         sys.exit(_emit("no_video_stream", 3))
     video = video_streams[0]
+    for dimension in ("width", "height"):
+        try:
+            validate_positive_int(video.get(dimension), f"ffprobe video.{dimension}")
+        except ValueError as e:
+            msg = str(e)
+            print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+            sys.exit(_emit("ffprobe_failed", 3, error=msg))
 
     source = build_source(
         video, audio_streams, subtitle_streams, video_streams, data_streams,
