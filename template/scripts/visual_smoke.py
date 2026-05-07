@@ -338,9 +338,9 @@ def cli() -> int:
             print(f"ERROR: 未知の format: {f} (許容: {','.join(FORMAT_DIMS)})", file=sys.stderr)
             return _emit_early("usage_error_unknown_format", 4, bad_format=f)
     # Codex 21:23 PR4 re-review P1: 非整数 frame を try-except で捕捉、JSON tail emit する。
-    frame_tokens = [x for x in args.frames.split(",") if x]
+    frame_tokens = args.frames.split(",")
     invalid_frame = next(
-        (x for x in frame_tokens if x.strip() != x or not re.fullmatch(r"-?[0-9]+", x)),
+        (x for x in frame_tokens if not x or x.strip() != x or not re.fullmatch(r"-?[0-9]+", x)),
         None,
     )
     if invalid_frame is not None:

@@ -4953,6 +4953,41 @@ def test_visual_smoke_cli_rejects_whitespace_frame_token() -> None:
     assert_eq(payload.get("raw_value"), "30, 90", "whitespace frame token raw_value")
 
 
+def test_visual_smoke_cli_rejects_empty_frame_token() -> None:
+    """visual_smoke.cli が --frames の empty comma component を usage error で reject."""
+    import visual_smoke as vs
+    import io as _io
+    import sys as _sys
+    import contextlib as _contextlib
+
+    old_argv = _sys.argv
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp) / "out"
+        _sys.argv = [
+            "visual_smoke.py",
+            "--formats", "youtube",
+            "--frames", "30,,90",
+            "--out-dir", str(out_dir),
+            "--json-log",
+        ]
+        try:
+            out_buf = _io.StringIO()
+            err_buf = _io.StringIO()
+            with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                ret = vs.cli()
+        finally:
+            _sys.argv = old_argv
+
+    assert_eq(ret, 4, "empty frame token → cli exit 4")
+    assert "--frames" in err_buf.getvalue(), err_buf.getvalue()
+    lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+    payload = json.loads(lines[-1])
+    assert_eq(payload.get("status"), "error", "empty frame token status")
+    assert_eq(payload.get("category"), "usage-error", "empty frame token category")
+    assert_eq(payload.get("exit_code"), 4, "empty frame token exit_code")
+    assert_eq(payload.get("raw_value"), "30,,90", "empty frame token raw_value")
+
+
 def test_visual_smoke_patch_format_youtube_to_short() -> None:
     """Phase 3-V post-freeze 第2弾 P4 (Codex CODEX_NEXT_PRIORITY:21-23):
     visual_smoke.patch_format が videoConfig.ts の FORMAT 行を正しく書き換える."""
@@ -31275,6 +31310,7 @@ def main() -> int:
         test_visual_smoke_cli_rejects_underscore_frame_value,
         test_visual_smoke_cli_rejects_unicode_frame_value,
         test_visual_smoke_cli_rejects_whitespace_frame_token,
+        test_visual_smoke_cli_rejects_empty_frame_token,
         test_visual_smoke_patch_format_youtube_to_short,
         test_visual_smoke_patch_format_no_match_raises,
         test_visual_smoke_patch_format_round_trip,
