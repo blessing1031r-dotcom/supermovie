@@ -712,6 +712,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 410 | `template/scripts/build_telop_data.py` が optional `typo_dict.json` root に dict を要求し、list / str など root 破損を `typo_dict_invalid` JSON tail + exit 3 で reject することを lint (`test_build_telop_data_rejects_non_dict_typo_dict_root`、Codex 推奨 PR-ML)。壊れた typo_dict root が `typo_dict.get("preserve")` AttributeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-ML |
 | 411 | `template/scripts/compare_telop_split.py` が `transcript_fixed.json` root に dict を要求し、list / str など root 破損を `transcript_invalid` JSON tail + exit 3 で reject することを lint (`test_compare_telop_split_rejects_non_dict_transcript_root`、Codex 推奨 PR-MM)。壊れた transcript root が `transcript.get("words")` AttributeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-MM |
 | 412 | `template/scripts/compare_telop_split.py` が optional `typo_dict.json` root に dict を要求し、list / str など root 破損を `typo_dict_invalid` JSON tail + exit 3 で reject することを lint (`test_compare_telop_split_rejects_non_dict_typo_dict_root`、Codex 推奨 PR-MN)。壊れた typo_dict root が `typo_dict.get("preserve")` AttributeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-MN |
+| 413 | `template/scripts/preflight_video.py` が既存 `--write-config` JSON root に dict を要求し、list / str など root 破損を `write_config_parse_error` JSON tail + exit 3 で reject することを lint (`test_preflight_video_write_config_rejects_non_dict_root`、Codex 推奨 PR-MO)。壊れた project config root が `cfg.setdefault("source", {})` AttributeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-MO |
 
 ## Test Requirements
 

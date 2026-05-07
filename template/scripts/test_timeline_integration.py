@@ -7052,6 +7052,55 @@ def test_preflight_video_write_config_parse_error_emits_tail() -> None:
         _shutil_mod.rmtree(tmp_dir, ignore_errors=True)
 
 
+def test_preflight_video_write_config_rejects_non_dict_root() -> None:
+    """preflight_video で既存 write-config root 非 dict を tail + exit 3 で reject."""
+    import os as _os
+    import sys as _sys
+    import subprocess
+    import shutil as _shutil_mod
+
+    if _shutil_mod.which("ffprobe") is None or _shutil_mod.which("ffmpeg") is None:
+        return
+
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="preflight_bad_cfg_root_"))
+    bad_cfg = tmp_dir / "project-config.json"
+    bad_cfg.write_text(json.dumps(["not", "a", "dict"]), encoding="utf-8")
+    src_mp4 = tmp_dir / "in.mp4"
+    try:
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+                 "color=c=black:s=320x240:d=0.1", "-pix_fmt", "yuv420p", str(src_mp4)],
+                check=True, capture_output=True, timeout=30,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            return
+
+        result = subprocess.run(
+            [_sys.executable, str(Path(__file__).parent / "preflight_video.py"),
+             str(src_mp4),
+             "--write-config", str(bad_cfg),
+             "--json-log"],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert result.returncode == 3, \
+            f"non-dict write-config should exit 3, got {result.returncode}\nstderr: {result.stderr}"
+        assert "existing write-config validation failed" in result.stderr, result.stderr
+        lines = [l for l in result.stdout.splitlines() if l.strip()]
+        v1_tail = json.loads(lines[-1])
+        assert v1_tail["status"] == "error"
+        assert v1_tail["category"] == "write-config-parse-error"
+        assert v1_tail["exit_code"] == 3
+        assert v1_tail["error"] == "write-config root must be dict, got list"
+    finally:
+        _sys.argv = saved_argv
+        _os.chdir(saved_cwd)
+        _shutil_mod.rmtree(tmp_dir, ignore_errors=True)
+
+
 def test_observability_redact_error_message_strips_abs_path() -> None:
     """PR-G review P1 #2: redact_error_message が error 文字列内の abs path を placeholder 化する。
 
@@ -28860,6 +28909,7 @@ def main() -> int:
         test_compare_telop_split_typo_dict_invalid_emits_tail,
         test_compare_telop_split_rejects_non_dict_typo_dict_root,
         test_preflight_video_write_config_parse_error_emits_tail,
+        test_preflight_video_write_config_rejects_non_dict_root,
         test_observability_redact_error_message_strips_abs_path,
         test_observability_redact_error_message_windows_path,
         test_observability_redact_error_message_ipv6_and_data_uri_safe,
