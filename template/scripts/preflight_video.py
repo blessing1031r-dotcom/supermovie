@@ -542,6 +542,19 @@ def main():
         msg = str(e)
         print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
         sys.exit(_emit("ffprobe_failed", 3, error=msg))
+    tags = video.get("tags") or {}
+    for rotation_label, rotation_value in (
+        ("ffprobe video.tags.rotate", tags.get("rotate")),
+        ("ffprobe video.rotation", video.get("rotation")),
+    ):
+        if rotation_value is None:
+            continue
+        try:
+            validate_int(rotation_value, rotation_label)
+        except ValueError as e:
+            msg = str(e)
+            print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+            sys.exit(_emit("ffprobe_failed", 3, error=msg))
 
     source = build_source(
         video, audio_streams, subtitle_streams, video_streams, data_streams,
