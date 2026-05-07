@@ -8438,6 +8438,8 @@ def test_preflight_video_rejects_malformed_ffprobe_video_dimensions() -> None:
     cases = [
         ({"codec_type": "video", "width": "bad", "height": 240},
          "ffprobe video.width must be positive int, got str"),
+        ({"codec_type": "video", "width": "３２０", "height": 240},
+         "ffprobe video.width must be positive int, got str"),
         ({"codec_type": "video", "width": True, "height": 240},
          "ffprobe video.width must be positive int, got bool"),
         ({"codec_type": "video", "height": 240},
@@ -8813,6 +8815,7 @@ def test_preflight_video_rejects_malformed_ffprobe_rotation_fields() -> None:
     cases = [
         ({"tags": {"rotate": True}}, "ffprobe video.tags.rotate must be int, got bool"),
         ({"tags": {"rotate": "ninety"}}, "ffprobe video.tags.rotate must be int, got str"),
+        ({"tags": {"rotate": "９０"}}, "ffprobe video.tags.rotate must be int, got str"),
         ({"rotation": ["90"]}, "ffprobe video.rotation must be int, got list"),
     ]
 
