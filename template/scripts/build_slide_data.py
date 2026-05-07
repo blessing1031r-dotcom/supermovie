@@ -473,10 +473,15 @@ def main():
 
     out_path = PROJ / "src" / "Slides" / "slideData.ts"
     backup = PROJ / "src" / "Slides" / "slideData.backup.ts"
-    if out_path.exists() and not backup.exists():
-        backup.write_text(out_path.read_text(encoding="utf-8"), encoding="utf-8")
-    ts = render_slide_data_ts(slides)
-    out_path.write_text(ts, encoding="utf-8")
+    try:
+        if out_path.exists() and not backup.exists():
+            backup.write_text(out_path.read_text(encoding="utf-8"), encoding="utf-8")
+        ts = render_slide_data_ts(slides)
+        out_path.write_text(ts, encoding="utf-8")
+    except OSError as e:
+        err = redact_error_message(str(e))
+        print(f"ERROR: slideData.ts write failed: {err}", file=sys.stderr)
+        sys.exit(_emit_error("build_slide_write_error", 3, error=err))
 
     mode_label = "plan" if used_plan else f"deterministic-{args.mode}"
     print(f"=== slideData.ts 生成 (mode={mode_label}) ===")
