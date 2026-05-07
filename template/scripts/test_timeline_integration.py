@@ -7745,6 +7745,57 @@ def test_preflight_video_rejects_malformed_ffprobe_streams() -> None:
         _sys.argv = saved_argv
 
 
+def test_preflight_video_rejects_malformed_ffprobe_codec_type() -> None:
+    """preflight_video が ffprobe streams[*].codec_type 破損を tail + exit 3 で reject."""
+    import io
+    import sys as _sys
+    from contextlib import redirect_stdout, redirect_stderr
+
+    import preflight_video as pv
+
+    cases = [
+        ([{"codec_type": ["video"], "width": 320, "height": 240}],
+         "ffprobe streams[0].codec_type must be str, got list"),
+        ([{"codec_type": "video", "width": 320, "height": 240}, {"codec_type": True}],
+         "ffprobe streams[1].codec_type must be str, got bool"),
+    ]
+
+    saved_argv = list(_sys.argv)
+    original_run_ffprobe = pv.run_ffprobe
+    try:
+        for streams, expected_error in cases:
+            with tempfile.TemporaryDirectory() as tmp:
+                src = Path(tmp) / "in.mp4"
+                src.write_bytes(b"not a real mp4; run_ffprobe is monkeypatched")
+                pv.run_ffprobe = lambda _path, payload=streams: {
+                    "streams": payload,
+                    "format": {},
+                }
+                _sys.argv = ["preflight_video.py", str(src), "--json-log"]
+
+                out_buf = io.StringIO()
+                err_buf = io.StringIO()
+                with redirect_stdout(out_buf), redirect_stderr(err_buf):
+                    try:
+                        pv.main()
+                        raise AssertionError("preflight_video should reject malformed codec_type")
+                    except SystemExit as e:
+                        if e.code != 3:
+                            raise AssertionError(f"Expected exit code 3, got: {e.code}")
+
+                err_text = err_buf.getvalue()
+                assert "ffprobe output validation failed" in err_text, err_text
+                lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+                v1_tail = json.loads(lines[-1])
+                assert v1_tail["status"] == "error"
+                assert v1_tail["category"] == "ffprobe-failed"
+                assert v1_tail["exit_code"] == 3
+                assert v1_tail["error"] == expected_error
+    finally:
+        pv.run_ffprobe = original_run_ffprobe
+        _sys.argv = saved_argv
+
+
 def test_preflight_video_rejects_malformed_ffprobe_format() -> None:
     """preflight_video が ffprobe format root 非 dict を tail + exit 3 で reject."""
     import io
@@ -30236,6 +30287,7 @@ def main() -> int:
         test_preflight_video_write_config_parse_error_emits_tail,
         test_preflight_video_write_config_rejects_non_dict_root,
         test_preflight_video_rejects_malformed_ffprobe_streams,
+        test_preflight_video_rejects_malformed_ffprobe_codec_type,
         test_preflight_video_rejects_malformed_ffprobe_format,
         test_preflight_video_rejects_malformed_ffprobe_format_duration,
         test_preflight_video_rejects_malformed_ffprobe_video_dimensions,
