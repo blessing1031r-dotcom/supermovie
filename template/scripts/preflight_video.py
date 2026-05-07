@@ -392,6 +392,13 @@ def main():
             msg = f"ffprobe streams[{i}] must be dict, got {type(stream).__name__}"
             print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
             sys.exit(_emit("ffprobe_failed", 3, error=msg))
+    fmt_meta = probe.get("format", {})
+    if fmt_meta is None:
+        fmt_meta = {}
+    if not isinstance(fmt_meta, dict):
+        msg = f"ffprobe format must be dict, got {type(fmt_meta).__name__}"
+        print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+        sys.exit(_emit("ffprobe_failed", 3, error=msg))
     video_streams = [s for s in streams if s.get("codec_type") == "video"]
     audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
     subtitle_streams = [s for s in streams if s.get("codec_type") == "subtitle"]
@@ -403,7 +410,7 @@ def main():
 
     source = build_source(
         video, audio_streams, subtitle_streams, video_streams, data_streams,
-        probe.get("format", {}) or {}, args.input_video,
+        fmt_meta, args.input_video,
     )
     risks = build_risks(source)
     source["risks"] = risks
