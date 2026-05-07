@@ -150,10 +150,11 @@ def _resolve_int(
 
 
 def _resolve_decimal(
-    cli_val: float | None,
+    cli_val: float | str | None,
     env_name: str,
     *,
     v0_alias: str | None = None,
+    arg_name: str | None = None,
 ) -> float | None:
     """CLI > v1 env > v0 alias env > None の precedence で decimal 解決
     (finite + >=0)。範囲違反は ValueError。
@@ -166,9 +167,27 @@ def _resolve_decimal(
     v0_alias (SUPERMOVIE_RATE_INPUT_PER_MTOK 等) を fallback として参照する。
     両方設定時は v1 が勝つ。docs/OBSERVABILITY.md §Rate Env Var Convention 整合。
     """
+    def parse_decimal_token(raw: str, source: str) -> float:
+        text = raw.strip()
+        if not text or "_" in text:
+            raise ValueError(f"{source}={raw!r} は decimal に変換できません: invalid token")
+        try:
+            return float(text)
+        except ValueError as e:
+            raise ValueError(
+                f"{source}={raw!r} は decimal に変換できません: {e}"
+            ) from e
+
     if cli_val is not None:
-        v = cli_val
-        source = f"--{env_name.lower()}"
+        source = f"--{arg_name or env_name.lower()}"
+        if isinstance(cli_val, bool):
+            raise ValueError(f"{source}={cli_val!r} は decimal に変換できません: invalid token")
+        if isinstance(cli_val, (int, float)):
+            v = float(cli_val)
+        elif isinstance(cli_val, str):
+            v = parse_decimal_token(cli_val, source)
+        else:
+            raise ValueError(f"{source}={cli_val!r} は decimal に変換できません: invalid token")
     else:
         env_str = os.environ.get(env_name)
         used_env = env_name
@@ -178,13 +197,8 @@ def _resolve_decimal(
             used_env = v0_alias
         if env_str is None:
             return None
-        try:
-            v = float(env_str)
-        except ValueError as e:
-            raise ValueError(
-                f"{used_env}={env_str!r} は decimal に変換できません: {e}"
-            ) from e
         source = f"env {used_env}"
+        v = parse_decimal_token(env_str, used_env)
     if not math.isfinite(v):
         raise ValueError(f"{source}={v} は finite (nan/inf 禁止)")
     if v < 0:
@@ -210,7 +224,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="API を呼ばず prompt 生成 + cost estimate JSON を出して exit 0 "
                          "(API key 不要、env 解決は実行)")
-    ap.add_argument("--rate-input", type=float, default=None,
+    ap.add_argument("--rate-input", default=None,
                     help="input cost rate USD/MTok "
                          "(env v1: SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK、"
                          "env v0 alias: SUPERMOVIE_RATE_INPUT_PER_MTOK、"
@@ -340,6 +354,7 @@ def main():
             args.rate_input,
             "SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK",
             v0_alias="SUPERMOVIE_RATE_INPUT_PER_MTOK",
+            arg_name="rate-input",
         )
         rate_output = _resolve_decimal(
             args.rate_output,
