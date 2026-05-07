@@ -267,8 +267,9 @@ def validate_positive_int(value, label: str) -> int:
     if isinstance(value, int):
         parsed = value
     elif isinstance(value, str):
-        text = value.strip()
-        if not text.isascii() or not text.isdecimal():
+        raw_text = value
+        text = raw_text.strip()
+        if text != raw_text or not text.isascii() or not text.isdecimal():
             raise ValueError(f"{label} must be positive int, got str")
         parsed = int(text)
     else:
