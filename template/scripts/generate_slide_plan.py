@@ -111,7 +111,7 @@ def _resolve_int(
         elif isinstance(cli_val, str):
             text = cli_val.strip()
             digits = text[1:] if text.startswith("-") else text
-            if not digits.isdigit():
+            if not digits or not digits.isascii() or not digits.isdecimal():
                 raise ValueError(
                     f"--{arg_name}={cli_val!r} は int に変換できません: invalid token"
                 )
@@ -129,7 +129,7 @@ def _resolve_int(
         if env_str is not None:
             text = env_str.strip()
             digits = text[1:] if text.startswith("-") else text
-            if not digits.isdigit():
+            if not digits or not digits.isascii() or not digits.isdecimal():
                 raise ValueError(
                     f"{env_name}={env_str!r} は int に変換できません: invalid token"
                 )
