@@ -95,7 +95,7 @@ def load_json(p: Path):
 
 
 def _resolve_int(
-    cli_val: int | None,
+    cli_val: int | str | None,
     env_name: str,
     default: int,
     min_val: int,
@@ -104,7 +104,25 @@ def _resolve_int(
 ) -> int:
     """CLI > env > default の precedence で int 解決。range 違反は ValueError raise。"""
     if cli_val is not None:
-        v = cli_val
+        if isinstance(cli_val, bool):
+            raise ValueError(f"--{arg_name}={cli_val!r} は int に変換できません: invalid token")
+        if isinstance(cli_val, int):
+            v = cli_val
+        elif isinstance(cli_val, str):
+            text = cli_val.strip()
+            digits = text[1:] if text.startswith("-") else text
+            if not digits.isdigit():
+                raise ValueError(
+                    f"--{arg_name}={cli_val!r} は int に変換できません: invalid token"
+                )
+            try:
+                v = int(text)
+            except ValueError as e:
+                raise ValueError(
+                    f"--{arg_name}={cli_val!r} は int に変換できません: {e}"
+                ) from e
+        else:
+            raise ValueError(f"--{arg_name}={cli_val!r} は int に変換できません: invalid token")
         source = f"--{arg_name}"
     else:
         env_str = os.environ.get(env_name)
@@ -186,7 +204,7 @@ def main():
     ap.add_argument("--max-input-words", type=int, default=None,
                     help=f"transcript words preview の cap (default {MAX_INPUT_WORDS_DEFAULT}、"
                          f"env: SUPERMOVIE_MAX_INPUT_WORDS)")
-    ap.add_argument("--max-input-segments", type=int, default=None,
+    ap.add_argument("--max-input-segments", default=None,
                     help="transcript segments preview の cap "
                          "(unset: 全量、env: SUPERMOVIE_MAX_INPUT_SEGMENTS)")
     ap.add_argument("--dry-run", action="store_true",
@@ -295,9 +313,14 @@ def main():
         )
         # max-input-segments は default unset
         if args.max_input_segments is not None:
-            max_input_segments: int | None = args.max_input_segments
-            if max_input_segments < 1:
-                raise ValueError(f"--max-input-segments={max_input_segments} は >=1 必須")
+            max_input_segments: int | None = _resolve_int(
+                args.max_input_segments,
+                "SUPERMOVIE_MAX_INPUT_SEGMENTS",
+                1,
+                1,
+                sys.maxsize,
+                "max-input-segments",
+            )
         else:
             env_seg = os.environ.get("SUPERMOVIE_MAX_INPUT_SEGMENTS")
             if env_seg is not None:

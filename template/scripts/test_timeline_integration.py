@@ -2498,6 +2498,42 @@ def test_generate_slide_plan_max_input_segments_env_rejects_underscore_value() -
     assert_eq(payload.get("exit_code"), 4, "segment env underscore exit_code")
 
 
+def test_generate_slide_plan_max_input_segments_cli_rejects_underscore_value() -> None:
+    """generate_slide_plan が --max-input-segments の underscore 数値を reject."""
+    import generate_slide_plan as gsp
+    import sys as _sys
+    import io as _io
+    import contextlib as _contextlib
+
+    original_proj = gsp.PROJ
+    old_argv = _sys.argv
+    with tempfile.TemporaryDirectory() as tmp:
+        gsp.PROJ = Path(tmp)
+        _sys.argv = [
+            "generate_slide_plan.py",
+            "--dry-run",
+            "--json-log",
+            "--max-input-segments",
+            "1_0",
+        ]
+        try:
+            out_buf = _io.StringIO()
+            err_buf = _io.StringIO()
+            with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                ret = gsp.main()
+        finally:
+            _sys.argv = old_argv
+            gsp.PROJ = original_proj
+
+    assert_eq(ret, 4, "--max-input-segments underscore → exit 4")
+    assert "--max-input-segments" in err_buf.getvalue(), err_buf.getvalue()
+    lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+    payload = json.loads(lines[-1])
+    assert_eq(payload.get("status"), "error", "segment cli underscore status")
+    assert_eq(payload.get("category"), "cost_guard_arg_invalid", "segment cli underscore category")
+    assert_eq(payload.get("exit_code"), 4, "segment cli underscore exit_code")
+
+
 def test_generate_slide_plan_json_log_status_path() -> None:
     """Phase 3-V P3 logging 拡張 (Codex P2 design §4): --json-log で全 return path に
     status / exit_code 付き JSON emit を確認 (success / api_key_skipped 2 path)."""
@@ -30455,6 +30491,7 @@ def main() -> int:
         test_generate_slide_plan_max_tokens_cap_rejects,
         test_generate_slide_plan_resolve_int_rejects_underscore_env_value,
         test_generate_slide_plan_max_input_segments_env_rejects_underscore_value,
+        test_generate_slide_plan_max_input_segments_cli_rejects_underscore_value,
         test_generate_slide_plan_json_log_status_path,
         test_generate_slide_plan_skip_preserves_with_bad_env,
         test_generate_slide_plan_rate_rejects_nan_inf,
