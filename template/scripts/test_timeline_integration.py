@@ -550,6 +550,70 @@ def test_ms_to_playback_frame_rejects_invalid_cut_segment_value_types() -> None:
             )
 
 
+def test_ms_to_playback_frame_rejects_invalid_cut_segment_ranges() -> None:
+    """PR-LS: cut segment ranges must preserve timeline order."""
+    degenerate = [
+        {
+            "originalStartMs": 500,
+            "originalEndMs": 500,
+            "playbackStart": 15,
+            "playbackEnd": 15,
+        }
+    ]
+    assert_eq(
+        timeline.ms_to_playback_frame(500, 30, degenerate),
+        15,
+        "degenerate zero-duration cut segment remains valid",
+    )
+
+    invalid_ranges = (
+        (
+            {
+                "originalStartMs": 1000,
+                "originalEndMs": 500,
+                "playbackStart": 0,
+                "playbackEnd": 15,
+            },
+            "originalStartMs > originalEndMs",
+        ),
+        (
+            {
+                "originalStartMs": 0,
+                "originalEndMs": 1000,
+                "playbackStart": 30,
+                "playbackEnd": 15,
+            },
+            "playbackStart > playbackEnd",
+        ),
+        (
+            {
+                "originalStartMs": 0,
+                "originalEndMs": 1000,
+                "playbackStart": -1,
+                "playbackEnd": 30,
+            },
+            "negative playbackStart",
+        ),
+        (
+            {
+                "originalStartMs": 0,
+                "originalEndMs": 1000,
+                "playbackStart": 0,
+                "playbackEnd": -1,
+            },
+            "negative playbackEnd",
+        ),
+    )
+    for malformed, label in invalid_ranges:
+        assert_raises(
+            lambda malformed=malformed: timeline.ms_to_playback_frame(
+                500, 30, [malformed]
+            ),
+            ValueError,
+            f"ms_to_playback_frame invalid cut segment range: {label}",
+        )
+
+
 def test_voicevox_collect_chunks_validation() -> None:
     """voicevox_narration.collect_chunks が壊れた transcript で raise する."""
     import voicevox_narration as vn
@@ -27859,6 +27923,7 @@ def main() -> int:
         test_ms_to_playback_frame_rejects_invalid_ms_values,
         test_ms_to_playback_frame_rejects_invalid_cut_segments_shape,
         test_ms_to_playback_frame_rejects_invalid_cut_segment_value_types,
+        test_ms_to_playback_frame_rejects_invalid_cut_segment_ranges,
         test_voicevox_collect_chunks_validation,
         test_voicevox_write_narration_data_alignment,
         test_voicevox_write_order_narrationdata_before_wav,
