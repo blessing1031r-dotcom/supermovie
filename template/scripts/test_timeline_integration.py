@@ -6285,7 +6285,8 @@ def test_observability_helper_status_map() -> None:
         "transcript_missing", "transcript_invalid", "no_chunks", "invalid_fps",
         "stale_cleanup_fail", "vad_invalid", "no_chunks_succeeded",
         "partial_chunks_disallowed", "concat_fail",
-        "write_narration_data_wave_error", "write_narration_data_write_error", "sentinel_write_fail",
+        "write_narration_data_wave_error", "write_narration_data_write_error",
+        "narration_dir_mkdir_error", "sentinel_write_fail",
         # compare_telop_split (Codex 21:01 verdict S3-6 KPI comparison)
         "all_pass", "some_fail",
         # visual_smoke (Codex 21:01 verdict S3-4 dimension regression)

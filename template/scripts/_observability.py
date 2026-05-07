@@ -89,6 +89,7 @@ STATUS_MAP = {
     "concat_fail": ("error", "concat_fail"),
     "write_narration_data_wave_error": ("error", "write_narration_data_wave_error"),
     "write_narration_data_write_error": ("error", "write_narration_data_write_error"),  # PR-PM step 507
+    "narration_dir_mkdir_error": ("error", "narration_dir_mkdir_error"),  # PR-PM step 507 P2
     "sentinel_write_fail": ("error", "sentinel_write_fail"),
     # compare_telop_split (Codex 21:01 verdict S3-6 KPI comparison、category_override="kpi-comparison")
     "all_pass": ("ok", "kpi-comparison"),
