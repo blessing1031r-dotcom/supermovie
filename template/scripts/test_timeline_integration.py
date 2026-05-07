@@ -4472,6 +4472,7 @@ def test_visual_smoke_probe_dim_rejects_malformed_ffprobe_json() -> None:
         (json.dumps({"streams": [{"width": 320}]}), "ffprobe stream.height must be present"),
         (json.dumps({"streams": [{"width": True, "height": 240}]}), "ffprobe stream.width must be int-compatible, got bool"),
         (json.dumps({"streams": [{"width": "bad", "height": 240}]}), "ffprobe stream.width must be int-compatible, got str"),
+        (json.dumps({"streams": [{"width": "1_000", "height": 240}]}), "ffprobe stream.width must be int-compatible, got str"),
         (json.dumps({"streams": [{"width": 320.5, "height": 240}]}), "ffprobe stream.width must be int-compatible, got float"),
         (json.dumps({"streams": [{"width": 320, "height": 240.5}]}), "ffprobe stream.height must be int-compatible, got float"),
         (json.dumps({"streams": [{"width": 0, "height": 240}]}), "ffprobe stream.width must be positive int, got 0"),
