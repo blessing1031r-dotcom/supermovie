@@ -333,7 +333,7 @@ def cli() -> int:
             return _emit_early("usage_error_unknown_format", 4, bad_format=f)
     # Codex 21:23 PR4 re-review P1: 非整数 frame を try-except で捕捉、JSON tail emit する。
     frame_tokens = [x.strip() for x in args.frames.split(",") if x.strip()]
-    invalid_frame = next((x for x in frame_tokens if not re.fullmatch(r"-?\d+", x)), None)
+    invalid_frame = next((x for x in frame_tokens if not re.fullmatch(r"-?[0-9]+", x)), None)
     if invalid_frame is not None:
         print(
             f"ERROR: --frames に非整数値: {args.frames!r} "
