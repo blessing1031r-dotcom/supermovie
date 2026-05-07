@@ -7892,6 +7892,63 @@ def test_preflight_video_rejects_malformed_ffprobe_side_data_list() -> None:
         _sys.argv = saved_argv
 
 
+def test_preflight_video_rejects_malformed_ffprobe_side_data_rotation() -> None:
+    """preflight_video が Display Matrix rotation 破損を tail + exit 3 で reject."""
+    import io
+    import sys as _sys
+    from contextlib import redirect_stdout, redirect_stderr
+
+    import preflight_video as pv
+
+    cases = [
+        ("ninety", "ffprobe streams[0].side_data_list[0].rotation must be int, got str"),
+        (True, "ffprobe streams[0].side_data_list[0].rotation must be int, got bool"),
+    ]
+
+    saved_argv = list(_sys.argv)
+    original_run_ffprobe = pv.run_ffprobe
+    try:
+        for rotation, expected_error in cases:
+            with tempfile.TemporaryDirectory() as tmp:
+                src = Path(tmp) / "in.mp4"
+                src.write_bytes(b"not a real mp4; run_ffprobe is monkeypatched")
+                pv.run_ffprobe = lambda _path, value=rotation: {
+                    "streams": [{
+                        "codec_type": "video",
+                        "width": 320,
+                        "height": 240,
+                        "side_data_list": [{
+                            "side_data_type": "Display Matrix",
+                            "rotation": value,
+                        }],
+                    }],
+                    "format": {},
+                }
+                _sys.argv = ["preflight_video.py", str(src), "--json-log"]
+
+                out_buf = io.StringIO()
+                err_buf = io.StringIO()
+                with redirect_stdout(out_buf), redirect_stderr(err_buf):
+                    try:
+                        pv.main()
+                        raise AssertionError("preflight_video should reject malformed side data rotation")
+                    except SystemExit as e:
+                        if e.code != 3:
+                            raise AssertionError(f"Expected exit code 3, got: {e.code}")
+
+                err_text = err_buf.getvalue()
+                assert "ffprobe output validation failed" in err_text, err_text
+                lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+                v1_tail = json.loads(lines[-1])
+                assert v1_tail["status"] == "error"
+                assert v1_tail["category"] == "ffprobe-failed"
+                assert v1_tail["exit_code"] == 3
+                assert v1_tail["error"] == expected_error
+    finally:
+        pv.run_ffprobe = original_run_ffprobe
+        _sys.argv = saved_argv
+
+
 def test_observability_redact_error_message_strips_abs_path() -> None:
     """PR-G review P1 #2: redact_error_message が error 文字列内の abs path を placeholder 化する。
 
@@ -29715,6 +29772,7 @@ def main() -> int:
         test_preflight_video_rejects_malformed_ffprobe_format,
         test_preflight_video_rejects_malformed_ffprobe_video_dimensions,
         test_preflight_video_rejects_malformed_ffprobe_side_data_list,
+        test_preflight_video_rejects_malformed_ffprobe_side_data_rotation,
         test_observability_redact_error_message_strips_abs_path,
         test_observability_redact_error_message_windows_path,
         test_observability_redact_error_message_ipv6_and_data_uri_safe,

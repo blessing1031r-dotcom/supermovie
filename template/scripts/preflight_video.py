@@ -277,6 +277,23 @@ def validate_positive_int(value, label: str) -> int:
     return parsed
 
 
+def validate_int(value, label: str) -> int:
+    if isinstance(value, bool) or value is None:
+        raise ValueError(f"{label} must be int, got {type(value).__name__}")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("-"):
+            digits = text[1:]
+        else:
+            digits = text
+        if not digits.isdigit():
+            raise ValueError(f"{label} must be int, got str")
+        return int(text)
+    raise ValueError(f"{label} must be int, got {type(value).__name__}")
+
+
 def build_risks(source: dict) -> list[str]:
     risks = []
     rotation_norm = (source.get("rotation") or {}).get("normalized")
@@ -424,6 +441,18 @@ def main():
                 )
                 print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
                 sys.exit(_emit("ffprobe_failed", 3, error=msg))
+            if entry.get("side_data_type") == "Display Matrix":
+                rotation = entry.get("rotation")
+                if rotation is not None:
+                    try:
+                        validate_int(
+                            rotation,
+                            f"ffprobe streams[{i}].side_data_list[{j}].rotation",
+                        )
+                    except ValueError as e:
+                        msg = str(e)
+                        print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+                        sys.exit(_emit("ffprobe_failed", 3, error=msg))
     fmt_meta = probe.get("format", {})
     if fmt_meta is None:
         fmt_meta = {}
