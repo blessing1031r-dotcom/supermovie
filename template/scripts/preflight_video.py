@@ -536,6 +536,12 @@ def main():
             msg = str(e)
             print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
             sys.exit(_emit("ffprobe_failed", 3, error=msg))
+    try:
+        validate_optional_str(video.get("pix_fmt"), "ffprobe video.pix_fmt")
+    except ValueError as e:
+        msg = str(e)
+        print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+        sys.exit(_emit("ffprobe_failed", 3, error=msg))
 
     source = build_source(
         video, audio_streams, subtitle_streams, video_streams, data_streams,
