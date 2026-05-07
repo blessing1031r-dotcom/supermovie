@@ -522,7 +522,12 @@ def main():
     ts_lines.append("")
 
     out_path = PROJ / "src" / "テロップテンプレート" / "telopData.ts"
-    out_path.write_text("\n".join(ts_lines), encoding="utf-8")
+    try:
+        out_path.write_text("\n".join(ts_lines), encoding="utf-8")
+    except OSError as e:
+        err = redact_error_message(str(e))
+        print(f"ERROR: telopData.ts write failed: {err}", file=_sys.stderr)
+        _sys.exit(_emit_error("build_telop_write_error", 3, error=err))
 
     mode_label = "baseline" if args.baseline else "BudouX"
     print(f"=== telopData.ts 生成 ({mode_label}) ===")
@@ -577,4 +582,4 @@ def main():
 
 if __name__ == "__main__":
     # PR-P (Codex 01:21 Z approve): main() return int を exit code に propagate。
-    sys.exit(main() or 0)
+    _sys.exit(main() or 0)

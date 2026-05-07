@@ -139,6 +139,7 @@ STATUS_MAP = {
     "build_slide_plan_missing": ("error", "plan-missing"),
     "build_slide_plan_invalid": ("error", "plan-invalid"),
     "build_slide_write_error": ("error", "slide-write-error"),
+    "build_telop_write_error": ("error", "telop-write-error"),
     "build_telop_transcript_invalid": ("error", "transcript-invalid"),
 }
 
