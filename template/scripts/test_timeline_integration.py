@@ -2524,6 +2524,15 @@ def test_build_scripts_wiring() -> None:
     assert_eq(len(cuts), 1, "bsd.build_cut_segments_from_vad len")
     assert_eq(cuts[0]["originalStartMs"], 0, "bsd cuts[0] originalStartMs")
     assert_eq(cuts[0]["playbackEnd"], 30, "bsd cut mapping uses timeline helper")
+    assert_eq(bsd.build_cut_segments_from_vad(None), [], "bsd missing vad returns empty")
+    for bad_empty_vad, label in (({}, "empty dict"), ([], "empty list")):
+        assert_raises(
+            lambda bad_empty_vad=bad_empty_vad: bsd.build_cut_segments_from_vad(
+                bad_empty_vad
+            ),
+            timeline.VadSchemaError,
+            f"bsd raises VadSchemaError for {label}",
+        )
 
     # build_telop_data の cut helper も validate_vad_schema 経由
     cuts_t = btd.build_cut_segments_from_vad(

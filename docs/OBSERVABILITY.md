@@ -701,6 +701,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 399 | `template/scripts/timeline.py` の `_validate_ms()` が `ms` と `cut_segments[*].originalStartMs/originalEndMs` に non-negative finite int|float のみを受け付け、負値を reject することを lint (`test_ms_to_playback_frame_rejects_invalid_ms_values` / `test_ms_to_playback_frame_rejects_invalid_cut_segment_value_types`、Codex 推奨 PR-MA)。負の millisecond が frame 計算や cut-aware range に silent に入る drift を防ぐ | PR-MA |
 | 400 | `template/scripts/timeline.py` の `validate_vad_schema()` / `validate_transcript_segment()` が `start` / `end` timing に non-negative finite int|float のみを受け付け、負値を reject することを lint (`test_timeline_validation_rejects_negative_timing_values`、Codex 推奨 PR-MB)。負 timestamp が VAD / transcript schema validation を通過して後段 mapping に入る drift を防ぐ | PR-MB |
 | 401 | `template/scripts/timeline.py` の `validate_transcript_segment(idx=...)` が label index に `-1` または非負 int のみを受け付け、bool / float / str / container / `-2` 以下を reject することを lint (`test_transcript_validation_rejects_invalid_idx_values`、Codex 推奨 PR-MC)。public helper の caller typo が `segment[True]` や比較 TypeError に流れる drift を防ぐ | PR-MC |
+| 402 | `template/scripts/build_slide_data.py` の `build_cut_segments_from_vad()` wrapper が VAD 不在 `None` のみを empty cut 扱いし、空 dict/list など falsy な破損 VAD を `validate_vad_schema()` 経由で reject することを lint (`test_build_scripts_wiring`、Codex 推奨 PR-MD)。`vad_result.json` が壊れているのに slide generation が cut 無しへ silent fallback する drift を防ぐ | PR-MD |
 
 ## Test Requirements
 
