@@ -697,6 +697,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 395 | `template/scripts/timeline.py` の `build_cut_segments_from_vad()` が direct call でも `validate_vad_schema()` を通し、raw VAD の schema / range / monotonicity 破損を `VadSchemaError` で fail-fast することを lint (`test_build_cut_segments_from_vad_validates_input_schema_directly`、Codex 推奨 PR-LW)。wrapper 経由以外の呼び出しで VAD 破損が `KeyError` / silent mapping に流れる drift を防ぐ | PR-LW |
 | 396 | `template/scripts/timeline.py` の `read_video_config_fps(default=...)` が fallback default に positive int のみを受け付け、bool / float / str / zero / negative を reject することを lint (`test_read_video_config_fps_rejects_invalid_default`、Codex 推奨 PR-LX)。`videoConfig.ts` 不在 / malformed / `FPS=0` fallback から invalid fps が後段 timing 計算へ silent に流れる drift を防ぐ | PR-LX |
 | 397 | `template/scripts/timeline.py` の `validate_transcript_segment()` / `validate_transcript_segments()` が `require_timing` に explicit bool のみを受け付け、`0` / `1` / `"false"` など truthy/falsy 値を reject することを lint (`test_transcript_validation_rejects_non_bool_require_timing`、Codex 推奨 PR-LY)。flag typo が optional/strict timing validation mode を silent に切り替える drift を防ぐ | PR-LY |
+| 398 | `template/scripts/timeline.py` の `load_cut_segments(fail_fast=...)` が explicit bool のみを受け付け、`0` / `1` / `"false"` など truthy/falsy 値を reject することを lint (`test_load_cut_segments_fail_fast`、Codex 推奨 PR-LZ)。VAD 破損時の soft fallback / fail-fast strategy が flag typo で silent に切り替わる drift を防ぐ | PR-LZ |
 
 ## Test Requirements
 

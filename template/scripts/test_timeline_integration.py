@@ -211,6 +211,14 @@ def test_load_cut_segments_fail_fast() -> None:
             timeline.VadSchemaError,
             "fail_fast raise",
         )
+        for bad_flag in (0, 1, "false", "true", None, [], {}):
+            assert_raises(
+                lambda bad_flag=bad_flag: timeline.load_cut_segments(
+                    proj, 30, fail_fast=bad_flag
+                ),
+                TypeError,
+                f"load_cut_segments invalid fail_fast {bad_flag!r}",
+            )
 
 
 def test_transcript_segment_validation() -> None:
