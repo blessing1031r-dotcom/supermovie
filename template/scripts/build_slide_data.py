@@ -235,6 +235,13 @@ def validate_slide_plan(plan: dict, words: list[dict], cut_total_frames: int | N
     errors: list[str] = []
     if not isinstance(plan, dict):
         return ["plan is not a dict"]
+    if not isinstance(words, list):
+        return ["words is not a list"]
+    for i, word in enumerate(words):
+        if not isinstance(word, dict):
+            errors.append(f"words[{i}] not a dict")
+    if errors:
+        return errors
     if plan.get("version") != PLAN_VERSION:
         errors.append(f"version mismatch (expect {PLAN_VERSION})")
     slides = plan.get("slides")
