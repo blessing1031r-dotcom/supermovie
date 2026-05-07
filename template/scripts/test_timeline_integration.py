@@ -2271,6 +2271,130 @@ def test_build_telop_data_rejects_invalid_typo_dict_load() -> None:
                 btd.call_budoux = original_call
 
 
+def test_build_telop_data_rejects_unicode_decode_error() -> None:
+    """step 511: build_telop_data.py が transcript_fixed.json / vad_result.json / typo_dict.json の
+    UnicodeDecodeError を structured tail で reject。read_text(encoding='utf-8') は invalid byte
+    で UnicodeDecodeError を raise するが以前の except tuple はこれを未捕捉だった。"""
+    import build_telop_data as btd
+    import contextlib as _contextlib
+    import io as _io
+
+    INVALID_UTF8 = b"\x80\x81\x82"  # 単独で出現する invalid continuation bytes
+
+    valid_transcript = json.dumps(
+        {"segments": [{"text": "hi", "start": 0, "end": 1000}], "words": []}
+    )
+    valid_vad = json.dumps({"speech_segments": []})
+
+    # Case 1: transcript_fixed.json が invalid UTF-8 → exit 3, category transcript-invalid
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = _setup_temp_project(Path(tmp))
+        (proj / "transcript_fixed.json").write_bytes(INVALID_UTF8)
+        original_proj = btd.PROJ
+        original_call = btd.call_budoux
+        btd.PROJ = proj
+        btd.call_budoux = lambda x: [["dummy"] for _ in x]
+        try:
+            import sys as _sys
+            old_argv = _sys.argv
+            _sys.argv = ["build_telop_data.py", "--json-log"]
+            try:
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                    try:
+                        btd.main()
+                        raise AssertionError("build_telop_data should fail for unicode transcript")
+                    except SystemExit as e:
+                        if e.code != 3:
+                            raise AssertionError(f"unicode transcript: Expected exit 3, got: {e.code}")
+                err_text = err_buf.getvalue()
+                if "transcript_fixed.json load failed" not in err_text:
+                    raise AssertionError(f"unicode transcript: Expected load failed in stderr, got: {err_text!r}")
+                lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                tail = json.loads(lines[-1])
+                assert_eq(tail.get("status"), "error", "unicode transcript status")
+                assert_eq(tail.get("exit_code"), 3, "unicode transcript exit_code")
+            finally:
+                _sys.argv = old_argv
+        finally:
+            btd.PROJ = original_proj
+            btd.call_budoux = original_call
+
+    # Case 2: vad_result.json が invalid UTF-8 → exit 8, category vad-invalid
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = _setup_temp_project(Path(tmp))
+        (proj / "transcript_fixed.json").write_text(valid_transcript, encoding="utf-8")
+        (proj / "vad_result.json").write_bytes(INVALID_UTF8)
+        original_proj = btd.PROJ
+        original_call = btd.call_budoux
+        btd.PROJ = proj
+        btd.call_budoux = lambda x: [["dummy"] for _ in x]
+        try:
+            import sys as _sys
+            old_argv = _sys.argv
+            _sys.argv = ["build_telop_data.py", "--json-log"]
+            try:
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                    try:
+                        btd.main()
+                        raise AssertionError("build_telop_data should fail for unicode vad")
+                    except SystemExit as e:
+                        if e.code != 8:
+                            raise AssertionError(f"unicode vad: Expected exit 8, got: {e.code}")
+                err_text = err_buf.getvalue()
+                if "vad_result.json load failed" not in err_text:
+                    raise AssertionError(f"unicode vad: Expected load failed in stderr, got: {err_text!r}")
+                lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                tail = json.loads(lines[-1])
+                assert_eq(tail.get("status"), "error", "unicode vad status")
+                assert_eq(tail.get("exit_code"), 8, "unicode vad exit_code")
+            finally:
+                _sys.argv = old_argv
+        finally:
+            btd.PROJ = original_proj
+            btd.call_budoux = original_call
+
+    # Case 3: typo_dict.json が invalid UTF-8 → exit 3, category typo_dict_invalid
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = _setup_temp_project(Path(tmp))
+        (proj / "transcript_fixed.json").write_text(valid_transcript, encoding="utf-8")
+        (proj / "vad_result.json").write_text(valid_vad, encoding="utf-8")
+        (proj / "typo_dict.json").write_bytes(INVALID_UTF8)
+        original_proj = btd.PROJ
+        original_call = btd.call_budoux
+        btd.PROJ = proj
+        btd.call_budoux = lambda x: [["dummy"] for _ in x]
+        try:
+            import sys as _sys
+            old_argv = _sys.argv
+            _sys.argv = ["build_telop_data.py", "--json-log"]
+            try:
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                    try:
+                        btd.main()
+                        raise AssertionError("build_telop_data should fail for unicode typo_dict")
+                    except SystemExit as e:
+                        if e.code != 3:
+                            raise AssertionError(f"unicode typo_dict: Expected exit 3, got: {e.code}")
+                err_text = err_buf.getvalue()
+                if "typo_dict.json load failed" not in err_text:
+                    raise AssertionError(f"unicode typo_dict: Expected load failed in stderr, got: {err_text!r}")
+                lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                tail = json.loads(lines[-1])
+                assert_eq(tail.get("status"), "error", "unicode typo_dict status")
+                assert_eq(tail.get("exit_code"), 3, "unicode typo_dict exit_code")
+            finally:
+                _sys.argv = old_argv
+        finally:
+            btd.PROJ = original_proj
+            btd.call_budoux = original_call
+
+
 def test_build_telop_data_rejects_write_error() -> None:
     """step 501: build_telop_data.py が telopData.ts write 失敗を build_telop_write_error exit 3 で reject."""
     import build_telop_data as btd
@@ -33361,6 +33485,7 @@ def main() -> int:
         test_build_telop_data_rejects_invalid_vad_result,
         test_build_telop_data_rejects_invalid_transcript_load,
         test_build_telop_data_rejects_invalid_typo_dict_load,
+        test_build_telop_data_rejects_unicode_decode_error,
         test_build_telop_data_rejects_write_error,
         test_build_telop_data_budoux_timeout_raises_runtime_error,
         test_generate_slide_plan_skip_no_api_key,
