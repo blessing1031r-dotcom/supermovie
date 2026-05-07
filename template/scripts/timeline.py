@@ -196,10 +196,11 @@ def validate_vad_schema(vad: object) -> dict:
 def build_cut_segments_from_vad(vad: dict, fps: int) -> list[dict]:
     """vad の speech_segments から cut 後 timeline mapping を構築.
 
-    呼び出し前に validate_vad_schema() で検査済みであることを前提とする。
+    direct call でも validate_vad_schema() で VAD schema を fail-fast 検査する。
     fps は呼び出し側の videoConfig.FPS を渡す (Phase 3-J: hardcode 撤廃)。
     """
     fps = _validate_fps(fps)
+    vad = validate_vad_schema(vad)
     out: list[dict] = []
     cursor_ms = 0
     for i, seg in enumerate(vad["speech_segments"]):

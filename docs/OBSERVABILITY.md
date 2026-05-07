@@ -694,6 +694,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 392 | `template/scripts/timeline.py` の `ms_to_playback_frame()` が複数 `cut_segments` 間の monotonicity (`next.originalStartMs >= previous.originalEndMs`、`next.playbackStart >= previous.playbackEnd`) を検査し、adjacent boundary は保持することを lint (`test_ms_to_playback_frame_rejects_non_monotonic_cut_segments`、Codex 推奨 PR-LT)。original overlap / playback overlap が first-match lookup に silent に入る drift を防ぐ | PR-LT |
 | 393 | `template/scripts/timeline.py` の `validate_vad_schema()` が `speech_segments` 間の monotonicity (`next.start >= previous.end`) を検査し、gap / adjacent segment は保持することを lint (`test_vad_schema_rejects_non_monotonic_speech_segments`、Codex 推奨 PR-LU)。overlap / out-of-order VAD が `build_cut_segments_from_vad()` に入る前に fail-fast する境界を保護 | PR-LU |
 | 394 | `template/scripts/timeline.py` の `validate_transcript_segments()` が list-level timing monotonicity (`next.start >= previous.end`) を検査し、`require_timing=False` の timing 欠落 segment は維持することを lint (`test_transcript_segments_reject_non_monotonic_timing`、Codex 推奨 PR-LV)。overlap / out-of-order transcript が slide / telop / narration timing へ silent に入る drift を防ぐ | PR-LV |
+| 395 | `template/scripts/timeline.py` の `build_cut_segments_from_vad()` が direct call でも `validate_vad_schema()` を通し、raw VAD の schema / range / monotonicity 破損を `VadSchemaError` で fail-fast することを lint (`test_build_cut_segments_from_vad_validates_input_schema_directly`、Codex 推奨 PR-LW)。wrapper 経由以外の呼び出しで VAD 破損が `KeyError` / silent mapping に流れる drift を防ぐ | PR-LW |
 
 ## Test Requirements
 

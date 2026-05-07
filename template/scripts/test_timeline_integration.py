@@ -459,6 +459,48 @@ def test_timeline_rejects_invalid_fps_values() -> None:
         )
 
 
+def test_build_cut_segments_from_vad_validates_input_schema_directly() -> None:
+    """PR-LW: direct cut-segment helper calls validate VAD schema."""
+    assert_eq(
+        timeline.build_cut_segments_from_vad(
+            {"speech_segments": [{"start": 0, "end": 1000}]},
+            30,
+        ),
+        [
+            {
+                "id": 1,
+                "originalStartMs": 0,
+                "originalEndMs": 1000,
+                "playbackStart": 0,
+                "playbackEnd": 30,
+            }
+        ],
+        "build_cut_segments_from_vad direct valid vad",
+    )
+
+    for bad_vad, label in (
+        (None, "non-dict"),
+        ({"speech_segments": "wrong"}, "speech_segments non-list"),
+        ({"speech_segments": [{"start": 100, "end": 50}]}, "start > end"),
+        (
+            {
+                "speech_segments": [
+                    {"start": 0, "end": 1000},
+                    {"start": 900, "end": 1200},
+                ]
+            },
+            "non-monotonic",
+        ),
+    ):
+        assert_raises(
+            lambda bad_vad=bad_vad: timeline.build_cut_segments_from_vad(
+                bad_vad, 30
+            ),
+            timeline.VadSchemaError,
+            f"build_cut_segments_from_vad validates {label}",
+        )
+
+
 def test_ms_to_playback_frame_rejects_invalid_ms_values() -> None:
     """PR-LP: ms_to_playback_frame requires finite int|float ms."""
     cut_segments = [
@@ -28065,6 +28107,7 @@ def main() -> int:
         test_timeline_validation_rejects_non_finite_timing_values,
         test_vad_schema_rejects_non_monotonic_speech_segments,
         test_timeline_rejects_invalid_fps_values,
+        test_build_cut_segments_from_vad_validates_input_schema_directly,
         test_ms_to_playback_frame_rejects_invalid_ms_values,
         test_ms_to_playback_frame_rejects_invalid_cut_segments_shape,
         test_ms_to_playback_frame_rejects_invalid_cut_segment_value_types,
