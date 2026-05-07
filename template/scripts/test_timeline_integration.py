@@ -2271,6 +2271,71 @@ def test_build_telop_data_rejects_invalid_typo_dict_load() -> None:
                 btd.call_budoux = original_call
 
 
+def test_build_telop_data_rejects_write_error() -> None:
+    """step 501: build_telop_data.py が telopData.ts write 失敗を build_telop_write_error exit 3 で reject."""
+    import build_telop_data as btd
+    import contextlib
+    import io as _io
+    import os as _os
+    import sys as _sys
+
+    original_proj = btd.PROJ
+    original_fps = btd.FPS
+    original_call = btd.call_budoux
+    old_argv = _sys.argv
+
+    valid_transcript = json.dumps(
+        {"segments": [{"text": "hi", "start": 0, "end": 1000}], "words": []}
+    )
+    valid_vad = json.dumps({"speech_segments": []})
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = _setup_temp_project(Path(tmp))
+        (proj / "transcript_fixed.json").write_text(valid_transcript, encoding="utf-8")
+        (proj / "vad_result.json").write_text(valid_vad, encoding="utf-8")
+        # Create output dir and a read-only placeholder to force write failure
+        telop_dir = proj / "src" / "テロップテンプレート"
+        telop_dir.mkdir(parents=True, exist_ok=True)
+        out_path = telop_dir / "telopData.ts"
+        out_path.write_text("// placeholder", encoding="utf-8")
+        _os.chmod(str(out_path), 0o444)
+
+        btd.PROJ = proj
+        btd.FPS = 60
+        btd.call_budoux = lambda x: [["dummy"] for _ in x]
+        _sys.argv = ["build_telop_data.py", "--json-log"]
+        out_buf = _io.StringIO()
+        err_buf = _io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+                try:
+                    btd.main()
+                    raise AssertionError("Expected SystemExit from build_telop_data on write failure")
+                except SystemExit as e:
+                    if e.code != 3:
+                        raise AssertionError(
+                            f"Expected exit code 3, got: {e.code}\n"
+                            f"stdout={out_buf.getvalue()!r}\nstderr={err_buf.getvalue()!r}"
+                        )
+            stderr_str = err_buf.getvalue()
+            assert "telopData.ts write failed" in stderr_str, (
+                f"Expected 'telopData.ts write failed' in stderr, got: {stderr_str!r}"
+            )
+            stdout_str = out_buf.getvalue()
+            lines = [ln for ln in stdout_str.splitlines() if ln.strip().startswith("{")]
+            assert lines, f"No JSON tail found in stdout: {stdout_str!r}"
+            tail = json.loads(lines[-1])
+            assert tail.get("category") == "telop-write-error", (
+                f"Expected category='telop-write-error', got {tail.get('category')!r}"
+            )
+        finally:
+            _os.chmod(str(out_path), 0o644)
+            _sys.argv = old_argv
+            btd.PROJ = original_proj
+            btd.FPS = original_fps
+            btd.call_budoux = original_call
+
+
 def test_generate_slide_plan_skip_no_api_key() -> None:
     """generate_slide_plan.py: ANTHROPIC_API_KEY 未設定で exit 0 (skip)."""
     import generate_slide_plan as gsp
@@ -32603,6 +32668,7 @@ def main() -> int:
         test_build_telop_data_rejects_invalid_vad_result,
         test_build_telop_data_rejects_invalid_transcript_load,
         test_build_telop_data_rejects_invalid_typo_dict_load,
+        test_build_telop_data_rejects_write_error,
         test_generate_slide_plan_skip_no_api_key,
         test_generate_slide_plan_missing_inputs,
         test_generate_slide_plan_rejects_non_dict_transcript_root,
