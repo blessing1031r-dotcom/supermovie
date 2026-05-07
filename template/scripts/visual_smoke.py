@@ -328,8 +328,17 @@ def cli() -> int:
             print(f"ERROR: 未知の format: {f} (許容: {','.join(FORMAT_DIMS)})", file=sys.stderr)
             return _emit_early("usage_error_unknown_format", 4, bad_format=f)
     # Codex 21:23 PR4 re-review P1: 非整数 frame を try-except で捕捉、JSON tail emit する。
+    frame_tokens = [x.strip() for x in args.frames.split(",") if x.strip()]
+    invalid_frame = next((x for x in frame_tokens if not re.fullmatch(r"-?\d+", x)), None)
+    if invalid_frame is not None:
+        print(
+            f"ERROR: --frames に非整数値: {args.frames!r} "
+            f"(invalid token: {invalid_frame!r})",
+            file=sys.stderr,
+        )
+        return _emit_early("usage_error_frames_invalid", 4, raw_value=args.frames)
     try:
-        frames = [int(x) for x in args.frames.split(",") if x.strip()]
+        frames = [int(x) for x in frame_tokens]
     except ValueError as e:
         print(f"ERROR: --frames に非整数値: {args.frames!r} ({e})", file=sys.stderr)
         return _emit_early("usage_error_frames_invalid", 4, raw_value=args.frames)
