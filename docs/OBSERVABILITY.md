@@ -683,6 +683,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 382 | `template/scripts/timeline.py` の VAD / transcript timing validation が `NaN` / `Infinity` / `-Infinity` を start/end timing として受け付けず、finite `int|float` のみを timing として扱うことを lint (`test_timeline_validation_rejects_non_finite_timing_values`、Codex 推奨 PR-LJ)。非有限値が playback frame 計算や start/end 順序判定に silent に入る drift を防ぐ | PR-LJ |
 | 383 | `template/scripts/build_telop_data.py` の cut mapping wrapper が `template/scripts/timeline.py` の `build_cut_segments_from_vad` へ委譲し、inline `cursor_ms` / playback frame dict 構築を持たないことを wiring lint (`test_build_scripts_wiring`、Codex 推奨 PR-LK)。slide / telop / narration の VAD→cut timeline mapping source が分岐する drift を防ぐ | PR-LK |
 | 384 | `template/scripts/build_slide_data.py` の cut mapping wrapper が `template/scripts/timeline.py` の `build_cut_segments_from_vad` へ委譲し、inline `cursor_ms` / playback frame dict 構築を持たないことを wiring lint (`test_build_scripts_wiring`、Codex 推奨 PR-LL)。slide 側の source-level guard を telop 側と対称にし、VAD→cut timeline mapping source の drift を防ぐ | PR-LL |
+| 385 | `template/scripts/voicevox_narration.py` が `template/scripts/timeline.py` の `load_cut_segments` / `ms_to_playback_frame` を直接 import し、`project_load_cut_segments()` で `fail_fast=True` を維持することを wiring lint (`test_build_scripts_wiring`、Codex 推奨 PR-LM)。narration の VAD 部分破損が soft fallback に戻り stale narration 経路へ流れる drift を防ぐ | PR-LM |
 
 ## Test Requirements
 
