@@ -198,7 +198,7 @@ def main():
     ap.add_argument("--model", default="claude-haiku-4-5-20251001",
                     help="Anthropic model (default: claude-haiku-4-5、cost 最小)")
     # Phase 3-V P2 cost guard (Codex CODEX_P2_COST_GUARD_DESIGN §1):
-    ap.add_argument("--max-tokens", type=int, default=None,
+    ap.add_argument("--max-tokens", default=None,
                     help=f"max_tokens override (default {MAX_TOKENS_DEFAULT}、cap {MAX_TOKENS_CAP}、"
                          f"env: SUPERMOVIE_MAX_TOKENS)")
     ap.add_argument("--max-input-words", default=None,
