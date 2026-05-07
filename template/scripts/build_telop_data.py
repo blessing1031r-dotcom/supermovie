@@ -331,7 +331,12 @@ def main():
         print(f"ERROR: vad_result.json load failed: {err}", file=_sys.stderr)
         _sys.exit(_emit_error("vad_invalid", 8, error=err))
     typo = (PROJ / "typo_dict.json")
-    typo_dict = json.loads(typo.read_text(encoding="utf-8")) if typo.exists() else {}
+    try:
+        typo_dict = json.loads(typo.read_text(encoding="utf-8")) if typo.exists() else {}
+    except (OSError, json.JSONDecodeError) as e:
+        err = redact_error_message(str(e))
+        print(f"ERROR: typo_dict.json load failed: {err}", file=_sys.stderr)
+        _sys.exit(_emit_error("typo_dict_invalid", 3, error=err))
     if not isinstance(transcript, dict):
         msg = f"transcript must be dict, got {type(transcript).__name__}"
         print(f"ERROR: transcript validation failed: {msg}", file=_sys.stderr)
