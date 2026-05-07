@@ -313,6 +313,7 @@ def validate_rate_string(value, label: str) -> str:
     parts = value.strip().split("/")
     if len(parts) != 2:
         raise ValueError(f"{label} must be rate string, got str")
+    parsed_parts = []
     for part in parts:
         try:
             parsed = float(part)
@@ -320,6 +321,12 @@ def validate_rate_string(value, label: str) -> str:
             raise ValueError(f"{label} must be rate string, got str")
         if not math.isfinite(parsed):
             raise ValueError(f"{label} must be rate string, got non-finite")
+        parsed_parts.append(parsed)
+    num, den = parsed_parts
+    if num < 0 or den <= 0:
+        raise ValueError(
+            f"{label} must be rate string with non-negative numerator and positive denominator, got {value.strip()}"
+        )
     return value
 
 

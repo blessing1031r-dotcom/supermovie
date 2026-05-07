@@ -7964,6 +7964,10 @@ def test_preflight_video_rejects_malformed_ffprobe_frame_rates() -> None:
         ({"r_frame_rate": 30}, "ffprobe video.r_frame_rate must be rate string, got int"),
         ({"avg_frame_rate": "not-a-rate"}, "ffprobe video.avg_frame_rate must be rate string, got str"),
         ({"r_frame_rate": "nan/1"}, "ffprobe video.r_frame_rate must be rate string, got non-finite"),
+        ({"r_frame_rate": "1/0"},
+         "ffprobe video.r_frame_rate must be rate string with non-negative numerator and positive denominator, got 1/0"),
+        ({"avg_frame_rate": "-30/1"},
+         "ffprobe video.avg_frame_rate must be rate string with non-negative numerator and positive denominator, got -30/1"),
     ]
 
     saved_argv = list(_sys.argv)
