@@ -203,6 +203,11 @@ def main():
             msg = f"transcript.words[{i}] must be dict, got {type(word).__name__}"
             print(f"ERROR: transcript_fixed.json validation failed: {msg}", file=sys.stderr)
             return _emit_early("transcript_invalid", 3, error=msg)
+        text_value = word.get("text")
+        if not isinstance(text_value, str):
+            msg = f"transcript.words[{i}].text must be str, got {type(text_value).__name__}"
+            print(f"ERROR: transcript_fixed.json validation failed: {msg}", file=sys.stderr)
+            return _emit_early("transcript_invalid", 3, error=msg)
 
     typo = (PROJ / "typo_dict.json")
     try:
