@@ -330,6 +330,15 @@ def main():
         print(f"ERROR: typo_dict.json validation failed: {msg}", file=_sys.stderr)
         _sys.exit(_emit_error("typo_dict_invalid", 3, error=msg))
     preserve = typo_dict.get("preserve", [])
+    if not isinstance(preserve, list):
+        msg = f"typo_dict.preserve must be list[str], got {type(preserve).__name__}"
+        print(f"ERROR: typo_dict.json validation failed: {msg}", file=_sys.stderr)
+        _sys.exit(_emit_error("typo_dict_invalid", 3, error=msg))
+    for i, item in enumerate(preserve):
+        if not isinstance(item, str):
+            msg = f"typo_dict.preserve[{i}] must be str, got {type(item).__name__}"
+            print(f"ERROR: typo_dict.json validation failed: {msg}", file=_sys.stderr)
+            _sys.exit(_emit_error("typo_dict_invalid", 3, error=msg))
     cut_segments = build_cut_segments_from_vad(vad)
     cut_total_frames = cut_segments[-1]["playbackEnd"] if cut_segments else 0
 
