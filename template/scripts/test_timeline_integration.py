@@ -5240,7 +5240,7 @@ def test_observability_helper_status_map() -> None:
         "usage_error_frames_invalid",
         # preflight_video (PR-B、Codex 21:01 step 3 S3-3 既存 stdout 維持 + tail v1)
         "preflight_ok", "input_not_found", "no_video_stream", "ffprobe_failed",
-        "risks_not_allowed", "format_inference_failed",
+        "risks_not_allowed", "format_inference_failed", "usage_error_allow_risk_invalid",
         # build_slide_data / build_telop_data (PR-C、Codex 21:01 step 3 S3-5 user_content redaction)
         "build_slide_ok", "build_telop_ok",
         # build_slide / build_telop error variants (Codex 21:46 PR6 review P1 fix)
@@ -9716,6 +9716,98 @@ def test_preflight_video_rejects_malformed_ffprobe_tags() -> None:
     finally:
         pv.run_ffprobe = original_run_ffprobe
         _sys.argv = saved_argv
+
+
+def _run_preflight_allow_risk_case(allow_risk: str):
+    """preflight_video の allow-risk parser を ffprobe monkeypatch で実行."""
+    import io
+    import sys as _sys
+    from contextlib import redirect_stdout, redirect_stderr
+
+    import preflight_video as pv
+
+    saved_argv = list(_sys.argv)
+    original_run_ffprobe = pv.run_ffprobe
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "in.mp4"
+            src.write_bytes(b"not a real mp4; run_ffprobe is monkeypatched")
+            pv.run_ffprobe = lambda _path: {
+                "streams": [{
+                    "codec_type": "video",
+                    "width": 320,
+                    "height": 240,
+                    "sample_aspect_ratio": "1:1",
+                }],
+                "format": {"duration": "1.0"},
+            }
+            _sys.argv = [
+                "preflight_video.py",
+                str(src),
+                "--force-format", "youtube",
+                "--allow-risk", allow_risk,
+                "--json-log",
+            ]
+
+            out_buf = io.StringIO()
+            err_buf = io.StringIO()
+            with redirect_stdout(out_buf), redirect_stderr(err_buf):
+                try:
+                    pv.main()
+                except SystemExit as e:
+                    rc = e.code
+                else:
+                    rc = 0
+            lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+            payload = json.loads(lines[-1])
+            return rc, payload, err_buf.getvalue()
+    finally:
+        pv.run_ffprobe = original_run_ffprobe
+        _sys.argv = saved_argv
+
+
+def test_preflight_video_rejects_whitespace_allow_risk_token() -> None:
+    """preflight_video が --allow-risk の whitespace 付き token を usage error で reject."""
+    cases = [
+        ("unknown-aspect, multiple-or-missing-audio", " multiple-or-missing-audio"),
+        ("   ", "   "),
+    ]
+    for raw, expected_invalid in cases:
+        rc, payload, stderr_text = _run_preflight_allow_risk_case(raw)
+        assert_eq(rc, 4, f"whitespace allow-risk token {raw!r} → cli exit 4")
+        assert "--allow-risk" in stderr_text, stderr_text
+        assert_eq(payload.get("status"), "error", "whitespace allow-risk token status")
+        assert_eq(payload.get("category"), "usage-error", "whitespace allow-risk token category")
+        assert_eq(payload.get("exit_code"), 4, "whitespace allow-risk token exit_code")
+        assert_eq(
+            payload.get("invalid_allow_risk"),
+            expected_invalid,
+            "whitespace allow-risk invalid token",
+        )
+
+
+def test_preflight_video_rejects_empty_allow_risk_token() -> None:
+    """preflight_video が --allow-risk の empty comma component を usage error で reject."""
+    for raw in ("unknown-aspect,,multiple-or-missing-audio", ","):
+        rc, payload, stderr_text = _run_preflight_allow_risk_case(raw)
+        assert_eq(rc, 4, f"empty allow-risk token {raw!r} → cli exit 4")
+        assert "--allow-risk" in stderr_text, stderr_text
+        assert_eq(payload.get("status"), "error", "empty allow-risk token status")
+        assert_eq(payload.get("category"), "usage-error", "empty allow-risk token category")
+        assert_eq(payload.get("exit_code"), 4, "empty allow-risk token exit_code")
+        assert_eq(payload.get("invalid_allow_risk"), "", "empty allow-risk invalid token")
+
+
+def test_preflight_video_preserves_empty_allow_risk_status() -> None:
+    """preflight_video が完全空の --allow-risk を no allow として risks_not_allowed に保つ."""
+    rc, payload, stderr_text = _run_preflight_allow_risk_case("")
+    assert_eq(rc, 2, "empty allow-risk → risks_not_allowed exit 2")
+    assert "risks not allowed" in stderr_text, stderr_text
+    assert_eq(payload.get("status"), "error", "empty allow-risk status")
+    assert_eq(payload.get("category"), "risks-not-allowed", "empty allow-risk category")
+    assert_eq(payload.get("exit_code"), 2, "empty allow-risk exit_code")
+    if "invalid_allow_risk" in payload:
+        raise AssertionError(f"empty allow-risk should not be usage-error, got {payload!r}")
 
 
 def test_observability_redact_error_message_strips_abs_path() -> None:
@@ -31581,6 +31673,9 @@ def main() -> int:
         test_preflight_video_rejects_malformed_ffprobe_dovi_fields,
         test_preflight_video_rejects_malformed_ffprobe_side_data_rotation,
         test_preflight_video_rejects_malformed_ffprobe_tags,
+        test_preflight_video_rejects_whitespace_allow_risk_token,
+        test_preflight_video_rejects_empty_allow_risk_token,
+        test_preflight_video_preserves_empty_allow_risk_status,
         test_observability_redact_error_message_strips_abs_path,
         test_observability_redact_error_message_windows_path,
         test_observability_redact_error_message_ipv6_and_data_uri_safe,

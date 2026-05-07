@@ -18,6 +18,7 @@ Exit codes:
     0 = proceed (no risks 又は --allow-risk で許可済み)
     2 = requires confirmation (検出された risks が --allow-risk で許可されていない)
     3 = unsupported input (動画が読めない / video stream 不在 等)
+    4 = 入力 / 設定不正 (malformed --allow-risk token)
 
 設計起点: Codex prevention review (2026-05-04, CODEX_PREVENTION_ROTATION)
 """
@@ -644,7 +645,26 @@ def main():
     source["chosen_format"] = chosen_format
     source["requiresConfirmation"] = bool(risks) and not args.force_format
 
-    allow = {k.strip() for k in args.allow_risk.split(",") if k.strip()}
+    allow_tokens = args.allow_risk.split(",")
+    if args.allow_risk == "":
+        allow = set()
+    else:
+        invalid_allow_risk = next(
+            (k for k in allow_tokens if not k or k.strip() != k),
+            None,
+        )
+        if invalid_allow_risk is not None:
+            print(
+                f"ERROR: --allow-risk に不正な token: {args.allow_risk!r} "
+                f"(invalid token: {invalid_allow_risk!r})",
+                file=sys.stderr,
+            )
+            sys.exit(_emit(
+                "usage_error_allow_risk_invalid", 4,
+                invalid_allow_risk=invalid_allow_risk,
+                raw_value=args.allow_risk,
+            ))
+        allow = set(allow_tokens)
     unhandled = [r for r in risks if r not in allow]
 
     # 既存 stdout: source JSON dump (downstream consumer はこの形式を読む、互換性維持)

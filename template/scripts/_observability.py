@@ -126,6 +126,7 @@ STATUS_MAP = {
     "ffprobe_failed": ("error", "ffprobe-failed"),
     "risks_not_allowed": ("error", "risks-not-allowed"),
     "format_inference_failed": ("error", "format-inference-failed"),
+    "usage_error_allow_risk_invalid": ("error", "usage-error"),
     # preflight_video write-config error paths (PR-G error path tail audit)
     "write_config_parse_error": ("error", "write-config-parse-error"),
     "write_config_write_error": ("error", "write-config-write-error"),
