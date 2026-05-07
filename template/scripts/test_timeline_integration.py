@@ -33881,6 +33881,21 @@ def test_vn_synthesize_unicode_guard_contract_lint() -> None:
     assert not errors, "voicevox_narration.py step 518 UnicodeDecodeError guards missing:\n" + "\n".join(errors)
 
 
+def test_gsp_api_unicode_guard_contract_lint() -> None:
+    """PR-PM step 519: generate_slide_plan.py の Anthropic API 呼び出しブロックで
+    UnicodeDecodeError が URLError/OSError 句に追加されていることを確認する (code-text check)。
+
+    resp.read().decode("utf-8") が非 UTF-8 バイト列で UnicodeDecodeError を送出した場合、
+    既存の except (URLError, OSError) が捕捉できず main() を emit_json なしに終了させる。
+    """
+    gsp_path = Path(__file__).parent / "generate_slide_plan.py"
+    gsp_text = gsp_path.read_text(encoding="utf-8")
+    snippet = "except (urllib.error.URLError, OSError, UnicodeDecodeError) as e:  # PR-PM step 519: resp.read().decode"
+    assert snippet in gsp_text, (
+        f"generate_slide_plan.py API UnicodeDecodeError guard missing (step 519): {snippet!r}"
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -34674,6 +34689,7 @@ def main() -> int:
         test_timeline_read_video_config_fps_swallows_unicode_error,  # PR-PM step 516
         test_vn_stat_oserror_guard_contract_lint,  # PR-PM step 517
         test_vn_synthesize_unicode_guard_contract_lint,  # PR-PM step 518
+        test_gsp_api_unicode_guard_contract_lint,  # PR-PM step 519
     ]
     failed = []
     for t in tests:

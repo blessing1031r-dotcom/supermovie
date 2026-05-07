@@ -618,7 +618,7 @@ def main():
             )
         print(f"ERROR: Anthropic API HTTP {e.code}: {body_msg}", file=sys.stderr)
         return emit_json("api_http_error", 4, http_status=e.code)
-    except (urllib.error.URLError, OSError) as e:
+    except (urllib.error.URLError, OSError, UnicodeDecodeError) as e:  # PR-PM step 519: resp.read().decode("utf-8") on API response
         # PR-PM step 503: URLError covers socket timeout, DNS failure, SSL/TLS, connection refused.
         # OSError is the base for URLError on some platforms but added explicitly for defense.
         err = redact_error_message(str(e))
