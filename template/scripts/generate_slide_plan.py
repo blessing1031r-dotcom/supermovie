@@ -109,8 +109,14 @@ def _resolve_int(
     else:
         env_str = os.environ.get(env_name)
         if env_str is not None:
+            text = env_str.strip()
+            digits = text[1:] if text.startswith("-") else text
+            if not digits.isdigit():
+                raise ValueError(
+                    f"{env_name}={env_str!r} は int に変換できません: invalid token"
+                )
             try:
-                v = int(env_str)
+                v = int(text)
             except ValueError as e:
                 raise ValueError(
                     f"{env_name}={env_str!r} は int に変換できません: {e}"

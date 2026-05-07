@@ -749,6 +749,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 447 | `template/scripts/preflight_video.py` が ffprobe `streams[*].codec_type` の `null` を missing扱いにせず str shape として reject することを lint (`test_preflight_video_rejects_malformed_ffprobe_codec_type`、Codex 推奨 PR-NW)。壊れた codec_type が `no_video_stream` に誤分類され、ffprobe validation failure の JSON tail から外れる drift を防ぐ | PR-NW |
 | 448 | `template/scripts/visual_smoke.py` の `probe_dim()` が ffprobe PNG の `width` / `height` で非整数 float を `int()` で丸めず ValueError で reject することを lint (`test_visual_smoke_probe_dim_rejects_malformed_ffprobe_json`、Codex 推奨 PR-NX)。壊れた PNG dimension が truncation で positive int に見せかけられ、visual smoke の実寸判定が drift することを防ぐ | PR-NX |
 | 449 | `template/scripts/visual_smoke.py` が `--frames` の underscore 区切り数値 (`3_0` など) を Python `int()` の緩い解釈に任せず `usage_error_frames_invalid` JSON tail + exit 4 で reject することを lint (`test_visual_smoke_cli_rejects_underscore_frame_value`、Codex 推奨 PR-NY)。壊れた frame CLI 入力が別 frame として silent normalize され、visual smoke の検証対象 frame が drift することを防ぐ | PR-NY |
+| 450 | `template/scripts/generate_slide_plan.py` の `_resolve_int()` が `SUPERMOVIE_MAX_TOKENS` などの env integer で underscore 区切り数値 (`4_096` など) を Python `int()` の緩い解釈に任せず ValueError で reject することを lint (`test_generate_slide_plan_resolve_int_rejects_underscore_env_value`、Codex 推奨 PR-NZ)。壊れた cost/input cap env が silent normalize され、LLM request guard の上限値が drift することを防ぐ | PR-NZ |
 
 ## Test Requirements
 
