@@ -1483,6 +1483,81 @@ def test_build_slide_data_rejects_malformed_json_inputs() -> None:
                 bsd.PROJ = original_proj
 
 
+def test_build_slide_data_rejects_invalid_vad_and_plan_load() -> None:
+    """build_slide_data.py が malformed vad_result.json / --plan JSON を structured tail で reject."""
+    import build_slide_data as bsd
+    import contextlib as _contextlib
+    import io as _io
+
+    valid_transcript = json.dumps(
+        {"segments": [{"text": "hi", "start": 0, "end": 1000}], "words": []}
+    )
+    valid_config = json.dumps({"format": "short"})
+
+    cases = [
+        ("malformed_vad", "malformed_vad", None, "vad_invalid", "vad_invalid", 8, "vad_result.json load failed"),
+        ("malformed_plan", None, "not-json{{{", "build_slide_plan_invalid", "plan-invalid", 2, "--plan load failed"),
+    ]
+
+    for label, vad_content, plan_content, expected_v0, expected_category, expected_exit, expected_stderr_substr in cases:
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = _setup_temp_project(Path(tmp))
+            (proj / "transcript_fixed.json").write_text(valid_transcript, encoding="utf-8")
+            (proj / "project-config.json").write_text(valid_config, encoding="utf-8")
+            if vad_content is not None:
+                (proj / "vad_result.json").write_text(vad_content, encoding="utf-8")
+            plan_path = None
+            if plan_content is not None:
+                plan_path = proj / "plan.json"
+                plan_path.write_text(plan_content, encoding="utf-8")
+
+            original_proj = bsd.PROJ
+            original_fps = bsd.FPS
+            bsd.PROJ = proj
+            bsd.FPS = 30
+            try:
+                import sys as _sys
+                old_argv = _sys.argv
+                argv = ["build_slide_data.py", "--json-log"]
+                if plan_path is not None:
+                    argv += ["--plan", str(plan_path), "--strict-plan"]
+                _sys.argv = argv
+                try:
+                    out_buf = _io.StringIO()
+                    err_buf = _io.StringIO()
+                    with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                        try:
+                            bsd.main()
+                            raise AssertionError(
+                                f"build_slide_data should fail for case={label!r}"
+                            )
+                        except SystemExit as e:
+                            if e.code != expected_exit:
+                                raise AssertionError(
+                                    f"case={label!r}: Expected exit code {expected_exit}, got: {e.code}"
+                                )
+                    err_text = err_buf.getvalue()
+                    if expected_stderr_substr not in err_text:
+                        raise AssertionError(
+                            f"case={label!r}: Expected {expected_stderr_substr!r} in stderr, got: {err_text!r}"
+                        )
+                    lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                    tail = json.loads(lines[-1])
+                    assert_eq(tail.get("status"), "error", f"build_slide optional {label} status")
+                    assert_eq(tail.get("category"), expected_category, f"build_slide optional {label} category")
+                    assert_eq(tail.get("exit_code"), expected_exit, f"build_slide optional {label} exit_code")
+                    raw_error = tail.get("error", "")
+                    if tmp in str(raw_error):
+                        raise AssertionError(
+                            f"case={label!r}: raw abs path leaked in error field: {raw_error!r}"
+                        )
+                finally:
+                    _sys.argv = old_argv
+            finally:
+                bsd.PROJ = original_proj
+                bsd.FPS = original_fps
+
+
 def test_build_telop_data_main_e2e() -> None:
     """build_telop_data.py を temp project で main() 実行、call_budoux stub.
 
@@ -32180,6 +32255,7 @@ def main() -> int:
         test_build_slide_data_rejects_non_dict_transcript_root,
         test_build_slide_data_rejects_non_dict_project_config_root,
         test_build_slide_data_rejects_malformed_json_inputs,
+        test_build_slide_data_rejects_invalid_vad_and_plan_load,
         test_build_telop_data_main_e2e,
         test_build_telop_data_validates_bad_transcript,
         test_build_telop_data_rejects_non_dict_transcript_root,
