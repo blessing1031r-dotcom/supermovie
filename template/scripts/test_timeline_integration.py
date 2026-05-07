@@ -478,6 +478,78 @@ def test_ms_to_playback_frame_rejects_invalid_cut_segments_shape() -> None:
         )
 
 
+def test_ms_to_playback_frame_rejects_invalid_cut_segment_value_types() -> None:
+    """PR-LR: cut segment cells must keep ms/frame numeric domains."""
+    valid = [
+        {
+            "originalStartMs": 0.0,
+            "originalEndMs": 1000.0,
+            "playbackStart": 0,
+            "playbackEnd": 30,
+        }
+    ]
+    assert_eq(
+        timeline.ms_to_playback_frame(500, 30, valid),
+        15,
+        "valid float original ms and int playback frames",
+    )
+
+    for key in ("originalStartMs", "originalEndMs"):
+        for bad_value in (True, False, "0", None, [], {}):
+            malformed = [
+                {
+                    "originalStartMs": 0,
+                    "originalEndMs": 1000,
+                    "playbackStart": 0,
+                    "playbackEnd": 30,
+                }
+            ]
+            malformed[0][key] = bad_value
+            assert_raises(
+                lambda malformed=malformed: timeline.ms_to_playback_frame(
+                    500, 30, malformed
+                ),
+                TypeError,
+                f"ms_to_playback_frame invalid cut segment ms type {key}={bad_value!r}",
+            )
+        for bad_value in (float("nan"), float("inf"), float("-inf")):
+            malformed = [
+                {
+                    "originalStartMs": 0,
+                    "originalEndMs": 1000,
+                    "playbackStart": 0,
+                    "playbackEnd": 30,
+                }
+            ]
+            malformed[0][key] = bad_value
+            assert_raises(
+                lambda malformed=malformed: timeline.ms_to_playback_frame(
+                    500, 30, malformed
+                ),
+                ValueError,
+                f"ms_to_playback_frame non-finite cut segment ms {key}={bad_value!r}",
+            )
+
+    for key in ("playbackStart", "playbackEnd"):
+        for bad_value in (True, False, 0.0, "0", None, [], {}):
+            malformed = [
+                {
+                    "originalStartMs": 0,
+                    "originalEndMs": 1000,
+                    "playbackStart": 0,
+                    "playbackEnd": 30,
+                }
+            ]
+            malformed[0][key] = bad_value
+            assert_raises(
+                lambda malformed=malformed: timeline.ms_to_playback_frame(
+                    500, 30, malformed
+                ),
+                TypeError,
+                f"ms_to_playback_frame invalid cut segment frame type {key}={bad_value!r}",
+            )
+
+
 def test_voicevox_collect_chunks_validation() -> None:
     """voicevox_narration.collect_chunks が壊れた transcript で raise する."""
     import voicevox_narration as vn
@@ -27786,6 +27858,7 @@ def main() -> int:
         test_timeline_rejects_invalid_fps_values,
         test_ms_to_playback_frame_rejects_invalid_ms_values,
         test_ms_to_playback_frame_rejects_invalid_cut_segments_shape,
+        test_ms_to_playback_frame_rejects_invalid_cut_segment_value_types,
         test_voicevox_collect_chunks_validation,
         test_voicevox_write_narration_data_alignment,
         test_voicevox_write_order_narrationdata_before_wav,

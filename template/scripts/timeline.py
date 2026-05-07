@@ -97,6 +97,16 @@ def _validate_ms(value: object, label: str) -> int | float:
     return value
 
 
+def _validate_frame(value: object, label: str) -> int:
+    """playback frame numeric guard."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(
+            f"{label} must be int frame (bool / float / str reject), "
+            f"got {type(value).__name__}"
+        )
+    return value
+
+
 def _validate_cut_segments_shape(cut_segments: object) -> list[dict]:
     """cut-aware frame conversion shape guard."""
     if not isinstance(cut_segments, list):
@@ -113,6 +123,10 @@ def _validate_cut_segments_shape(cut_segments: object) -> list[dict]:
             raise ValueError(
                 f"cut_segments[{i}] missing required key(s): {', '.join(missing)}"
             )
+        for key in ("originalStartMs", "originalEndMs"):
+            _validate_ms(cs[key], f"cut_segments[{i}].{key}")
+        for key in ("playbackStart", "playbackEnd"):
+            _validate_frame(cs[key], f"cut_segments[{i}].{key}")
     return cut_segments
 
 
