@@ -382,13 +382,13 @@ def main():
 
     try:
         transcript = load_json(transcript_path)
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 512
         err = redact_error_message(str(e))
         print(f"ERROR: transcript_fixed.json load failed: {err}", file=sys.stderr)
         sys.exit(_emit_error("build_slide_transcript_invalid", 3, error=err))
     try:
         config = load_json(config_path)
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 512
         err = redact_error_message(str(e))
         print(f"ERROR: project-config.json load failed: {err}", file=sys.stderr)
         sys.exit(_emit_error("config_invalid", 3, error=err))
@@ -419,7 +419,7 @@ def main():
     vad_path = PROJ / "vad_result.json"
     try:
         vad = load_json(vad_path) if vad_path.exists() else None
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 512
         err = redact_error_message(str(e))
         print(f"ERROR: vad_result.json load failed: {err}", file=sys.stderr)
         sys.exit(_emit_error("vad_invalid", 8, error=err))
@@ -443,7 +443,7 @@ def main():
         else:
             try:
                 plan = load_json(plan_path)
-            except (OSError, json.JSONDecodeError) as e:
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 512
                 err = redact_error_message(str(e))
                 print(f"ERROR: --plan load failed: {err}", file=sys.stderr)
                 sys.exit(_emit_error("build_slide_plan_invalid", 2, error=err))
