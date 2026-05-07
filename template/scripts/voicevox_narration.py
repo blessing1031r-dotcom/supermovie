@@ -842,7 +842,11 @@ def main():
         )
     # PR-I: default redact、--unsafe-keep-abs-path で raw。
     _safe_out = safe_artifact_path(out_path, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
-    print(f"\nwrote: {_safe_out} ({out_path.stat().st_size} bytes)")
+    try:
+        _size_str = f"{out_path.stat().st_size} bytes"
+    except OSError:  # PR-PM step 517: stat() failure after successful write (race / permission)
+        _size_str = "unknown"
+    print(f"\nwrote: {_safe_out} ({_size_str})")
     print(f"chunks succeeded: {len(chunk_paths)} / {len(chunks)} synthesized")
 
     # Phase 3-V post-freeze P5: publish 完了 signal sentinel を最後に書く

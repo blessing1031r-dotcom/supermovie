@@ -33842,6 +33842,17 @@ def test_timeline_read_video_config_fps_swallows_unicode_error() -> None:
         assert_eq(result, 30, "read_video_config_fps with invalid UTF-8 must return default")
 
 
+def test_vn_stat_oserror_guard_contract_lint() -> None:
+    """PR-PM step 517: voicevox_narration.py の concat 後 stat() が OSError を
+    swallow して 'unknown' にフォールバックすることを確認する (code-text check)。"""
+    vn_path = Path(__file__).parent / "voicevox_narration.py"
+    vn_text = vn_path.read_text(encoding="utf-8")
+    snippet = "except OSError:  # PR-PM step 517: stat() failure after successful write (race / permission)"
+    assert snippet in vn_text, (
+        f"voicevox_narration.py stat() OSError guard missing (step 517): {snippet!r}"
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -34633,6 +34644,7 @@ def main() -> int:
         test_preflight_write_config_unicode_guard_contract_lint,  # PR-PM step 515
         test_step516_unicode_guard_contract_lint,  # PR-PM step 516
         test_timeline_read_video_config_fps_swallows_unicode_error,  # PR-PM step 516
+        test_vn_stat_oserror_guard_contract_lint,  # PR-PM step 517
     ]
     failed = []
     for t in tests:
