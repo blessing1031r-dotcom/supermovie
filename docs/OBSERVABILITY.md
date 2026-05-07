@@ -742,6 +742,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 440 | `template/scripts/preflight_video.py` が ffprobe DOVI side-data の `dv_profile` / `dv_level` / `rpu_present_flag` / `el_present_flag` / `bl_present_flag` に optional int shape を要求し、非整数文字列 / bool を `ffprobe_failed` JSON tail + exit 3 で reject することを lint (`test_preflight_video_rejects_malformed_ffprobe_dovi_fields`、Codex 推奨 PR-NP)。壊れた DOVI metadata が `source.color.dovi` と HDR risk 判定に流れ、source color contract が drift することを防ぐ | PR-NP |
 | 441 | `template/scripts/preflight_video.py` が ffprobe `format.duration` に非負の finite number shape を要求し、負数を `ffprobe_failed` JSON tail + exit 3 で reject することを lint (`test_preflight_video_rejects_malformed_ffprobe_format_duration`、Codex 推奨 PR-NQ)。壊れた duration が `source.duration_sec` / `duration_frames` に負値として流れ、timeline duration metadata が drift することを防ぐ | PR-NQ |
 | 442 | `template/scripts/preflight_video.py` が ffprobe `streams` の `null` を空配列に丸めず list shape として reject することを lint (`test_preflight_video_rejects_malformed_ffprobe_streams`、Codex 推奨 PR-NR)。壊れた streams root が `no_video_stream` に誤分類され、ffprobe validation failure の JSON tail から外れる drift を防ぐ | PR-NR |
+| 443 | `template/scripts/preflight_video.py` が ffprobe `format` の `null` を空 dict に丸めず dict shape として reject することを lint (`test_preflight_video_rejects_malformed_ffprobe_format`、Codex 推奨 PR-NS)。壊れた format root が downstream write/config failure に流れ、ffprobe validation failure の JSON tail から外れる drift を防ぐ | PR-NS |
 
 ## Test Requirements
 
