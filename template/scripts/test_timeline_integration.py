@@ -316,6 +316,45 @@ def test_timeline_validation_rejects_non_finite_timing_values() -> None:
         )
 
 
+def test_vad_schema_rejects_non_monotonic_speech_segments() -> None:
+    """PR-LU: VAD speech_segments must be ordered and non-overlapping."""
+    timeline.validate_vad_schema(
+        {
+            "speech_segments": [
+                {"start": 0, "end": 1000},
+                {"start": 1000, "end": 1500},
+                {"start": 2000, "end": 2500},
+            ]
+        }
+    )
+
+    for bad_vad, label in (
+        (
+            {
+                "speech_segments": [
+                    {"start": 0, "end": 1000},
+                    {"start": 900, "end": 1500},
+                ]
+            },
+            "overlap",
+        ),
+        (
+            {
+                "speech_segments": [
+                    {"start": 1000, "end": 1500},
+                    {"start": 0, "end": 500},
+                ]
+            },
+            "out-of-order",
+        ),
+    ):
+        assert_raises(
+            lambda bad_vad=bad_vad: timeline.validate_vad_schema(bad_vad),
+            timeline.VadSchemaError,
+            f"vad non-monotonic speech_segments {label}",
+        )
+
+
 def test_timeline_rejects_invalid_fps_values() -> None:
     """PR-LO: timeline frame helpers require positive int fps."""
     vad = timeline.validate_vad_schema(
@@ -27977,6 +28016,7 @@ def main() -> int:
         test_transcript_segment_validation,
         test_timeline_validation_rejects_bool_timing_values,
         test_timeline_validation_rejects_non_finite_timing_values,
+        test_vad_schema_rejects_non_monotonic_speech_segments,
         test_timeline_rejects_invalid_fps_values,
         test_ms_to_playback_frame_rejects_invalid_ms_values,
         test_ms_to_playback_frame_rejects_invalid_cut_segments_shape,
