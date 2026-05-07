@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -294,6 +295,18 @@ def validate_int(value, label: str) -> int:
     raise ValueError(f"{label} must be int, got {type(value).__name__}")
 
 
+def validate_finite_float(value, label: str) -> float:
+    if isinstance(value, bool) or value is None:
+        raise ValueError(f"{label} must be finite number, got {type(value).__name__}")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} must be finite number, got {type(value).__name__}")
+    if not math.isfinite(parsed):
+        raise ValueError(f"{label} must be finite number, got non-finite")
+    return parsed
+
+
 def build_risks(source: dict) -> list[str]:
     risks = []
     rotation_norm = (source.get("rotation") or {}).get("normalized")
@@ -465,6 +478,14 @@ def main():
         msg = f"ffprobe format must be dict, got {type(fmt_meta).__name__}"
         print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
         sys.exit(_emit("ffprobe_failed", 3, error=msg))
+    duration = fmt_meta.get("duration")
+    if duration not in (None, ""):
+        try:
+            validate_finite_float(duration, "ffprobe format.duration")
+        except ValueError as e:
+            msg = str(e)
+            print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+            sys.exit(_emit("ffprobe_failed", 3, error=msg))
     video_streams = [s for s in streams if s.get("codec_type") == "video"]
     audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
     subtitle_streams = [s for s in streams if s.get("codec_type") == "subtitle"]
