@@ -200,6 +200,10 @@ def main():
     except (json.JSONDecodeError, OSError) as e:
         print(f"ERROR: typo_dict.json parse failed: {e}", file=sys.stderr)
         return _emit_early("typo_dict_invalid", 3, error=redact_error_message(str(e)))
+    if not isinstance(typo_dict, dict):
+        msg = f"typo_dict must be dict, got {type(typo_dict).__name__}"
+        print(f"ERROR: typo_dict.json validation failed: {msg}", file=sys.stderr)
+        return _emit_early("typo_dict_invalid", 3, error=msg)
     preserve = typo_dict.get("preserve", [])
     words = transcript.get("words", [])
 
