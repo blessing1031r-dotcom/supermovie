@@ -10002,6 +10002,58 @@ def test_preflight_video_rejects_malformed_ffprobe_streams() -> None:
         _sys.argv = saved_argv
 
 
+def test_preflight_video_rejects_ffprobe_timeout() -> None:
+    """step 504: preflight_video.py が ffprobe TimeoutExpired を ffprobe_failed exit 3 で reject."""
+    import io
+    import subprocess as _sp
+    import sys as _sys
+    from contextlib import redirect_stdout, redirect_stderr
+
+    import preflight_video as pv
+
+    original_subprocess_run = pv.subprocess.run
+    saved_argv = list(_sys.argv)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "in.mp4"
+            src.write_bytes(b"not a real mp4; subprocess.run is monkeypatched")
+
+            def mock_run_timeout(*args, **kwargs):
+                raise _sp.TimeoutExpired(cmd=args[0] if args else [], timeout=30)
+
+            pv.subprocess.run = mock_run_timeout
+            _sys.argv = ["preflight_video.py", str(src), "--json-log"]
+
+            out_buf = io.StringIO()
+            err_buf = io.StringIO()
+            with redirect_stdout(out_buf), redirect_stderr(err_buf):
+                try:
+                    pv.main()
+                    raise AssertionError("preflight_video should reject ffprobe timeout")
+                except SystemExit as e:
+                    assert e.code == 3, (
+                        f"Expected exit code 3, got: {e.code}\n"
+                        f"stdout={out_buf.getvalue()!r}\nstderr={err_buf.getvalue()!r}"
+                    )
+
+            err_text = err_buf.getvalue()
+            assert "timed out" in err_text, (
+                f"Expected 'timed out' in stderr, got: {err_text!r}"
+            )
+            lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip().startswith("{")]
+            assert lines, f"No JSON tail found in stdout: {out_buf.getvalue()!r}"
+            tail = json.loads(lines[-1])
+            assert tail.get("category") == "ffprobe-failed", (
+                f"Expected category='ffprobe-failed', got {tail.get('category')!r}"
+            )
+            assert tail.get("exit_code") == 3, (
+                f"Expected exit_code=3, got {tail.get('exit_code')!r}"
+            )
+    finally:
+        pv.subprocess.run = original_subprocess_run
+        _sys.argv = saved_argv
+
+
 def test_preflight_video_rejects_malformed_ffprobe_codec_type() -> None:
     """preflight_video が ffprobe streams[*].codec_type 破損を tail + exit 3 で reject."""
     import io
@@ -32915,6 +32967,7 @@ def main() -> int:
         test_preflight_video_write_config_parse_error_emits_tail,
         test_preflight_video_write_config_rejects_non_dict_root,
         test_preflight_video_rejects_malformed_ffprobe_streams,
+        test_preflight_video_rejects_ffprobe_timeout,
         test_preflight_video_rejects_malformed_ffprobe_codec_type,
         test_preflight_video_rejects_malformed_ffprobe_format,
         test_preflight_video_rejects_malformed_ffprobe_format_duration,
