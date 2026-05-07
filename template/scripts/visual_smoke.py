@@ -329,7 +329,9 @@ def cli() -> int:
         _obs_emit_json(args.json_log, payload)
         return exit_code
 
-    formats = [f.strip() for f in args.formats.split(",") if f.strip()]
+    formats = args.formats.split(",")
+    if not any(f.strip() for f in formats):
+        formats = []
     if not formats:
         print("ERROR: --formats が空です (例: --formats youtube,short)", file=sys.stderr)
         return _emit_early("usage_error_formats_empty", 4)
