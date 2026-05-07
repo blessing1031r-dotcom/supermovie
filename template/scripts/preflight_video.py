@@ -307,6 +307,22 @@ def validate_finite_float(value, label: str) -> float:
     return parsed
 
 
+def validate_rate_string(value, label: str) -> str:
+    if isinstance(value, bool) or not isinstance(value, str):
+        raise ValueError(f"{label} must be rate string, got {type(value).__name__}")
+    parts = value.strip().split("/")
+    if len(parts) != 2:
+        raise ValueError(f"{label} must be rate string, got str")
+    for part in parts:
+        try:
+            parsed = float(part)
+        except ValueError:
+            raise ValueError(f"{label} must be rate string, got str")
+        if not math.isfinite(parsed):
+            raise ValueError(f"{label} must be rate string, got non-finite")
+    return value
+
+
 def build_risks(source: dict) -> list[str]:
     risks = []
     rotation_norm = (source.get("rotation") or {}).get("normalized")
@@ -497,6 +513,13 @@ def main():
     for dimension in ("width", "height"):
         try:
             validate_positive_int(video.get(dimension), f"ffprobe video.{dimension}")
+        except ValueError as e:
+            msg = str(e)
+            print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+            sys.exit(_emit("ffprobe_failed", 3, error=msg))
+    for rate_field in ("r_frame_rate", "avg_frame_rate"):
+        try:
+            validate_rate_string(video.get(rate_field, "0/1"), f"ffprobe video.{rate_field}")
         except ValueError as e:
             msg = str(e)
             print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
