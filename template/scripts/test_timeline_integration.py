@@ -1506,6 +1506,60 @@ def test_generate_slide_plan_rejects_non_dict_transcript_root() -> None:
             gsp.PROJ = original_proj
 
 
+def test_generate_slide_plan_rejects_non_dict_project_config_root() -> None:
+    """generate_slide_plan.py: project-config root 非 dict を config_invalid として reject."""
+    import generate_slide_plan as gsp
+    import contextlib
+    import io as _io
+    import os as _os
+    import sys as _sys
+
+    original_proj = gsp.PROJ
+    original_api_key = _os.environ.get("ANTHROPIC_API_KEY")
+    old_argv = _sys.argv
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        gsp.PROJ = proj
+        (proj / "transcript_fixed.json").write_text(
+            json.dumps({"words": [], "segments": []}),
+            encoding="utf-8",
+        )
+        (proj / "project-config.json").write_text(
+            json.dumps(["not", "a", "dict"]),
+            encoding="utf-8",
+        )
+        _os.environ.pop("ANTHROPIC_API_KEY", None)
+        _sys.argv = ["generate_slide_plan.py", "--dry-run", "--json-log"]
+        out_buf = _io.StringIO()
+        err_buf = _io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+                ret = gsp.main()
+            assert_eq(ret, 3, "non-dict project config root exit 3")
+            err_text = err_buf.getvalue()
+            if "project config validation failed" not in err_text:
+                raise AssertionError(
+                    f"Expected project config validation stderr, got: {err_text!r}"
+                )
+            lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+            payload = json.loads(lines[-1])
+            assert_eq(payload.get("status"), "error", "non-dict project config status")
+            assert_eq(payload.get("category"), "config_invalid", "non-dict project config category")
+            assert_eq(payload.get("exit_code"), 3, "non-dict project config exit_code")
+            assert_eq(
+                payload.get("error"),
+                "project config must be dict, got list",
+                "non-dict project config error",
+            )
+        finally:
+            _sys.argv = old_argv
+            if original_api_key is None:
+                _os.environ.pop("ANTHROPIC_API_KEY", None)
+            else:
+                _os.environ["ANTHROPIC_API_KEY"] = original_api_key
+            gsp.PROJ = original_proj
+
+
 def test_generate_slide_plan_rejects_malformed_prompt_lists() -> None:
     """generate_slide_plan.py: prompt preview 用 words / segments の shape 破損を reject."""
     import generate_slide_plan as gsp
@@ -28399,6 +28453,7 @@ def main() -> int:
         test_generate_slide_plan_skip_no_api_key,
         test_generate_slide_plan_missing_inputs,
         test_generate_slide_plan_rejects_non_dict_transcript_root,
+        test_generate_slide_plan_rejects_non_dict_project_config_root,
         test_generate_slide_plan_rejects_malformed_prompt_lists,
         test_generate_slide_plan_api_mock_success,
         test_generate_slide_plan_api_rate_limited_429,
