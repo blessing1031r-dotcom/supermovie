@@ -1636,6 +1636,68 @@ def test_build_telop_data_rejects_malformed_transcript_segments() -> None:
             btd.call_budoux = original_call
 
 
+def test_build_telop_data_rejects_malformed_transcript_words() -> None:
+    """build_telop_data.py が transcript.words 非 list[dict] を transcript invalid として reject."""
+    import build_telop_data as btd
+    import contextlib as _contextlib
+    import io as _io
+
+    cases = [
+        ({"words": "not a list", "segments": []}, "transcript.words must be list, got str"),
+        ({"words": ["not a dict"], "segments": []}, "transcript.words[0] must be dict, got str"),
+    ]
+
+    for payload, expected_error in cases:
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = _setup_temp_project(Path(tmp))
+            (proj / "transcript_fixed.json").write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+            (proj / "vad_result.json").write_text(
+                json.dumps({"speech_segments": [{"start": 0, "end": 1000}]}),
+                encoding="utf-8",
+            )
+
+            original_proj = btd.PROJ
+            original_call = btd.call_budoux
+            btd.PROJ = proj
+            btd.call_budoux = lambda x: [["dummy"] for _ in x]
+            try:
+                import sys as _sys
+
+                old_argv = _sys.argv
+                _sys.argv = ["build_telop_data.py", "--json-log"]
+                try:
+                    out_buf = _io.StringIO()
+                    err_buf = _io.StringIO()
+                    with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                        try:
+                            btd.main()
+                            raise AssertionError(
+                                "build_telop_data should fail with malformed transcript.words"
+                            )
+                        except SystemExit as e:
+                            if e.code != 3:
+                                raise AssertionError(f"Expected exit code 3, got: {e.code}")
+                    err_text = err_buf.getvalue()
+                    if "transcript validation failed" not in err_text:
+                        raise AssertionError(
+                            f"Expected transcript validation error in stderr, got: {err_text!r}"
+                        )
+                    lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                    tail = json.loads(lines[-1])
+                    assert_eq(tail.get("status"), "error", "build_telop malformed words status")
+                    assert_eq(tail.get("category"), "transcript-invalid", "build_telop malformed words category")
+                    assert_eq(tail.get("exit_code"), 3, "build_telop malformed words exit_code")
+                    assert_eq(tail.get("error"), expected_error, "build_telop malformed words error")
+                finally:
+                    _sys.argv = old_argv
+            finally:
+                btd.PROJ = original_proj
+                btd.call_budoux = original_call
+
+
 def test_build_telop_data_rejects_non_dict_typo_dict_root() -> None:
     """build_telop_data.py が typo_dict root 非 dict を typo_dict_invalid として reject."""
     import build_telop_data as btd
@@ -29262,6 +29324,7 @@ def main() -> int:
         test_build_telop_data_validates_bad_transcript,
         test_build_telop_data_rejects_non_dict_transcript_root,
         test_build_telop_data_rejects_malformed_transcript_segments,
+        test_build_telop_data_rejects_malformed_transcript_words,
         test_build_telop_data_rejects_non_dict_typo_dict_root,
         test_build_telop_data_rejects_malformed_typo_preserve,
         test_generate_slide_plan_skip_no_api_key,
