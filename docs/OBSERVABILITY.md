@@ -710,6 +710,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 408 | `template/scripts/build_slide_data.py` が `project-config.json` root に dict を要求し、list / str など root 破損を `config_invalid` JSON tail + exit 3 で reject することを lint (`test_build_slide_data_rejects_non_dict_project_config_root`、Codex 推奨 PR-MJ)。壊れた project config root が `config.get()` AttributeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-MJ |
 | 409 | `template/scripts/build_telop_data.py` が `transcript_fixed.json` root に dict を要求し、list / str など root 破損を `build_telop_transcript_invalid` JSON tail + exit 3 で reject することを lint (`test_build_telop_data_rejects_non_dict_transcript_root`、Codex 推奨 PR-MK)。壊れた transcript root が `transcript["words"]` / `transcript["segments"]` TypeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-MK |
 | 410 | `template/scripts/build_telop_data.py` が optional `typo_dict.json` root に dict を要求し、list / str など root 破損を `typo_dict_invalid` JSON tail + exit 3 で reject することを lint (`test_build_telop_data_rejects_non_dict_typo_dict_root`、Codex 推奨 PR-ML)。壊れた typo_dict root が `typo_dict.get("preserve")` AttributeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-ML |
+| 411 | `template/scripts/compare_telop_split.py` が `transcript_fixed.json` root に dict を要求し、list / str など root 破損を `transcript_invalid` JSON tail + exit 3 で reject することを lint (`test_compare_telop_split_rejects_non_dict_transcript_root`、Codex 推奨 PR-MM)。壊れた transcript root が `transcript.get("words")` AttributeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-MM |
 
 ## Test Requirements
 
