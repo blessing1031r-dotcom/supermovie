@@ -238,12 +238,18 @@ def call_budoux(seg_texts: list[str]) -> list[list[str]]:
     script = proj / "scripts" / "budoux_split.mjs"
     if not script.exists():
         raise FileNotFoundError(f"budoux_split.mjs not found at {script}")
-    res = subprocess.run(
-        ["node", str(script), "--in", fin_path, "--out", fout_path],
-        cwd=str(proj),
-        capture_output=True,
-        text=True,
-    )
+    try:
+        res = subprocess.run(
+            ["node", str(script), "--in", fin_path, "--out", fout_path],
+            cwd=str(proj),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as e:
+        # PR-PM step 505: hung Node.js guard — converts to RuntimeError so the
+        # caller's `except Exception` fallback at call site can use legacy splitting.
+        raise RuntimeError(f"budoux_split.mjs timed out: {e}") from e
     if res.returncode != 0:
         raise RuntimeError(f"budoux_split.mjs failed: {res.stderr}")
     out = json.loads(Path(fout_path).read_text(encoding="utf-8"))
