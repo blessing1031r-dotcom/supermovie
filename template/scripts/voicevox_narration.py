@@ -95,7 +95,7 @@ EMPTY_NARRATION_DATA = (
 
 def parse_cli_int_token(value: str) -> int:
     text = str(value).strip()
-    if not text or "_" in text:
+    if not text or not text.isascii() or not text.isdecimal():
         raise argparse.ArgumentTypeError(f"invalid integer token: {value!r}")
     try:
         return int(text)
