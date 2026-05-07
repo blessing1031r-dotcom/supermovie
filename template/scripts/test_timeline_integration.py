@@ -1851,6 +1851,7 @@ def test_build_scripts_wiring() -> None:
     import inspect
     bsd = importlib.import_module("build_slide_data")
     btd = importlib.import_module("build_telop_data")
+    vn = importlib.import_module("voicevox_narration")
 
     # FPS が videoConfig.ts から読まれている (Phase 3-J 統合確認)
     if bsd.FPS <= 0:
@@ -1863,6 +1864,21 @@ def test_build_scripts_wiring() -> None:
         raise AssertionError("build_slide_data should import validate_transcript_segment")
     if btd.validate_transcript_segment is None:
         raise AssertionError("build_telop_data should import validate_transcript_segment")
+    assert_eq(
+        vn.load_cut_segments,
+        timeline.load_cut_segments,
+        "voicevox_narration should import timeline.load_cut_segments",
+    )
+    assert_eq(
+        vn.ms_to_playback_frame,
+        timeline.ms_to_playback_frame,
+        "voicevox_narration should import timeline.ms_to_playback_frame",
+    )
+    vn_cut_source = inspect.getsource(vn.project_load_cut_segments)
+    if "return load_cut_segments(PROJ, fps, fail_fast=True)" not in vn_cut_source:
+        raise AssertionError("voicevox_narration project_load_cut_segments should be fail_fast=True")
+    if "fail_fast=False" in vn_cut_source:
+        raise AssertionError("voicevox_narration project_load_cut_segments must not soften VAD failures")
     assert_eq(
         bsd._bcs_raw,
         timeline.build_cut_segments_from_vad,
