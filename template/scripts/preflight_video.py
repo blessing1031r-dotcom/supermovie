@@ -485,7 +485,15 @@ def main():
                 )
                 print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
                 sys.exit(_emit("ffprobe_failed", 3, error=msg))
-            if entry.get("side_data_type") == "Display Matrix":
+            side_data_type = entry.get("side_data_type")
+            if side_data_type is not None and not isinstance(side_data_type, str):
+                msg = (
+                    f"ffprobe streams[{i}].side_data_list[{j}].side_data_type must be str, "
+                    f"got {type(side_data_type).__name__}"
+                )
+                print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+                sys.exit(_emit("ffprobe_failed", 3, error=msg))
+            if side_data_type == "Display Matrix":
                 rotation = entry.get("rotation")
                 if rotation is not None:
                     try:
