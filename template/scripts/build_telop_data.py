@@ -343,6 +343,15 @@ def main():
     cut_total_frames = cut_segments[-1]["playbackEnd"] if cut_segments else 0
 
     words = transcript.get("words", [])
+    if not isinstance(words, list):
+        msg = f"transcript.words must be list, got {type(words).__name__}"
+        print(f"ERROR: transcript validation failed: {msg}", file=_sys.stderr)
+        _sys.exit(_emit_error("build_telop_transcript_invalid", 3, error=msg))
+    for i, word in enumerate(words):
+        if not isinstance(word, dict):
+            msg = f"transcript.words[{i}] must be dict, got {type(word).__name__}"
+            print(f"ERROR: transcript validation failed: {msg}", file=_sys.stderr)
+            _sys.exit(_emit_error("build_telop_transcript_invalid", 3, error=msg))
     segments = transcript.get("segments")
     if not isinstance(segments, list):
         msg = f"transcript.segments must be list, got {type(segments).__name__}"
