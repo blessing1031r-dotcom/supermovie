@@ -7851,6 +7851,7 @@ def test_preflight_video_rejects_malformed_ffprobe_format_duration() -> None:
         ("bad", "ffprobe format.duration must be finite number, got str"),
         (True, "ffprobe format.duration must be finite number, got bool"),
         ("nan", "ffprobe format.duration must be finite number, got non-finite"),
+        ("-1", "ffprobe format.duration must be non-negative finite number, got -1.0"),
     ]
 
     saved_argv = list(_sys.argv)

@@ -535,7 +535,11 @@ def main():
     duration = fmt_meta.get("duration")
     if duration not in (None, ""):
         try:
-            validate_finite_float(duration, "ffprobe format.duration")
+            parsed_duration = validate_finite_float(duration, "ffprobe format.duration")
+            if parsed_duration < 0:
+                raise ValueError(
+                    f"ffprobe format.duration must be non-negative finite number, got {parsed_duration}"
+                )
         except ValueError as e:
             msg = str(e)
             print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
