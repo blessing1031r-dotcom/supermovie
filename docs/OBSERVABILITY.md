@@ -746,6 +746,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 444 | `template/scripts/preflight_video.py` が ffprobe `streams[*].side_data_list` の `null` を missing扱いにせず list shape として reject することを lint (`test_preflight_video_rejects_malformed_ffprobe_side_data_list`、Codex 推奨 PR-NT)。壊れた side-data root が downstream write/config failure に流れ、ffprobe validation failure の JSON tail から外れる drift を防ぐ | PR-NT |
 | 445 | `template/scripts/preflight_video.py` が ffprobe `streams[*].tags` の `null` を missing扱いにせず dict shape として reject することを lint (`test_preflight_video_rejects_malformed_ffprobe_tags`、Codex 推奨 PR-NU)。壊れた tags root が rotation/source metadata 判定の silent default に流れ、ffprobe validation failure の JSON tail から外れる drift を防ぐ | PR-NU |
 | 446 | `template/scripts/preflight_video.py` が ffprobe video stream の `r_frame_rate` / `avg_frame_rate` で明示された負 numerator / 0 denominator を `ffprobe_failed` JSON tail + exit 3 で reject することを lint (`test_preflight_video_rejects_malformed_ffprobe_frame_rates`、Codex 推奨 PR-NV)。壊れた frame rate が `render_fps` / `duration_frames` に 0 または負値として流れ、timeline fps metadata が drift することを防ぐ | PR-NV |
+| 447 | `template/scripts/preflight_video.py` が ffprobe `streams[*].codec_type` の `null` を missing扱いにせず str shape として reject することを lint (`test_preflight_video_rejects_malformed_ffprobe_codec_type`、Codex 推奨 PR-NW)。壊れた codec_type が `no_video_stream` に誤分類され、ffprobe validation failure の JSON tail から外れる drift を防ぐ | PR-NW |
 
 ## Test Requirements
 

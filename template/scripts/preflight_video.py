@@ -468,7 +468,7 @@ def main():
             print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
             sys.exit(_emit("ffprobe_failed", 3, error=msg))
         codec_type = stream.get("codec_type")
-        if codec_type is not None and not isinstance(codec_type, str):
+        if "codec_type" in stream and not isinstance(codec_type, str):
             msg = f"ffprobe streams[{i}].codec_type must be str, got {type(codec_type).__name__}"
             print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
             sys.exit(_emit("ffprobe_failed", 3, error=msg))
