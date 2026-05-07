@@ -417,6 +417,10 @@ def main():
                                error=redact_error_message(str(e))))
         else:
             cfg = {}
+        if not isinstance(cfg, dict):
+            msg = f"write-config root must be dict, got {type(cfg).__name__}"
+            print(f"ERROR: existing write-config validation failed: {msg}", file=sys.stderr)
+            sys.exit(_emit("write_config_parse_error", 3, error=msg))
         cfg.setdefault("source", {})
         cfg["source"] = source
         cfg["resolution"] = {
