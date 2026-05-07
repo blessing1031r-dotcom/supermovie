@@ -50,6 +50,16 @@ def parse_ascii_int_token(token: str, label: str) -> int:
     return int(token)
 
 
+TELOP_STYLE_VALUES = frozenset({"normal", "emphasis", "warning", "success"})
+
+
+def parse_telop_style_token(token: str) -> str:
+    """telopData.ts style field must be one of the TelopSegment.style union values."""
+    if token not in TELOP_STYLE_VALUES:
+        raise ValueError("style must be one of normal, emphasis, warning, success")
+    return token
+
+
 def parse_telop_data_ts(ts_path: Path) -> list[dict]:
     """telopData.ts から telop 配列を抽出 (簡易 parser)."""
     text = ts_path.read_text(encoding="utf-8")
@@ -76,7 +86,7 @@ def parse_telop_data_ts(ts_path: Path) -> list[dict]:
         style_match = re.match(r"\s*,\s*style:\s*'(\w+)'", text[text_end:], re.S)
         if style_match is None:
             raise ValueError("style must follow text JSON string")
-        style = style_match.group(1)
+        style = parse_telop_style_token(style_match.group(1))
         items.append({
             "id": parse_ascii_int_token(idn, "id"),
             "startFrame": parse_ascii_int_token(sf, "startFrame"),
