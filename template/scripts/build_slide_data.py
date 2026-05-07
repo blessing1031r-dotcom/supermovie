@@ -65,7 +65,7 @@ def build_cut_segments_from_vad(vad: dict | None) -> list[dict]:
     旧 inline 実装は timeline.py に集約した。validate を経由して schema 破損は
     raise (build_slide_data は cut が壊れていれば slide も壊れるため fail-fast)。
     """
-    if not vad:
+    if vad is None:
         return []
     return _bcs_raw(validate_vad_schema(vad), FPS)
 
