@@ -1516,6 +1516,66 @@ def test_build_telop_data_validates_bad_transcript() -> None:
             btd.call_budoux = original_call
 
 
+def test_build_telop_data_rejects_non_dict_transcript_root() -> None:
+    """build_telop_data.py が transcript root 非 dict を transcript invalid として reject."""
+    import build_telop_data as btd
+    import contextlib as _contextlib
+    import io as _io
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = _setup_temp_project(Path(tmp))
+        (proj / "transcript_fixed.json").write_text(
+            json.dumps(["not", "a", "dict"]),
+            encoding="utf-8",
+        )
+        (proj / "vad_result.json").write_text(
+            json.dumps({"speech_segments": [{"start": 0, "end": 1000}]}),
+            encoding="utf-8",
+        )
+
+        original_proj = btd.PROJ
+        original_call = btd.call_budoux
+        btd.PROJ = proj
+        btd.call_budoux = lambda x: [["dummy"] for _ in x]
+        try:
+            import sys as _sys
+
+            old_argv = _sys.argv
+            _sys.argv = ["build_telop_data.py", "--json-log"]
+            try:
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                    try:
+                        btd.main()
+                        raise AssertionError(
+                            "build_telop_data should fail with non-dict transcript root"
+                        )
+                    except SystemExit as e:
+                        if e.code != 3:
+                            raise AssertionError(f"Expected exit code 3, got: {e.code}")
+                err_text = err_buf.getvalue()
+                if "transcript validation failed" not in err_text:
+                    raise AssertionError(
+                        f"Expected validation error in stderr, got: {err_text!r}"
+                    )
+                lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                tail = json.loads(lines[-1])
+                assert_eq(tail.get("status"), "error", "build_telop non-dict root status")
+                assert_eq(tail.get("category"), "transcript-invalid", "build_telop non-dict root category")
+                assert_eq(tail.get("exit_code"), 3, "build_telop non-dict root exit_code")
+                assert_eq(
+                    tail.get("error"),
+                    "transcript must be dict, got list",
+                    "build_telop non-dict root error",
+                )
+            finally:
+                _sys.argv = old_argv
+        finally:
+            btd.PROJ = original_proj
+            btd.call_budoux = original_call
+
+
 def test_generate_slide_plan_skip_no_api_key() -> None:
     """generate_slide_plan.py: ANTHROPIC_API_KEY 未設定で exit 0 (skip)."""
     import generate_slide_plan as gsp
@@ -28569,6 +28629,7 @@ def main() -> int:
         test_build_slide_data_rejects_non_dict_project_config_root,
         test_build_telop_data_main_e2e,
         test_build_telop_data_validates_bad_transcript,
+        test_build_telop_data_rejects_non_dict_transcript_root,
         test_generate_slide_plan_skip_no_api_key,
         test_generate_slide_plan_missing_inputs,
         test_generate_slide_plan_rejects_non_dict_transcript_root,
