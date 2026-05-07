@@ -238,6 +238,7 @@ def load_cut_segments(proj: Path, fps: int, fail_fast: bool = False) -> list[dic
     Codex Phase 3-I review P1 #2 反映: 黙過は legacy 経路へ流れて stale
     narration を出す危険があるので、narration script では fail_fast=True 推奨。
     """
+    fail_fast = _validate_bool_flag(fail_fast, "fail_fast")
     vad_path = proj / "vad_result.json"
     if not vad_path.exists():
         return []
