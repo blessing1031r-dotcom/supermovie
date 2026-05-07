@@ -193,6 +193,16 @@ def main():
         msg = f"transcript must be dict, got {type(transcript).__name__}"
         print(f"ERROR: transcript_fixed.json validation failed: {msg}", file=sys.stderr)
         return _emit_early("transcript_invalid", 3, error=msg)
+    words = transcript.get("words", [])
+    if not isinstance(words, list):
+        msg = f"transcript.words must be list, got {type(words).__name__}"
+        print(f"ERROR: transcript_fixed.json validation failed: {msg}", file=sys.stderr)
+        return _emit_early("transcript_invalid", 3, error=msg)
+    for i, word in enumerate(words):
+        if not isinstance(word, dict):
+            msg = f"transcript.words[{i}] must be dict, got {type(word).__name__}"
+            print(f"ERROR: transcript_fixed.json validation failed: {msg}", file=sys.stderr)
+            return _emit_early("transcript_invalid", 3, error=msg)
 
     typo = (PROJ / "typo_dict.json")
     try:
@@ -214,7 +224,6 @@ def main():
             msg = f"typo_dict.preserve[{i}] must be str, got {type(item).__name__}"
             print(f"ERROR: typo_dict.json validation failed: {msg}", file=sys.stderr)
             return _emit_early("typo_dict_invalid", 3, error=msg)
-    words = transcript.get("words", [])
 
     try:
         base_telops = parse_telop_data_ts(baseline_path)

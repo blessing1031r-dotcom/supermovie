@@ -7140,6 +7140,49 @@ def test_compare_telop_split_rejects_non_dict_transcript_root() -> None:
         _shutil.rmtree(proj, ignore_errors=True)
 
 
+def test_compare_telop_split_rejects_malformed_transcript_words() -> None:
+    """compare_telop_split で transcript.words 非 list[dict] を reject."""
+    import os as _os
+    import io
+    import sys as _sys
+    import importlib
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+
+    proj = Path(tempfile.mkdtemp(prefix="cts_bad_words_"))
+    (proj / "transcript_fixed.json").write_text(
+        json.dumps({"duration_ms": 1000, "words": ["not a dict"], "segments": []}),
+        encoding="utf-8",
+    )
+    try:
+        _os.chdir(str(proj))
+        import compare_telop_split as cts
+        importlib.reload(cts)
+        cts.PROJ = proj
+
+        _sys.argv = ["compare_telop_split.py", "/dev/null", "/dev/null", "--json-log"]
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            rc = cts.main()
+        assert rc == 3, f"transcript malformed words should exit 3, got {rc}"
+        err_text = err_buf.getvalue()
+        assert "transcript_fixed.json validation failed" in err_text, err_text
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        v1_tail = json.loads(lines[-1])
+        assert v1_tail["status"] == "error"
+        assert v1_tail["category"] == "transcript_invalid"
+        assert v1_tail["exit_code"] == 3
+        assert v1_tail["error"] == "transcript.words[0] must be dict, got str"
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
 def test_compare_telop_split_typo_dict_invalid_emits_tail() -> None:
     """compare_telop_split で typo_dict.json malformed JSON 時に v1 tail + exit 3。"""
     import os as _os
@@ -29186,6 +29229,7 @@ def main() -> int:
         # PR-G (error path tail emit audit): 7 件 (4 早期 path emit + 3 fix iter: redact unit/integ + exit code propagation)
         test_compare_telop_split_transcript_missing_emits_tail,
         test_compare_telop_split_rejects_non_dict_transcript_root,
+        test_compare_telop_split_rejects_malformed_transcript_words,
         test_compare_telop_split_typo_dict_invalid_emits_tail,
         test_compare_telop_split_rejects_non_dict_typo_dict_root,
         test_compare_telop_split_rejects_malformed_typo_preserve,
