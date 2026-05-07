@@ -317,6 +317,8 @@ def validate_rate_string(value, label: str) -> str:
         raise ValueError(f"{label} must be rate string, got str")
     parsed_parts = []
     for part in parts:
+        if "_" in part.strip():
+            raise ValueError(f"{label} must be rate string, got str")
         try:
             parsed = float(part)
         except ValueError:
