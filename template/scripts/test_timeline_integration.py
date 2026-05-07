@@ -8657,6 +8657,7 @@ def test_preflight_video_rejects_malformed_ffprobe_format_duration() -> None:
         ("nan", "ffprobe format.duration must be finite number, got non-finite"),
         ("1_000.5", "ffprobe format.duration must be finite number, got str"),
         ("１０００.５", "ffprobe format.duration must be finite number, got str"),
+        ("+1000.5", "ffprobe format.duration must be finite number, got str"),
         ("-1", "ffprobe format.duration must be non-negative finite number, got -1.0"),
     ]
 
@@ -8768,6 +8769,8 @@ def test_preflight_video_rejects_malformed_ffprobe_frame_rates() -> None:
         ({"r_frame_rate": "3_0/1"}, "ffprobe video.r_frame_rate must be rate string, got str"),
         ({"r_frame_rate": "３０/1"}, "ffprobe video.r_frame_rate must be rate string, got str"),
         ({"avg_frame_rate": "30/１"}, "ffprobe video.avg_frame_rate must be rate string, got str"),
+        ({"r_frame_rate": "+30/1"}, "ffprobe video.r_frame_rate must be rate string, got str"),
+        ({"avg_frame_rate": "30/+1"}, "ffprobe video.avg_frame_rate must be rate string, got str"),
         ({"r_frame_rate": "1/0"},
          "ffprobe video.r_frame_rate must be rate string with non-negative numerator and positive denominator, got 1/0"),
         ({"avg_frame_rate": "-30/1"},
