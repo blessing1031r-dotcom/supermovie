@@ -240,6 +240,11 @@ def validate_slide_plan(plan: dict, words: list[dict], cut_total_frames: int | N
     for i, word in enumerate(words):
         if not isinstance(word, dict):
             errors.append(f"words[{i}] not a dict")
+            continue
+        try:
+            validate_transcript_segment(word, idx=i, require_timing=True)
+        except TranscriptSegmentError as e:
+            errors.append(f"words[{i}] invalid: {e}")
     if errors:
         return errors
     if plan.get("version") != PLAN_VERSION:

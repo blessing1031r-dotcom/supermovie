@@ -2955,6 +2955,90 @@ def test_build_slide_data_plan_rejects_malformed_words() -> None:
             bsd.PROJ = original_proj
 
 
+def test_build_slide_data_plan_rejects_invalid_word_timing() -> None:
+    """build_slide_data --plan が transcript.words timing 破損を plan invalid で reject."""
+    import build_slide_data as bsd
+    import contextlib as _contextlib
+    import io as _io
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = _setup_temp_project(Path(tmp))
+        (proj / "transcript_fixed.json").write_text(
+            json.dumps(
+                {
+                    "duration_ms": 2000,
+                    "text": "test",
+                    "segments": [{"text": "hello", "start": 0, "end": 2000}],
+                    "words": [{"text": "hello", "start": "bad", "end": 1000}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (proj / "project-config.json").write_text(
+            json.dumps({"format": "short", "tone": "プロ"}),
+            encoding="utf-8",
+        )
+        plan_path = proj / "plan.json"
+        plan_path.write_text(
+            json.dumps(
+                {
+                    "version": bsd.PLAN_VERSION,
+                    "slides": [
+                        {
+                            "id": 1,
+                            "startWordIndex": 0,
+                            "endWordIndex": 0,
+                            "title": "test",
+                            "bullets": [],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        original_proj = bsd.PROJ
+        bsd.PROJ = proj
+        try:
+            import sys as _sys
+
+            old_argv = _sys.argv
+            _sys.argv = [
+                "build_slide_data.py",
+                "--plan",
+                str(plan_path),
+                "--strict-plan",
+                "--json-log",
+            ]
+            try:
+                out_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf):
+                    try:
+                        bsd.main()
+                        raise AssertionError(
+                            "build_slide_data should fail with invalid transcript word timing"
+                        )
+                    except SystemExit as e:
+                        assert_eq(e.code, 2, "invalid word timing strict-plan exit")
+                lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                tail = json.loads(lines[-1])
+                assert_eq(tail.get("status"), "error", "invalid word timing status")
+                assert_eq(tail.get("category"), "plan-invalid", "invalid word timing category")
+                assert_eq(tail.get("exit_code"), 2, "invalid word timing exit_code")
+                validation_errors = tail.get("validation_errors", [])
+                if not any(
+                    "words[0] invalid:" in err and "start must be finite" in err
+                    for err in validation_errors
+                ):
+                    raise AssertionError(
+                        f"Expected invalid word timing validation error, got: {validation_errors!r}"
+                    )
+            finally:
+                _sys.argv = old_argv
+        finally:
+            bsd.PROJ = original_proj
+
+
 def test_build_scripts_wiring() -> None:
     """build_slide_data / build_telop_data が timeline 経由で正しく wire されている."""
     import importlib
@@ -28936,6 +29020,7 @@ def main() -> int:
         test_build_slide_data_plan_validation_fallback,
         test_build_slide_data_plan_strict_failure,
         test_build_slide_data_plan_rejects_malformed_words,
+        test_build_slide_data_plan_rejects_invalid_word_timing,
         # Phase 3 obs migration core: helper module regression test (6 件)
         test_observability_helper_status_map,
         test_observability_status_map_lint,
