@@ -25,7 +25,7 @@ import re
 from pathlib import Path
 
 DEFAULT_FPS = 30
-FPS_LINE_RE = re.compile(r"^export const FPS\s*=\s*(\d+)\s*;", re.MULTILINE)
+FPS_LINE_RE = re.compile(r"^export const FPS\s*=\s*([0-9]+)\s*;", re.MULTILINE)
 CUT_SEGMENT_KEYS = (
     "originalStartMs",
     "originalEndMs",
