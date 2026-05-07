@@ -347,6 +347,16 @@ def main():
     tone = config.get("tone", "プロフェッショナル")
     words = transcript.get("words", [])
     segments = transcript.get("segments", [])
+    for name, entries in (("words", words), ("segments", segments)):
+        if not isinstance(entries, list):
+            msg = f"transcript.{name} must be list, got {type(entries).__name__}"
+            print(f"ERROR: transcript validation failed: {msg}", file=sys.stderr)
+            return emit_json("transcript_invalid", 3, error=msg)
+        for i, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                msg = f"transcript.{name}[{i}] must be dict, got {type(entry).__name__}"
+                print(f"ERROR: transcript validation failed: {msg}", file=sys.stderr)
+                return emit_json("transcript_invalid", 3, error=msg)
     n_words = len(words)
 
     title_max = {"youtube": 18, "short": 14, "square": 16}.get(fmt, 14)
