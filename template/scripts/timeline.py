@@ -96,6 +96,8 @@ def _validate_ms(value: object, label: str) -> int | float:
         )
     if not math.isfinite(value):
         raise ValueError(f"{label} must be finite int|float, got {value!r}")
+    if value < 0:
+        raise ValueError(f"{label} must be >= 0, got {value!r}")
     return value
 
 

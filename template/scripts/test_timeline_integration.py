@@ -604,6 +604,14 @@ def test_ms_to_playback_frame_rejects_invalid_ms_values() -> None:
             ValueError,
             f"ms_to_playback_frame non-finite ms {bad_ms!r}",
         )
+    for bad_ms in (-1, -0.1):
+        assert_raises(
+            lambda bad_ms=bad_ms: timeline.ms_to_playback_frame(
+                bad_ms, 30, cut_segments
+            ),
+            ValueError,
+            f"ms_to_playback_frame negative ms {bad_ms!r}",
+        )
 
 
 def test_ms_to_playback_frame_rejects_invalid_cut_segments_shape() -> None:
@@ -719,6 +727,23 @@ def test_ms_to_playback_frame_rejects_invalid_cut_segment_value_types() -> None:
                 ),
                 ValueError,
                 f"ms_to_playback_frame non-finite cut segment ms {key}={bad_value!r}",
+            )
+        for bad_value in (-1, -0.1):
+            malformed = [
+                {
+                    "originalStartMs": 0,
+                    "originalEndMs": 1000,
+                    "playbackStart": 0,
+                    "playbackEnd": 30,
+                }
+            ]
+            malformed[0][key] = bad_value
+            assert_raises(
+                lambda malformed=malformed: timeline.ms_to_playback_frame(
+                    500, 30, malformed
+                ),
+                ValueError,
+                f"ms_to_playback_frame negative cut segment ms {key}={bad_value!r}",
             )
 
     for key in ("playbackStart", "playbackEnd"):
