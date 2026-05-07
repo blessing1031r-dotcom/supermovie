@@ -1864,6 +1864,16 @@ def test_build_scripts_wiring() -> None:
     if btd.validate_transcript_segment is None:
         raise AssertionError("build_telop_data should import validate_transcript_segment")
     assert_eq(
+        bsd._bcs_raw,
+        timeline.build_cut_segments_from_vad,
+        "build_slide_data cut helper should delegate to timeline.build_cut_segments_from_vad",
+    )
+    bsd_cut_source = inspect.getsource(bsd.build_cut_segments_from_vad)
+    if "return _bcs_raw(validate_vad_schema(vad), FPS)" not in bsd_cut_source:
+        raise AssertionError("build_slide_data cut helper should return timeline raw helper output")
+    if "cursor_ms" in bsd_cut_source or '"playbackStart"' in bsd_cut_source:
+        raise AssertionError("build_slide_data cut helper should not keep inline playback frame mapping")
+    assert_eq(
         btd._bcs_raw,
         timeline.build_cut_segments_from_vad,
         "build_telop_data cut helper should delegate to timeline.build_cut_segments_from_vad",
@@ -1880,6 +1890,7 @@ def test_build_scripts_wiring() -> None:
     )
     assert_eq(len(cuts), 1, "bsd.build_cut_segments_from_vad len")
     assert_eq(cuts[0]["originalStartMs"], 0, "bsd cuts[0] originalStartMs")
+    assert_eq(cuts[0]["playbackEnd"], 30, "bsd cut mapping uses timeline helper")
 
     # build_telop_data の cut helper も validate_vad_schema 経由
     cuts_t = btd.build_cut_segments_from_vad(
