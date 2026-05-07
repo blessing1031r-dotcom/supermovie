@@ -324,7 +324,17 @@ def validate_transcript_segments(
         raise TranscriptSegmentError(
             f"segments must be list, got {type(segments).__name__}"
         )
-    return [
-        validate_transcript_segment(seg, idx=i, require_timing=require_timing)
-        for i, seg in enumerate(segments)
-    ]
+    out: list[dict] = []
+    prev_end: int | float | None = None
+    for i, seg in enumerate(segments):
+        validated = validate_transcript_segment(seg, idx=i, require_timing=require_timing)
+        s = validated.get("start")
+        e = validated.get("end")
+        if prev_end is not None and _is_timing_number(s) and s < prev_end:
+            raise TranscriptSegmentError(
+                f"segment[{i}] start={s} < previous end={prev_end}"
+            )
+        if _is_timing_number(e):
+            prev_end = e
+        out.append(validated)
+    return out
