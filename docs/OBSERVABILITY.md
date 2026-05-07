@@ -689,6 +689,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 387 | `template/scripts/timeline.py` の `build_cut_segments_from_vad()` / `ms_to_playback_frame()` が `fps` に positive int のみを受け付け、bool / float / str / zero / negative を reject することを lint (`test_timeline_rejects_invalid_fps_values`、Codex 推奨 PR-LO)。`fps=True` や `fps=0` が playback frame 計算に silent に入る drift を防ぐ | PR-LO |
 | 388 | `template/scripts/timeline.py` の `ms_to_playback_frame()` が `ms` に finite int|float のみを受け付け、bool / str / non-finite を reject することを lint (`test_ms_to_playback_frame_rejects_invalid_ms_values`、Codex 推奨 PR-LP)。`ms=True` や `ms=NaN` が playback frame 計算に silent に入る drift を防ぐ | PR-LP |
 | 389 | `template/scripts/timeline.py` の `ms_to_playback_frame()` が `cut_segments` に list[dict] と必須 key (`originalStartMs` / `originalEndMs` / `playbackStart` / `playbackEnd`) を要求し、空 list の no-cut fallback だけを維持することを lint (`test_ms_to_playback_frame_rejects_invalid_cut_segments_shape`、Codex 推奨 PR-LQ)。空 tuple / key 欠落 dict が direct conversion や KeyError に silent に流れる drift を防ぐ | PR-LQ |
+| 390 | `template/scripts/timeline.py` の `ms_to_playback_frame()` が `cut_segments[*].originalStartMs/originalEndMs` を finite int|float、`playbackStart/playbackEnd` を int frame として検査することを lint (`test_ms_to_playback_frame_rejects_invalid_cut_segment_value_types`、Codex 推奨 PR-LR)。`playbackStart=True` / `originalStartMs=NaN` のような値型 drift が frame arithmetic に silent に入る事故を防ぐ | PR-LR |
 
 ## Test Requirements
 
