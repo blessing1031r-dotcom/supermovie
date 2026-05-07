@@ -20,6 +20,7 @@ videoConfig.FPS を一次 source として Remotion render と同期する
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 
@@ -57,8 +58,13 @@ def _is_timing_number(value: object) -> bool:
     """timestamp/duration numeric guard.
 
     bool は int subclass だが、timing 値としては typo を隠すため除外する。
+    NaN / Infinity も frame mapping を壊すため除外する。
     """
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
 
 
 def validate_vad_schema(vad: object) -> dict:
@@ -82,7 +88,7 @@ def validate_vad_schema(vad: object) -> dict:
             v = seg.get(key)
             if not _is_timing_number(v):
                 raise VadSchemaError(
-                    f"segment[{i}].{key} must be int|float, got {type(v).__name__}"
+                    f"segment[{i}].{key} must be finite int|float, got {type(v).__name__}"
                 )
         if seg["start"] > seg["end"]:
             raise VadSchemaError(
@@ -188,16 +194,16 @@ def validate_transcript_segment(
     for k, v in (("start", s), ("end", e)):
         if v is not None and not _is_timing_number(v):
             raise TranscriptSegmentError(
-                f"{label}.{k} must be int|float|None, got {type(v).__name__}"
+                f"{label}.{k} must be finite int|float|None, got {type(v).__name__}"
             )
     if require_timing:
         if not _is_timing_number(s):
             raise TranscriptSegmentError(
-                f"{label}.start required (int|float), got {type(s).__name__}"
+                f"{label}.start required (finite int|float), got {type(s).__name__}"
             )
         if not _is_timing_number(e):
             raise TranscriptSegmentError(
-                f"{label}.end required (int|float), got {type(e).__name__}"
+                f"{label}.end required (finite int|float), got {type(e).__name__}"
             )
     if _is_timing_number(s) and _is_timing_number(e) and s > e:
         raise TranscriptSegmentError(f"{label} start={s} > end={e}")

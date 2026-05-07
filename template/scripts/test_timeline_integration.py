@@ -279,6 +279,43 @@ def test_timeline_validation_rejects_bool_timing_values() -> None:
     )
 
 
+def test_timeline_validation_rejects_non_finite_timing_values() -> None:
+    """PR-LJ: NaN / Infinity must not pass timing validation."""
+    for value, label in (
+        (float("nan"), "nan"),
+        (float("inf"), "inf"),
+        (float("-inf"), "-inf"),
+    ):
+        assert_raises(
+            lambda value=value: timeline.validate_vad_schema(
+                {"speech_segments": [{"start": value, "end": 100}]}
+            ),
+            timeline.VadSchemaError,
+            f"vad start {label}",
+        )
+        assert_raises(
+            lambda value=value: timeline.validate_vad_schema(
+                {"speech_segments": [{"start": 0, "end": value}]}
+            ),
+            timeline.VadSchemaError,
+            f"vad end {label}",
+        )
+        assert_raises(
+            lambda value=value: timeline.validate_transcript_segment(
+                {"text": "hi", "start": value, "end": 100}, 0
+            ),
+            timeline.TranscriptSegmentError,
+            f"transcript start {label}",
+        )
+        assert_raises(
+            lambda value=value: timeline.validate_transcript_segment(
+                {"text": "hi", "start": 0, "end": value}, 0, require_timing=True
+            ),
+            timeline.TranscriptSegmentError,
+            f"transcript end {label}",
+        )
+
+
 def test_voicevox_collect_chunks_validation() -> None:
     """voicevox_narration.collect_chunks が壊れた transcript で raise する."""
     import voicevox_narration as vn
@@ -27498,6 +27535,7 @@ def main() -> int:
         test_build_cut_segments_multi_with_gaps,
         test_transcript_segment_validation,
         test_timeline_validation_rejects_bool_timing_values,
+        test_timeline_validation_rejects_non_finite_timing_values,
         test_voicevox_collect_chunks_validation,
         test_voicevox_write_narration_data_alignment,
         test_voicevox_write_order_narrationdata_before_wav,
