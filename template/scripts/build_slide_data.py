@@ -41,6 +41,7 @@ PROJ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from timeline import (  # noqa: E402
     TranscriptSegmentError,
+    VadSchemaError,
     build_cut_segments_from_vad as _bcs_raw,
     ms_to_playback_frame as _msf_raw,
     read_video_config_fps,
@@ -416,8 +417,18 @@ def main():
             sys.exit(_emit_error("build_slide_transcript_invalid", 3, error=str(e)))
 
     vad_path = PROJ / "vad_result.json"
-    vad = load_json(vad_path) if vad_path.exists() else None
-    cut_segments = build_cut_segments_from_vad(vad)
+    try:
+        vad = load_json(vad_path) if vad_path.exists() else None
+    except (OSError, json.JSONDecodeError) as e:
+        err = redact_error_message(str(e))
+        print(f"ERROR: vad_result.json load failed: {err}", file=sys.stderr)
+        sys.exit(_emit_error("vad_invalid", 8, error=err))
+    try:
+        cut_segments = build_cut_segments_from_vad(vad)
+    except VadSchemaError as e:
+        err = redact_error_message(str(e))
+        print(f"ERROR: vad_result.json schema invalid: {err}", file=sys.stderr)
+        sys.exit(_emit_error("vad_invalid", 8, error=err))
     cut_total_frames = cut_segments[-1]["playbackEnd"] if cut_segments else None
 
     used_plan = False
@@ -430,7 +441,12 @@ def main():
                 sys.exit(_emit_error("build_slide_plan_missing", 2, plan_path=str(plan_path)))
             print(f"WARN: {msg} → deterministic fallback")
         else:
-            plan = load_json(plan_path)
+            try:
+                plan = load_json(plan_path)
+            except (OSError, json.JSONDecodeError) as e:
+                err = redact_error_message(str(e))
+                print(f"ERROR: --plan load failed: {err}", file=sys.stderr)
+                sys.exit(_emit_error("build_slide_plan_invalid", 2, error=err))
             errors = validate_slide_plan(plan, words, cut_total_frames, fmt)
             if errors:
                 if args.strict_plan:
