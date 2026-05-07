@@ -16860,6 +16860,82 @@ def test_voicevox_narration_summary_path_redacted_by_default() -> None:
         _shutil.rmtree(proj, ignore_errors=True)
 
 
+def test_voicevox_narration_rejects_malformed_json_inputs() -> None:
+    """step 499: voicevox_narration.py が malformed transcript / script-json を structured tail で reject."""
+    import voicevox_narration as vn
+    import contextlib
+    import io as _io
+    import sys as _sys
+
+    valid_transcript = json.dumps({"words": [], "segments": []})
+
+    cases = [
+        (
+            "malformed_transcript",
+            "not-json{{{",
+            None,
+            "transcript_invalid",
+            3,
+            "transcript_fixed.json load failed",
+        ),
+        (
+            "malformed_script_json",
+            None,
+            "not-json{{{",
+            "transcript_invalid",
+            3,
+            "script-json load failed",
+        ),
+    ]
+
+    original_proj = vn.PROJ
+    original_check_engine = vn.check_engine
+    old_argv = _sys.argv
+
+    # engine check はネットワーク依存。mock して transcript load まで進む
+    vn.check_engine = lambda: (True, "0.14.0-test")
+
+    try:
+        for label, transcript_content, script_json_content, expected_category, expected_exit, expected_stderr_substr in cases:
+            with tempfile.TemporaryDirectory() as tmp:
+                proj = Path(tmp)
+                vn.PROJ = proj
+                if transcript_content is not None:
+                    (proj / "transcript_fixed.json").write_text(transcript_content, encoding="utf-8")
+                if script_json_content is not None:
+                    (proj / "script.json").write_text(script_json_content, encoding="utf-8")
+                    _sys.argv = ["voicevox_narration.py", "--script-json", str(proj / "script.json"), "--json-log"]
+                    (proj / "transcript_fixed.json").write_text(valid_transcript, encoding="utf-8")
+                else:
+                    _sys.argv = ["voicevox_narration.py", "--json-log"]
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                try:
+                    with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+                        ret = vn.main()
+                    if ret != expected_exit:
+                        raise AssertionError(
+                            f"case={label!r}: Expected exit code {expected_exit}, got: {ret}\n"
+                            f"stdout={out_buf.getvalue()!r}\nstderr={err_buf.getvalue()!r}"
+                        )
+                    stderr_str = err_buf.getvalue()
+                    assert expected_stderr_substr in stderr_str, (
+                        f"case={label!r}: Expected {expected_stderr_substr!r} in stderr, got: {stderr_str!r}"
+                    )
+                    stdout_str = out_buf.getvalue()
+                    lines = [ln for ln in stdout_str.splitlines() if ln.strip().startswith("{")]
+                    assert lines, f"case={label!r}: No JSON tail found in stdout: {stdout_str!r}"
+                    tail = json.loads(lines[-1])
+                    assert tail.get("category") == expected_category, (
+                        f"case={label!r}: Expected category={expected_category!r}, got {tail.get('category')!r}"
+                    )
+                finally:
+                    _sys.argv = old_argv
+                    vn.PROJ = original_proj
+    finally:
+        vn.check_engine = original_check_engine
+
+
 def test_generate_slide_plan_stderr_proj_path_redacted() -> None:
     """PR-J (Codex 00:22): generate_slide_plan で transcript_fixed.json missing 時の stderr に
     raw PROJ abs path が出ないこと、--unsafe-keep-abs-path で raw 切替。
@@ -26704,7 +26780,7 @@ def test_supermovie_narration_input_docs_match_collect_chunks_lint() -> None:
     required_main_snippets = {
         "transcript missing guard": "if not transcript_path.exists() and not (args.script or args.script_json):",
         "transcript missing status": 'return emit_json("transcript_missing", 3)',
-        "transcript optional load": "transcript = load_json(transcript_path) if transcript_path.exists() else {}",
+        "transcript optional load": "transcript = load_json(transcript_path)",
         "collect call": "chunks = collect_chunks(args, transcript)",
     }
     for name, snippet in required_main_snippets.items():
@@ -32659,6 +32735,7 @@ def main() -> int:
         # PR-I (human stdout path leak audit、Codex 00:08 approve): 2 件 (1 feat + 1 fix iter voicevox summary redact)
         test_build_slide_data_human_stdout_path_redacted_by_default,
         test_voicevox_narration_summary_path_redacted_by_default,
+        test_voicevox_narration_rejects_malformed_json_inputs,
         # PR-J (stderr path leak audit、Codex 00:22 approve): 1 件
         test_generate_slide_plan_stderr_proj_path_redacted,
         # PR-S1 (local emit_json wrapper kwargs type contract audit): 1 件

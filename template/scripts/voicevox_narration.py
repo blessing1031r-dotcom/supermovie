@@ -56,6 +56,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _observability import (  # noqa: E402
     build_status,
     emit_json as _obs_emit_json,
+    redact_error_message,
     resolve_run_context,
     safe_artifact_path,
     user_content_meta,
@@ -459,7 +460,12 @@ def collect_chunks(args, transcript: dict) -> list[dict]:
     # 先に通す。segment が非 dict / text 非 str だと AttributeError で落ちて
     # TranscriptSegmentError として捕まらない経路があるため。
     if args.script_json:
-        plan = load_json(_resolve_path(args.script_json))
+        try:
+            plan = load_json(_resolve_path(args.script_json))
+        except (OSError, json.JSONDecodeError) as e:
+            raise TranscriptSegmentError(
+                f"script-json load failed: {redact_error_message(str(e))}"
+            ) from e
         if not isinstance(plan, dict):
             raise TranscriptSegmentError(f"script-json must be dict, got {type(plan).__name__}")
         plan_segments = plan.get("segments", [])
@@ -633,7 +639,15 @@ def main():
     if not transcript_path.exists() and not (args.script or args.script_json):
         print(f"ERROR: transcript_fixed.json missing under {PROJ}", file=sys.stderr)
         return emit_json("transcript_missing", 3)
-    transcript = load_json(transcript_path) if transcript_path.exists() else {}
+    if transcript_path.exists():
+        try:
+            transcript = load_json(transcript_path)
+        except (OSError, json.JSONDecodeError) as e:
+            err = redact_error_message(str(e))
+            print(f"ERROR: transcript_fixed.json load failed: {err}", file=sys.stderr)
+            return emit_json("transcript_invalid", 3, error=err)
+    else:
+        transcript = {}
     try:
         chunks = collect_chunks(args, transcript)
     except TranscriptSegmentError as e:
