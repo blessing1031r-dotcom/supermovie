@@ -179,7 +179,13 @@ def _resolve_decimal(
     """
     def parse_decimal_token(raw: str, source: str) -> float:
         text = raw.strip()
-        if not text or not text.isascii() or "_" in text or text.startswith("+"):
+        if (
+            text != raw
+            or not text
+            or not text.isascii()
+            or "_" in text
+            or text.startswith("+")
+        ):
             raise ValueError(f"{source}={raw!r} は decimal に変換できません: invalid token")
         try:
             return float(text)

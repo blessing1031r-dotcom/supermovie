@@ -3121,6 +3121,39 @@ def test_generate_slide_plan_decimal_tokens_reject_unicode_digits() -> None:
             gsp.PROJ = original_proj
 
 
+def test_generate_slide_plan_decimal_tokens_reject_whitespace() -> None:
+    """cost rate decimal token の whitespace 正規化を reject."""
+    import generate_slide_plan as gsp
+    import os as _os
+
+    env_name = "SUPERMOVIE_RATE_TEST_USD_PER_MTOK"
+    original_env = _os.environ.get(env_name)
+    cases = [
+        ("env", lambda: gsp._resolve_decimal(None, env_name, arg_name="rate-input")),
+        ("cli", lambda: gsp._resolve_decimal("1.0 ", env_name, arg_name="rate-input")),
+    ]
+    try:
+        _os.environ[env_name] = " 1.0"
+        for label, call in cases:
+            try:
+                call()
+            except ValueError as e:
+                msg = str(e)
+                if "decimal" not in msg or "invalid token" not in msg:
+                    raise AssertionError(
+                        f"unexpected _resolve_decimal whitespace {label} error: {msg!r}"
+                    )
+            else:
+                raise AssertionError(
+                    f"_resolve_decimal should reject whitespace {label} decimal token"
+                )
+    finally:
+        if original_env is None:
+            _os.environ.pop(env_name, None)
+        else:
+            _os.environ[env_name] = original_env
+
+
 def test_generate_slide_plan_rate_output_cli_rejects_underscore_value() -> None:
     """--rate-output の underscore decimal を float() の緩い解釈に任せず exit 4 で拒否。"""
     import contextlib
@@ -31233,6 +31266,7 @@ def main() -> int:
         test_generate_slide_plan_rate_input_cli_rejects_underscore_value,
         test_generate_slide_plan_rate_input_cli_rejects_plus_value,
         test_generate_slide_plan_decimal_tokens_reject_unicode_digits,
+        test_generate_slide_plan_decimal_tokens_reject_whitespace,
         test_generate_slide_plan_rate_output_cli_rejects_underscore_value,
         test_generate_slide_plan_cost_abort_cli_rejects_underscore_value,
         test_generate_slide_plan_rate_v0_v1_alias_precedence,
