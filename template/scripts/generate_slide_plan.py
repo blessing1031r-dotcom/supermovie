@@ -234,7 +234,7 @@ def main():
                          "(env v1: SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK、"
                          "env v0 alias: SUPERMOVIE_RATE_OUTPUT_PER_MTOK)")
     # PR-F: pre-API cost abort threshold (Codex 23:04 next priority verdict)
-    ap.add_argument("--cost-abort-at", type=float, default=None,
+    ap.add_argument("--cost-abort-at", default=None,
                     help="estimate cost USD upper bound がこの閾値を超えたら API call 前に "
                          "abort (status=cost_guard_aborted, exit 10)。"
                          "env: SUPERMOVIE_COST_USD_ABORT_AT (CLI > env > None=無効)。"
@@ -367,6 +367,7 @@ def main():
         cost_abort_at = _resolve_decimal(
             args.cost_abort_at,
             "SUPERMOVIE_COST_USD_ABORT_AT",
+            arg_name="cost-abort-at",
         )
     except ValueError as e:
         print(f"ERROR: cost guard arg invalid: {e}", file=sys.stderr)
