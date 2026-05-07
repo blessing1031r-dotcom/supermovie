@@ -115,6 +115,7 @@ def _validate_cut_segments_shape(cut_segments: object) -> list[dict]:
         raise TypeError(
             f"cut_segments must be list[dict], got {type(cut_segments).__name__}"
         )
+    prev: dict | None = None
     for i, cs in enumerate(cut_segments):
         if not isinstance(cs, dict):
             raise TypeError(
@@ -139,6 +140,20 @@ def _validate_cut_segments_shape(cut_segments: object) -> list[dict]:
                 f"cut_segments[{i}] playbackStart={cs['playbackStart']!r} "
                 f"> playbackEnd={cs['playbackEnd']!r}"
             )
+        if prev is not None:
+            if cs["originalStartMs"] < prev["originalEndMs"]:
+                raise ValueError(
+                    f"cut_segments[{i}] originalStartMs={cs['originalStartMs']!r} "
+                    f"< cut_segments[{i - 1}].originalEndMs="
+                    f"{prev['originalEndMs']!r}"
+                )
+            if cs["playbackStart"] < prev["playbackEnd"]:
+                raise ValueError(
+                    f"cut_segments[{i}] playbackStart={cs['playbackStart']!r} "
+                    f"< cut_segments[{i - 1}].playbackEnd="
+                    f"{prev['playbackEnd']!r}"
+                )
+        prev = cs
     return cut_segments
 
 

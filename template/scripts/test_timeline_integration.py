@@ -614,6 +614,64 @@ def test_ms_to_playback_frame_rejects_invalid_cut_segment_ranges() -> None:
         )
 
 
+def test_ms_to_playback_frame_rejects_non_monotonic_cut_segments() -> None:
+    """PR-LT: multi-segment cut mapping must not move backward."""
+    adjacent = [
+        {"originalStartMs": 0, "originalEndMs": 500, "playbackStart": 0, "playbackEnd": 15},
+        {"originalStartMs": 500, "originalEndMs": 1000, "playbackStart": 15, "playbackEnd": 30},
+    ]
+    assert_eq(
+        timeline.ms_to_playback_frame(600, 30, adjacent),
+        18,
+        "adjacent cut segments remain valid",
+    )
+
+    invalid_sequences = (
+        (
+            [
+                {
+                    "originalStartMs": 0,
+                    "originalEndMs": 500,
+                    "playbackStart": 0,
+                    "playbackEnd": 15,
+                },
+                {
+                    "originalStartMs": 400,
+                    "originalEndMs": 1000,
+                    "playbackStart": 15,
+                    "playbackEnd": 33,
+                },
+            ],
+            "original range overlap",
+        ),
+        (
+            [
+                {
+                    "originalStartMs": 0,
+                    "originalEndMs": 500,
+                    "playbackStart": 0,
+                    "playbackEnd": 15,
+                },
+                {
+                    "originalStartMs": 1500,
+                    "originalEndMs": 3000,
+                    "playbackStart": 14,
+                    "playbackEnd": 60,
+                },
+            ],
+            "playback frame overlap",
+        ),
+    )
+    for malformed, label in invalid_sequences:
+        assert_raises(
+            lambda malformed=malformed: timeline.ms_to_playback_frame(
+                600, 30, malformed
+            ),
+            ValueError,
+            f"ms_to_playback_frame non-monotonic cut segments: {label}",
+        )
+
+
 def test_voicevox_collect_chunks_validation() -> None:
     """voicevox_narration.collect_chunks が壊れた transcript で raise する."""
     import voicevox_narration as vn
@@ -27924,6 +27982,7 @@ def main() -> int:
         test_ms_to_playback_frame_rejects_invalid_cut_segments_shape,
         test_ms_to_playback_frame_rejects_invalid_cut_segment_value_types,
         test_ms_to_playback_frame_rejects_invalid_cut_segment_ranges,
+        test_ms_to_playback_frame_rejects_non_monotonic_cut_segments,
         test_voicevox_collect_chunks_validation,
         test_voicevox_write_narration_data_alignment,
         test_voicevox_write_order_narrationdata_before_wav,
