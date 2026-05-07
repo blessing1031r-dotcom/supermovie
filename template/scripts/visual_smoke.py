@@ -136,6 +136,10 @@ def probe_dim(png: Path) -> tuple[int, int]:
         raise ValueError(
             f"ffprobe stream.height must be int-compatible, got {type(s.get('height')).__name__}"
         ) from e
+    if width <= 0:
+        raise ValueError(f"ffprobe stream.width must be positive int, got {width}")
+    if height <= 0:
+        raise ValueError(f"ffprobe stream.height must be positive int, got {height}")
     return width, height
 
 
