@@ -7709,6 +7709,7 @@ def test_preflight_video_rejects_malformed_ffprobe_streams() -> None:
     cases = [
         (["not a dict"], "ffprobe output must be dict, got list"),
         ({"streams": "not a list"}, "ffprobe streams must be list, got str"),
+        ({"streams": None}, "ffprobe streams must be list, got NoneType"),
         ({"streams": ["not a dict"]}, "ffprobe streams[0] must be dict, got str"),
     ]
 
