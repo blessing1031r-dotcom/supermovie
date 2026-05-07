@@ -8193,21 +8193,24 @@ def test_compare_telop_split_rejects_malformed_typo_preserve() -> None:
 
 
 def test_compare_telop_split_rejects_unicode_telop_numeric_tokens() -> None:
-    """compare_telop_split parser で telopData.ts の Unicode 数字を reject."""
+    """compare_telop_split parser で telopData.ts の非 canonical 数値を reject."""
     import importlib
 
     import compare_telop_split as cts
     importlib.reload(cts)
 
     cases = [
-        ("id", "１", "0", "60"),
-        ("startFrame", "1", "０", "60"),
-        ("endFrame", "1", "0", "６０"),
+        ("fullwidth id", "id", "１", "0", "60"),
+        ("fullwidth startFrame", "startFrame", "1", "０", "60"),
+        ("fullwidth endFrame", "endFrame", "1", "0", "６０"),
+        ("arabic-indic id", "id", "٣", "0", "60"),
+        ("circled startFrame", "startFrame", "1", "⓪", "60"),
+        ("underscore endFrame", "endFrame", "1", "0", "6_0"),
     ]
     tmp_dir = Path(tempfile.mkdtemp(prefix="cts_unicode_telop_int_"))
     try:
-        for label, id_token, start_token, end_token in cases:
-            ts_path = tmp_dir / f"{label}.ts"
+        for case_name, label, id_token, start_token, end_token in cases:
+            ts_path = tmp_dir / f"{case_name.replace(' ', '_')}.ts"
             ts_path.write_text(
                 "export const telopData = [\n"
                 f"  {{ id: {id_token}, startFrame: {start_token}, endFrame: {end_token}, "
@@ -8221,12 +8224,82 @@ def test_compare_telop_split_rejects_unicode_telop_numeric_tokens() -> None:
                 msg = str(e)
             else:
                 raise AssertionError(
-                    f"compare_telop_split should reject Unicode {label} token"
+                    f"compare_telop_split should reject {case_name} token"
                 )
             assert label in msg and "ASCII integer token" in msg, msg
     finally:
         import shutil as _shutil
         _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def test_compare_telop_split_invalid_telop_numeric_token_emits_tail() -> None:
+    """compare_telop_split CLI で malformed telopData.ts numeric token は tail emit."""
+    import os as _os
+    import io
+    import sys as _sys
+    import importlib
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+
+    proj = Path(tempfile.mkdtemp(prefix="cts_bad_telop_int_tail_"))
+    baseline_ts = proj / "baseline.ts"
+    new_ts = proj / "new.ts"
+    (proj / "transcript_fixed.json").write_text(
+        json.dumps(
+            {
+                "duration_ms": 4000,
+                "text": "hello",
+                "segments": [{"text": "hello", "start": 0, "end": 4000}],
+                "words": [{"text": "hello", "start": 0, "end": 4000}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    baseline_ts.write_text(
+        "export const telopData = [\n"
+        "  { id: １, startFrame: 0, endFrame: 60, "
+        "text: \"hello\", style: 'normal', template: 1 },\n"
+        "];\n",
+        encoding="utf-8",
+    )
+    new_ts.write_text(
+        "export const telopData = [\n"
+        "  { id: 1, startFrame: 0, endFrame: 60, "
+        "text: \"hello\", style: 'normal', template: 1 },\n"
+        "];\n",
+        encoding="utf-8",
+    )
+    try:
+        _os.chdir(str(proj))
+        import compare_telop_split as cts
+        importlib.reload(cts)
+        cts.PROJ = proj
+
+        _sys.argv = [
+            "compare_telop_split.py",
+            str(baseline_ts),
+            str(new_ts),
+            "--json-log",
+        ]
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            rc = cts.main()
+        assert rc == 3, f"malformed telop numeric token should exit 3, got {rc}"
+        assert "telop ts parse failed" in err_buf.getvalue(), err_buf.getvalue()
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        v1_tail = json.loads(lines[-1])
+        assert v1_tail["status"] == "error"
+        assert v1_tail["category"] == "telop_ts_invalid"
+        assert v1_tail["exit_code"] == 3
+        assert "ASCII integer token" in v1_tail["error"], v1_tail
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
 
 
 def test_preflight_video_write_config_parse_error_emits_tail() -> None:
@@ -31072,6 +31145,7 @@ def main() -> int:
         test_compare_telop_split_rejects_non_dict_typo_dict_root,
         test_compare_telop_split_rejects_malformed_typo_preserve,
         test_compare_telop_split_rejects_unicode_telop_numeric_tokens,
+        test_compare_telop_split_invalid_telop_numeric_token_emits_tail,
         test_preflight_video_write_config_parse_error_emits_tail,
         test_preflight_video_write_config_rejects_non_dict_root,
         test_preflight_video_rejects_malformed_ffprobe_streams,
