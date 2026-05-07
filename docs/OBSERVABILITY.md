@@ -721,6 +721,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 419 | `template/scripts/compare_telop_split.py` が `transcript.words[*].text` に str を要求し、数値 / null など text 破損を `transcript_invalid` JSON tail + exit 3 で reject することを lint (`test_compare_telop_split_rejects_malformed_transcript_word_text`、Codex 推奨 PR-MU)。壊れた word text が KPI 計算の `"".join(...)` TypeError に流れ、`kpi_calc_error` へ誤分類される drift を防ぐ | PR-MU |
 | 420 | `template/scripts/build_telop_data.py` が `transcript.segments` に list shape を要求し、missing / 非 list を `build_telop_transcript_invalid` JSON tail + exit 3 で reject することを lint (`test_build_telop_data_rejects_malformed_transcript_segments`、Codex 推奨 PR-MV)。壊れた transcript segments が `transcript["segments"]` KeyError や後段 iteration に流れ、observability tail なしで落ちる drift を防ぐ | PR-MV |
 | 421 | `template/scripts/build_telop_data.py` が `transcript.words` に list[dict] shape を要求し、非 list / 非 dict entry を `build_telop_transcript_invalid` JSON tail + exit 3 で reject することを lint (`test_build_telop_data_rejects_malformed_transcript_words`、Codex 推奨 PR-MW)。壊れた words entry が transcript schema drift として残り、telop input contract が segments だけに偏る drift を防ぐ | PR-MW |
+| 422 | `template/scripts/preflight_video.py` が ffprobe JSON root / `streams` / `streams[*]` に dict / list / dict shape を要求し、破損を `ffprobe_failed` JSON tail + exit 3 で reject することを lint (`test_preflight_video_rejects_malformed_ffprobe_streams`、Codex 推奨 PR-MX)。壊れた ffprobe output が `probe.get()` / `s.get("codec_type")` AttributeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-MX |
 
 ## Test Requirements
 
