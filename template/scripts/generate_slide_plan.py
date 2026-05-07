@@ -400,13 +400,13 @@ def main():
 
     try:
         transcript = load_json(transcript_path)
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 513
         err = redact_error_message(str(e))
         print(f"ERROR: transcript_fixed.json load failed: {err}", file=sys.stderr)
         return emit_json("transcript_invalid", 3, error=err)
     try:
         config = load_json(config_path)
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 513
         err = redact_error_message(str(e))
         print(f"ERROR: project-config.json load failed: {err}", file=sys.stderr)
         return emit_json("config_invalid", 3, error=err)
