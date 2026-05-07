@@ -33803,6 +33803,45 @@ def test_preflight_write_config_unicode_guard_contract_lint() -> None:
     )
 
 
+def test_step516_unicode_guard_contract_lint() -> None:
+    """PR-PM step 516: timeline.py / build_slide_data.py / visual_smoke.py の
+    read_text 保護 except tuple に UnicodeDecodeError が含まれることを確認する (code-text check)。"""
+    base = Path(__file__).parent
+    checks = [
+        (
+            "timeline.py",
+            "except (OSError, UnicodeDecodeError):  # PR-PM step 516",
+        ),
+        (
+            "build_slide_data.py",
+            "except (OSError, UnicodeDecodeError) as e:  # PR-PM step 516",
+        ),
+        (
+            "visual_smoke.py",
+            "except (OSError, UnicodeDecodeError) as e:  # PR-PM step 516",
+        ),
+    ]
+    errors = []
+    for fname, snippet in checks:
+        text = (base / fname).read_text(encoding="utf-8")
+        if snippet not in text:
+            errors.append(f"{fname}: missing {snippet!r}")
+    assert not errors, "step 516 UnicodeDecodeError guards missing:\n" + "\n".join(errors)
+
+
+def test_timeline_read_video_config_fps_swallows_unicode_error() -> None:
+    """PR-PM step 516: read_video_config_fps() が非 UTF-8 の videoConfig.ts で
+    UnicodeDecodeError を swallow して default を返すことを確認する。"""
+    INVALID_UTF8 = b"\x80\x81\x82"
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        vc_dir = proj / "src"
+        vc_dir.mkdir()
+        (vc_dir / "videoConfig.ts").write_bytes(INVALID_UTF8)
+        result = timeline.read_video_config_fps(proj, default=30)
+        assert_eq(result, 30, "read_video_config_fps with invalid UTF-8 must return default")
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -34592,6 +34631,8 @@ def main() -> int:
         test_bgm_asset_gate_and_audio_loop_contract_lint,
         test_timeline_load_cut_segments_rejects_unicode_decode_error,  # PR-PM step 515
         test_preflight_write_config_unicode_guard_contract_lint,  # PR-PM step 515
+        test_step516_unicode_guard_contract_lint,  # PR-PM step 516
+        test_timeline_read_video_config_fps_swallows_unicode_error,  # PR-PM step 516
     ]
     failed = []
     for t in tests:

@@ -478,7 +478,7 @@ def main():
             backup.write_text(out_path.read_text(encoding="utf-8"), encoding="utf-8")
         ts = render_slide_data_ts(slides)
         out_path.write_text(ts, encoding="utf-8")
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:  # PR-PM step 516
         err = redact_error_message(str(e))
         print(f"ERROR: slideData.ts write failed: {err}", file=sys.stderr)
         sys.exit(_emit_error("build_slide_write_error", 3, error=err))

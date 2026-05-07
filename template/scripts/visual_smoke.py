@@ -411,7 +411,7 @@ def cli() -> int:
     # PR-G: videoConfig.ts read failure (PermissionError / EncodingError 等) を tail emit。
     try:
         original = VIDEO_CONFIG.read_text(encoding="utf-8")
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:  # PR-PM step 516
         print(f"ERROR: videoConfig.ts read failed: {redact_error_message(str(e))}", file=sys.stderr)
         return _emit_early("video_config_read_error", 3, error=redact_error_message(str(e)))
 

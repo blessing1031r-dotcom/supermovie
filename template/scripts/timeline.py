@@ -46,7 +46,7 @@ def read_video_config_fps(proj: Path, default: int = DEFAULT_FPS) -> int:
         return default
     try:
         text = video_config.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):  # PR-PM step 516
         return default
     m = FPS_LINE_RE.search(text)
     if not m:
