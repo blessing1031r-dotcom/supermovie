@@ -715,7 +715,7 @@ def main():
         text = ch["text"]
         try:
             wav_bytes = synthesize(text, args.speaker)
-        except (urllib.error.HTTPError, urllib.error.URLError, OSError, json.JSONDecodeError) as e:  # PR-PM step 508: JSONDecodeError from synthesize()
+        except (urllib.error.HTTPError, urllib.error.URLError, OSError, json.JSONDecodeError, UnicodeDecodeError) as e:  # PR-PM step 508/518: JSONDecodeError / UnicodeDecodeError from synthesize()
             print(f"WARN: synth failed for chunk {i}: {e}", file=sys.stderr)
             continue
         p = NARRATION_DIR / f"chunk_{i:03d}.wav"

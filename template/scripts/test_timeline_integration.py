@@ -33853,6 +33853,22 @@ def test_vn_stat_oserror_guard_contract_lint() -> None:
     )
 
 
+def test_vn_synthesize_unicode_guard_contract_lint() -> None:
+    """PR-PM step 518: synthesize() 呼び出しサイトの except 句に UnicodeDecodeError が
+    含まれることを確認する (code-text check)。
+
+    synthesize() 内の aq_body.decode("utf-8") が非 UTF-8 VOICEVOX レスポンスで
+    UnicodeDecodeError を送出した場合、chunk ループの except 句が捕捉できなければ
+    sentinel emit をスキップして uncaught propagation になる。
+    """
+    vn_path = Path(__file__).parent / "voicevox_narration.py"
+    vn_text = vn_path.read_text(encoding="utf-8")
+    snippet = "except (urllib.error.HTTPError, urllib.error.URLError, OSError, json.JSONDecodeError, UnicodeDecodeError) as e:  # PR-PM step 508/518:"
+    assert snippet in vn_text, (
+        f"voicevox_narration.py synthesize call-site UnicodeDecodeError guard missing (step 518): {snippet!r}"
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -34645,6 +34661,7 @@ def main() -> int:
         test_step516_unicode_guard_contract_lint,  # PR-PM step 516
         test_timeline_read_video_config_fps_swallows_unicode_error,  # PR-PM step 516
         test_vn_stat_oserror_guard_contract_lint,  # PR-PM step 517
+        test_vn_synthesize_unicode_guard_contract_lint,  # PR-PM step 518
     ]
     failed = []
     for t in tests:
