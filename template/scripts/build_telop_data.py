@@ -326,20 +326,20 @@ def main():
 
     try:
         transcript = json.loads((PROJ / "transcript_fixed.json").read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, json.JSONDecodeError) as e:
+    except (FileNotFoundError, OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 511
         err = redact_error_message(str(e))
         print(f"ERROR: transcript_fixed.json load failed: {err}", file=_sys.stderr)
         _sys.exit(_emit_error("build_telop_transcript_invalid", 3, error=err))
     try:
         vad = json.loads((PROJ / "vad_result.json").read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, json.JSONDecodeError) as e:
+    except (FileNotFoundError, OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 511
         err = redact_error_message(str(e))
         print(f"ERROR: vad_result.json load failed: {err}", file=_sys.stderr)
         _sys.exit(_emit_error("vad_invalid", 8, error=err))
     typo = (PROJ / "typo_dict.json")
     try:
         typo_dict = json.loads(typo.read_text(encoding="utf-8")) if typo.exists() else {}
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 511
         err = redact_error_message(str(e))
         print(f"ERROR: typo_dict.json load failed: {err}", file=_sys.stderr)
         _sys.exit(_emit_error("typo_dict_invalid", 3, error=err))
