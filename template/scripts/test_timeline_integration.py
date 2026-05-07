@@ -4437,6 +4437,27 @@ def test_voicevox_fps_cli_rejects_underscore_value() -> None:
         vn.check_engine = original_check_engine
 
 
+def test_voicevox_cli_int_token_rejects_signed_and_unicode_digits() -> None:
+    """VOICEVOX CLI integer token を ASCII decimal のみに限定する。"""
+    import argparse as _argparse
+    import voicevox_narration as vn
+
+    for good in ("0", "03", " 12 "):
+        parsed = vn.parse_cli_int_token(good)
+        assert isinstance(parsed, int), f"{good!r} should parse to int"
+
+    for bad in ("+3", "-1", "００3", "٣"):
+        try:
+            vn.parse_cli_int_token(bad)
+        except _argparse.ArgumentTypeError as e:
+            if "invalid integer token" not in str(e):
+                raise AssertionError(
+                    f"{bad!r} should mention invalid integer token, got {e!r}"
+                )
+        else:
+            raise AssertionError(f"{bad!r} must be rejected as non-canonical integer token")
+
+
 def test_visual_smoke_cli_mismatch_and_restore() -> None:
     """Phase 3-V P4 review P2 fix (CODEX_2ND_BATCH_REVIEW:9):
     cli() の finally restore + mismatched/exit 2 を mock-only で verify."""
@@ -30834,6 +30855,7 @@ def main() -> int:
         test_voicevox_json_log_engine_strict_path,
         test_voicevox_speaker_cli_rejects_underscore_value,
         test_voicevox_fps_cli_rejects_underscore_value,
+        test_voicevox_cli_int_token_rejects_signed_and_unicode_digits,
         test_visual_smoke_cli_mismatch_and_restore,
         test_visual_smoke_probe_dim_rejects_malformed_ffprobe_json,
         test_visual_smoke_probe_dim_error_emits_tail,
