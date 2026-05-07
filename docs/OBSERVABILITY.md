@@ -688,6 +688,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 386 | `_observability.py` の `build_cost_payload(currency=...)` が uppercase 3-letter ASCII code のみを受け付け、lowercase / mixed-case / non-ASCII / 3文字以外を reject することを lint (`test_observability_build_cost_payload_currency_canonical_case_lint`、Codex 推奨 PR-LN)。`USD` / `usd` / `Usd` が downstream cost aggregator で別 bucket になる drift を防ぐ | PR-LN |
 | 387 | `template/scripts/timeline.py` の `build_cut_segments_from_vad()` / `ms_to_playback_frame()` が `fps` に positive int のみを受け付け、bool / float / str / zero / negative を reject することを lint (`test_timeline_rejects_invalid_fps_values`、Codex 推奨 PR-LO)。`fps=True` や `fps=0` が playback frame 計算に silent に入る drift を防ぐ | PR-LO |
 | 388 | `template/scripts/timeline.py` の `ms_to_playback_frame()` が `ms` に finite int|float のみを受け付け、bool / str / non-finite を reject することを lint (`test_ms_to_playback_frame_rejects_invalid_ms_values`、Codex 推奨 PR-LP)。`ms=True` や `ms=NaN` が playback frame 計算に silent に入る drift を防ぐ | PR-LP |
+| 389 | `template/scripts/timeline.py` の `ms_to_playback_frame()` が `cut_segments` に list[dict] と必須 key (`originalStartMs` / `originalEndMs` / `playbackStart` / `playbackEnd`) を要求し、空 list の no-cut fallback だけを維持することを lint (`test_ms_to_playback_frame_rejects_invalid_cut_segments_shape`、Codex 推奨 PR-LQ)。空 tuple / key 欠落 dict が direct conversion や KeyError に silent に流れる drift を防ぐ | PR-LQ |
 
 ## Test Requirements
 

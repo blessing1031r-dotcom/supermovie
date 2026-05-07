@@ -415,6 +415,69 @@ def test_ms_to_playback_frame_rejects_invalid_ms_values() -> None:
         )
 
 
+def test_ms_to_playback_frame_rejects_invalid_cut_segments_shape() -> None:
+    """PR-LQ: cut-aware mapping requires list[dict] with required keys."""
+    valid = [
+        {
+            "originalStartMs": 0,
+            "originalEndMs": 1000,
+            "playbackStart": 0,
+            "playbackEnd": 30,
+        }
+    ]
+    assert_eq(
+        timeline.ms_to_playback_frame(500, 30, valid),
+        15,
+        "valid cut segment shape",
+    )
+    assert_eq(
+        timeline.ms_to_playback_frame(500, 30, []),
+        15,
+        "empty cut segment list keeps no-cut fallback",
+    )
+
+    for bad_cut_segments in (None, (), "", {}, 0):
+        assert_raises(
+            lambda bad_cut_segments=bad_cut_segments: timeline.ms_to_playback_frame(
+                500, 30, bad_cut_segments
+            ),
+            TypeError,
+            f"ms_to_playback_frame invalid cut_segments type {bad_cut_segments!r}",
+        )
+
+    for bad_cut_segments in ([None], ["bad"], [1]):
+        assert_raises(
+            lambda bad_cut_segments=bad_cut_segments: timeline.ms_to_playback_frame(
+                500, 30, bad_cut_segments
+            ),
+            TypeError,
+            f"ms_to_playback_frame non-dict cut segment {bad_cut_segments!r}",
+        )
+
+    for missing_key in (
+        "originalStartMs",
+        "originalEndMs",
+        "playbackStart",
+        "playbackEnd",
+    ):
+        malformed = [
+            {
+                "originalStartMs": 0,
+                "originalEndMs": 1000,
+                "playbackStart": 0,
+                "playbackEnd": 30,
+            }
+        ]
+        del malformed[0][missing_key]
+        assert_raises(
+            lambda malformed=malformed: timeline.ms_to_playback_frame(
+                500, 30, malformed
+            ),
+            ValueError,
+            f"ms_to_playback_frame missing cut segment key {missing_key}",
+        )
+
+
 def test_voicevox_collect_chunks_validation() -> None:
     """voicevox_narration.collect_chunks が壊れた transcript で raise する."""
     import voicevox_narration as vn
@@ -27722,6 +27785,7 @@ def main() -> int:
         test_timeline_validation_rejects_non_finite_timing_values,
         test_timeline_rejects_invalid_fps_values,
         test_ms_to_playback_frame_rejects_invalid_ms_values,
+        test_ms_to_playback_frame_rejects_invalid_cut_segments_shape,
         test_voicevox_collect_chunks_validation,
         test_voicevox_write_narration_data_alignment,
         test_voicevox_write_order_narrationdata_before_wav,

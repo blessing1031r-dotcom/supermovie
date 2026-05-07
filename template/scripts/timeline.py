@@ -26,6 +26,12 @@ from pathlib import Path
 
 DEFAULT_FPS = 30
 FPS_LINE_RE = re.compile(r"^export const FPS\s*=\s*(\d+)\s*;", re.MULTILINE)
+CUT_SEGMENT_KEYS = (
+    "originalStartMs",
+    "originalEndMs",
+    "playbackStart",
+    "playbackEnd",
+)
 
 
 def read_video_config_fps(proj: Path, default: int = DEFAULT_FPS) -> int:
@@ -89,6 +95,25 @@ def _validate_ms(value: object, label: str) -> int | float:
     if not math.isfinite(value):
         raise ValueError(f"{label} must be finite int|float, got {value!r}")
     return value
+
+
+def _validate_cut_segments_shape(cut_segments: object) -> list[dict]:
+    """cut-aware frame conversion shape guard."""
+    if not isinstance(cut_segments, list):
+        raise TypeError(
+            f"cut_segments must be list[dict], got {type(cut_segments).__name__}"
+        )
+    for i, cs in enumerate(cut_segments):
+        if not isinstance(cs, dict):
+            raise TypeError(
+                f"cut_segments[{i}] must be dict, got {type(cs).__name__}"
+            )
+        missing = [key for key in CUT_SEGMENT_KEYS if key not in cs]
+        if missing:
+            raise ValueError(
+                f"cut_segments[{i}] missing required key(s): {', '.join(missing)}"
+            )
+    return cut_segments
 
 
 def validate_vad_schema(vad: object) -> dict:
@@ -185,6 +210,7 @@ def ms_to_playback_frame(
     """
     ms = _validate_ms(ms, "ms")
     fps = _validate_fps(fps)
+    cut_segments = _validate_cut_segments_shape(cut_segments)
     if not cut_segments:
         return round(ms / 1000 * fps)
     for cs in cut_segments:
