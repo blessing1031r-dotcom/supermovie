@@ -323,6 +323,11 @@ def validate_rate_string(value, label: str) -> str:
     return value
 
 
+def validate_optional_str(value, label: str) -> None:
+    if value is not None and not isinstance(value, str):
+        raise ValueError(f"{label} must be str, got {type(value).__name__}")
+
+
 def build_risks(source: dict) -> list[str]:
     risks = []
     rotation_norm = (source.get("rotation") or {}).get("normalized")
@@ -520,6 +525,13 @@ def main():
     for rate_field in ("r_frame_rate", "avg_frame_rate"):
         try:
             validate_rate_string(video.get(rate_field, "0/1"), f"ffprobe video.{rate_field}")
+        except ValueError as e:
+            msg = str(e)
+            print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+            sys.exit(_emit("ffprobe_failed", 3, error=msg))
+    for color_field in ("color_transfer", "color_primaries", "color_space"):
+        try:
+            validate_optional_str(video.get(color_field), f"ffprobe video.{color_field}")
         except ValueError as e:
             msg = str(e)
             print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
