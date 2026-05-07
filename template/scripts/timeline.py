@@ -171,6 +171,7 @@ def validate_vad_schema(vad: object) -> dict:
         raise VadSchemaError(
             f"vad['speech_segments'] must be list, got {type(segments).__name__}"
         )
+    prev_end: int | float | None = None
     for i, seg in enumerate(segments):
         if not isinstance(seg, dict):
             raise VadSchemaError(f"segment[{i}] must be dict, got {type(seg).__name__}")
@@ -184,6 +185,11 @@ def validate_vad_schema(vad: object) -> dict:
             raise VadSchemaError(
                 f"segment[{i}] start={seg['start']} > end={seg['end']}"
             )
+        if prev_end is not None and seg["start"] < prev_end:
+            raise VadSchemaError(
+                f"segment[{i}] start={seg['start']} < previous end={prev_end}"
+            )
+        prev_end = seg["end"]
     return vad
 
 
