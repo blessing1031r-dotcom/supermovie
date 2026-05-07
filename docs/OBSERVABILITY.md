@@ -708,6 +708,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 406 | `template/scripts/generate_slide_plan.py` が `project-config.json` root に dict を要求し、list / str など root 破損を `config_invalid` JSON tail + exit 3 で reject することを lint (`test_generate_slide_plan_rejects_non_dict_project_config_root`、Codex 推奨 PR-MH)。壊れた project config root が `config.get()` AttributeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-MH |
 | 407 | `template/scripts/build_slide_data.py` が `transcript_fixed.json` root に dict を要求し、list / str など root 破損を `build_slide_transcript_invalid` JSON tail + exit 3 で reject することを lint (`test_build_slide_data_rejects_non_dict_transcript_root`、Codex 推奨 PR-MI)。壊れた transcript root が `transcript.get()` AttributeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-MI |
 | 408 | `template/scripts/build_slide_data.py` が `project-config.json` root に dict を要求し、list / str など root 破損を `config_invalid` JSON tail + exit 3 で reject することを lint (`test_build_slide_data_rejects_non_dict_project_config_root`、Codex 推奨 PR-MJ)。壊れた project config root が `config.get()` AttributeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-MJ |
+| 409 | `template/scripts/build_telop_data.py` が `transcript_fixed.json` root に dict を要求し、list / str など root 破損を `build_telop_transcript_invalid` JSON tail + exit 3 で reject することを lint (`test_build_telop_data_rejects_non_dict_transcript_root`、Codex 推奨 PR-MK)。壊れた transcript root が `transcript["words"]` / `transcript["segments"]` TypeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-MK |
 
 ## Test Requirements
 
