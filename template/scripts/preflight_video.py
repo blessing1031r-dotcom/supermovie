@@ -409,6 +409,21 @@ def main():
             msg = f"ffprobe streams[{i}] must be dict, got {type(stream).__name__}"
             print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
             sys.exit(_emit("ffprobe_failed", 3, error=msg))
+        side_data = stream.get("side_data_list", [])
+        if side_data is None:
+            continue
+        if not isinstance(side_data, list):
+            msg = f"ffprobe streams[{i}].side_data_list must be list, got {type(side_data).__name__}"
+            print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+            sys.exit(_emit("ffprobe_failed", 3, error=msg))
+        for j, entry in enumerate(side_data):
+            if not isinstance(entry, dict):
+                msg = (
+                    f"ffprobe streams[{i}].side_data_list[{j}] must be dict, "
+                    f"got {type(entry).__name__}"
+                )
+                print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+                sys.exit(_emit("ffprobe_failed", 3, error=msg))
     fmt_meta = probe.get("format", {})
     if fmt_meta is None:
         fmt_meta = {}
