@@ -23179,6 +23179,74 @@ def test_supermovie_image_gen_gemini_provider_env_boundary_lint() -> None:
     )
 
 
+def test_observability_future_provider_runtime_boundary_lint() -> None:
+    """PR-LF: future providers must stay out of current runtime/active skills."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    obs_path = repo_root / "docs" / "OBSERVABILITY.md"
+    assert obs_path.is_file(), "docs/OBSERVABILITY.md not found"
+
+    obs_text = obs_path.read_text(encoding="utf-8")
+    provider_notes_match = re.search(
+        r"### Provider Notes\s*([\s\S]*?)\n### Missing Rate Behavior",
+        obs_text,
+    )
+    assert provider_notes_match is not None, "OBSERVABILITY Provider Notes section not found"
+    provider_notes = provider_notes_match.group(1)
+    errors: list[str] = []
+
+    required_obs_snippets = {
+        "future provider row": "| Kling / 他 (将来) | provider 個別 | 別 doc 化 |",
+        "v1 canonical only": "Gemini / Kling 等 future provider には v1 canonical のみを使う。",
+        "excluded scope": "- provider 個別 pricing 記載 (network 制約下で未検証、`docs/api-operation-guard` 系参照)",
+        "step": "| 378 | `docs/OBSERVABILITY.md` の Provider Notes / Rate Env Var Convention",
+        "test name": "test_observability_future_provider_runtime_boundary_lint",
+        "pr code": "PR-LF",
+    }
+    for name, snippet in required_obs_snippets.items():
+        if snippet not in obs_text:
+            errors.append(f"OBSERVABILITY future provider boundary missing {name}: {snippet}")
+    if "Kling" not in provider_notes or "将来" not in provider_notes:
+        errors.append("Provider Notes must keep Kling / other providers marked as future")
+
+    runtime_paths = [
+        *sorted((repo_root / "template" / "scripts").glob("*.py")),
+        *sorted((repo_root / "skills").glob("*/SKILL.md")),
+    ]
+    runtime_paths = [
+        path
+        for path in runtime_paths
+        if path.name != "test_timeline_integration.py"
+    ]
+    forbidden_terms = (
+        "Kling",
+        "KLING",
+        "HeyGen",
+        "HEYGEN",
+        "SadTalker",
+        "SADTALKER",
+        "KLING_API_KEY",
+        "HEYGEN_API_KEY",
+        "SADTALKER_API_KEY",
+        "SUPERMOVIE_RATE_KLING",
+        "SUPERMOVIE_RATE_HEYGEN",
+        "SUPERMOVIE_RATE_SADTALKER",
+    )
+    for path in runtime_paths:
+        text = path.read_text(encoding="utf-8")
+        for term in forbidden_terms:
+            if term in text:
+                errors.append(
+                    f"{path.relative_to(repo_root)} must not reference future provider term {term!r}"
+                )
+
+    assert errors == [], (
+        "future provider runtime/skill boundary drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_image_gen_content_analysis_docs_match_image_segment_type_contract_lint() -> None:
     """PR-KP: supermovie-image-gen content analysis docs must match ImageSegment.type."""
     import re
@@ -27668,6 +27736,8 @@ def main() -> int:
         test_supermovie_image_gen_error_handling_docs_match_prereq_contract_lint,
         # PR-LE (supermovie-image-gen keeps Gemini provider/env separate from Anthropic rates): 1 件
         test_supermovie_image_gen_gemini_provider_env_boundary_lint,
+        # PR-LF (future providers stay out of current runtime/active skills): 1 件
+        test_observability_future_provider_runtime_boundary_lint,
         # PR-KP (supermovie-image-gen content analysis docs stay synced with ImageSegment type): 1 件
         test_supermovie_image_gen_content_analysis_docs_match_image_segment_type_contract_lint,
         # PR-KQ (supermovie-image-gen plan hearing docs stay synced with candidate schema): 1 件
