@@ -316,6 +316,64 @@ def test_timeline_validation_rejects_non_finite_timing_values() -> None:
         )
 
 
+def test_timeline_rejects_invalid_fps_values() -> None:
+    """PR-LO: timeline frame helpers require positive int fps."""
+    vad = timeline.validate_vad_schema(
+        {"speech_segments": [{"start": 0, "end": 1000}]}
+    )
+    cut_segments = [
+        {
+            "originalStartMs": 0,
+            "originalEndMs": 1000,
+            "playbackStart": 0,
+            "playbackEnd": 30,
+        }
+    ]
+
+    assert_eq(
+        timeline.build_cut_segments_from_vad(vad, 30)[0]["playbackEnd"],
+        30,
+        "valid fps build_cut_segments_from_vad",
+    )
+    assert_eq(
+        timeline.ms_to_playback_frame(500, 30, cut_segments),
+        15,
+        "valid fps ms_to_playback_frame",
+    )
+
+    for bad_fps in (True, False, 30.0, "30", None, [], {}):
+        assert_raises(
+            lambda bad_fps=bad_fps: timeline.build_cut_segments_from_vad(
+                vad, bad_fps
+            ),
+            TypeError,
+            f"build_cut_segments_from_vad invalid fps type {bad_fps!r}",
+        )
+        assert_raises(
+            lambda bad_fps=bad_fps: timeline.ms_to_playback_frame(
+                500, bad_fps, cut_segments
+            ),
+            TypeError,
+            f"ms_to_playback_frame invalid fps type {bad_fps!r}",
+        )
+
+    for bad_fps in (0, -1):
+        assert_raises(
+            lambda bad_fps=bad_fps: timeline.build_cut_segments_from_vad(
+                vad, bad_fps
+            ),
+            ValueError,
+            f"build_cut_segments_from_vad invalid fps value {bad_fps!r}",
+        )
+        assert_raises(
+            lambda bad_fps=bad_fps: timeline.ms_to_playback_frame(
+                500, bad_fps, cut_segments
+            ),
+            ValueError,
+            f"ms_to_playback_frame invalid fps value {bad_fps!r}",
+        )
+
+
 def test_voicevox_collect_chunks_validation() -> None:
     """voicevox_narration.collect_chunks が壊れた transcript で raise する."""
     import voicevox_narration as vn
@@ -27621,6 +27679,7 @@ def main() -> int:
         test_transcript_segment_validation,
         test_timeline_validation_rejects_bool_timing_values,
         test_timeline_validation_rejects_non_finite_timing_values,
+        test_timeline_rejects_invalid_fps_values,
         test_voicevox_collect_chunks_validation,
         test_voicevox_write_narration_data_alignment,
         test_voicevox_write_order_narrationdata_before_wav,

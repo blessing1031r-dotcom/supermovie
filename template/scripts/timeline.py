@@ -67,6 +67,18 @@ def _is_timing_number(value: object) -> bool:
     )
 
 
+def _validate_fps(fps: object) -> int:
+    """frame conversion fps guard."""
+    if isinstance(fps, bool) or not isinstance(fps, int):
+        raise TypeError(
+            f"fps must be positive int (bool / float / str reject), "
+            f"got {type(fps).__name__}"
+        )
+    if fps <= 0:
+        raise ValueError(f"fps must be > 0, got {fps!r}")
+    return fps
+
+
 def validate_vad_schema(vad: object) -> dict:
     """vad_result.json の最低限 schema を検査して dict を返す.
 
@@ -103,6 +115,7 @@ def build_cut_segments_from_vad(vad: dict, fps: int) -> list[dict]:
     呼び出し前に validate_vad_schema() で検査済みであることを前提とする。
     fps は呼び出し側の videoConfig.FPS を渡す (Phase 3-J: hardcode 撤廃)。
     """
+    fps = _validate_fps(fps)
     out: list[dict] = []
     cursor_ms = 0
     for i, seg in enumerate(vad["speech_segments"]):
@@ -156,6 +169,7 @@ def ms_to_playback_frame(ms: int, fps: int, cut_segments: list[dict]) -> int | N
     cut_segments が空なら直接変換。ms が cut 範囲外 (cut で除外された箇所) は
     None を返す (呼出側が累積 fallback or skip 判断)。
     """
+    fps = _validate_fps(fps)
     if not cut_segments:
         return round(ms / 1000 * fps)
     for cs in cut_segments:
