@@ -941,6 +941,12 @@ def test_voicevox_collect_chunks_validation() -> None:
         script = None
         script_json = None
 
+    assert_raises(
+        lambda: vn.collect_chunks(Args(), ["not a dict"]),
+        vn.TranscriptSegmentError,
+        "voicevox transcript root non-dict",
+    )
+
     bad = {"segments": [{"text": "hi", "start": 100, "end": 50}]}
     assert_raises(
         lambda: vn.collect_chunks(Args(), bad),

@@ -483,7 +483,11 @@ def collect_chunks(args, transcript: dict) -> list[dict]:
                 }
             )
         return out
-    transcript_segments = transcript.get("segments", []) if isinstance(transcript, dict) else []
+    if not isinstance(transcript, dict):
+        raise TranscriptSegmentError(
+            f"transcript must be dict, got {type(transcript).__name__}"
+        )
+    transcript_segments = transcript.get("segments", [])
     if not isinstance(transcript_segments, list):
         raise TranscriptSegmentError(
             f"transcript segments must be list, got {type(transcript_segments).__name__}"
