@@ -6277,6 +6277,23 @@ def test_observability_build_cost_payload_rate_source_contract() -> None:
                 f"empty-name rate_source={empty_or_prefix!r} must raise"
             )
 
+    # (5) env name token 破損: whitespace / control / non-ASCII
+    for malformed_env_name in (
+        "env:SUPERMOVIE RATE",
+        "env:SUPERMOVIE_RATE\nX",
+        "env:ＳＵＰＥＲＭＯＶＩＥ_RATE_X",
+    ):
+        try:
+            build_cost_payload(0.001, 1.5, 3.0, rate_source=malformed_env_name)
+        except ValueError as e:
+            assert "rate_source" in str(e) and "ASCII" in str(e), (
+                f"ValueError msg should mention rate_source + ASCII, got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"malformed rate_source={malformed_env_name!r} must raise"
+            )
+
 
 def test_observability_build_cost_payload_nan_inf_defense() -> None:
     """`build_cost_payload()` が NaN / Inf / -Inf rate を None 正規化し、
