@@ -43,13 +43,20 @@ from _observability import (  # noqa: E402
 )
 
 
+def parse_ascii_int_token(token: str, label: str) -> int:
+    """telopData.ts numeric fields must be canonical ASCII decimal tokens."""
+    if not token or not token.isascii() or not token.isdecimal():
+        raise ValueError(f"{label} must be ASCII integer token, got {token!r}")
+    return int(token)
+
+
 def parse_telop_data_ts(ts_path: Path) -> list[dict]:
     """telopData.ts から telop 配列を抽出 (簡易 parser)."""
     text = ts_path.read_text(encoding="utf-8")
     # `text: "..."` 部分は \n や 引用符のエスケープがあるので JSON で読む
     items = []
     for m in re.finditer(
-        r"\{\s*id:\s*(\d+),\s*startFrame:\s*(\d+),\s*endFrame:\s*(\d+),\s*text:\s*(.+?),\s*style:\s*'(\w+)'",
+        r"\{\s*id:\s*([^,\s]+),\s*startFrame:\s*([^,\s]+),\s*endFrame:\s*([^,\s]+),\s*text:\s*(.+?),\s*style:\s*'(\w+)'",
         text,
         re.S,
     ):
@@ -60,9 +67,9 @@ def parse_telop_data_ts(ts_path: Path) -> list[dict]:
         except json.JSONDecodeError:
             txt = txt_raw.strip().strip(",").strip("\"")
         items.append({
-            "id": int(idn),
-            "startFrame": int(sf),
-            "endFrame": int(ef),
+            "id": parse_ascii_int_token(idn, "id"),
+            "startFrame": parse_ascii_int_token(sf, "startFrame"),
+            "endFrame": parse_ascii_int_token(ef, "endFrame"),
             "text": txt,
             "style": style,
         })
