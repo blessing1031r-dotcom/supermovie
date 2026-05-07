@@ -87,10 +87,17 @@ def parse_telop_data_ts(ts_path: Path) -> list[dict]:
         if style_match is None:
             raise ValueError("style must follow text JSON string")
         style = parse_telop_style_token(style_match.group(1))
+        item_id = parse_ascii_int_token(idn, "id")
+        start_frame = parse_ascii_int_token(sf, "startFrame")
+        end_frame = parse_ascii_int_token(ef, "endFrame")
+        if end_frame <= start_frame:
+            raise ValueError(
+                f"telop id={item_id} endFrame must be greater than startFrame"
+            )
         items.append({
-            "id": parse_ascii_int_token(idn, "id"),
-            "startFrame": parse_ascii_int_token(sf, "startFrame"),
-            "endFrame": parse_ascii_int_token(ef, "endFrame"),
+            "id": item_id,
+            "startFrame": start_frame,
+            "endFrame": end_frame,
             "text": txt,
             "style": style,
         })
