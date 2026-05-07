@@ -33770,6 +33770,39 @@ def test_bgm_asset_gate_and_audio_loop_contract_lint() -> None:
     )
 
 
+def test_timeline_load_cut_segments_rejects_unicode_decode_error() -> None:
+    """PR-PM step 515: load_cut_segments() が非 UTF-8 の vad_result.json を
+    gracefully に処理する (fail_fast=False → []; fail_fast=True → UnicodeDecodeError)。
+
+    以前の except (OSError, json.JSONDecodeError) は UnicodeDecodeError を素通りし
+    uncaught で伝播していた。fix: UnicodeDecodeError を except tuple に追加。
+    """
+    INVALID_UTF8 = b"\x80\x81\x82"
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        (proj / "vad_result.json").write_bytes(INVALID_UTF8)
+        # fail_fast=False: swallowed → []
+        result = timeline.load_cut_segments(proj, 30, fail_fast=False)
+        assert_eq(result, [], "load_cut_segments with invalid UTF-8 vad: fail_fast=False must return []")
+        # fail_fast=True: must raise (UnicodeDecodeError)
+        assert_raises(
+            lambda: timeline.load_cut_segments(proj, 30, fail_fast=True),
+            UnicodeDecodeError,
+            "load_cut_segments with invalid UTF-8 vad: fail_fast=True must raise UnicodeDecodeError",
+        )
+
+
+def test_preflight_write_config_unicode_guard_contract_lint() -> None:
+    """PR-PM step 515: preflight_video.py の --write-config 既存 config parse の
+    except tuple に UnicodeDecodeError が含まれることを確認する (code-text check)。"""
+    preflight_path = Path(__file__).parent / "preflight_video.py"
+    preflight_text = preflight_path.read_text(encoding="utf-8")
+    snippet = "except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:  # PR-PM step 515"
+    assert snippet in preflight_text, (
+        f"preflight_video.py write-config except tuple missing UnicodeDecodeError (step 515): {snippet!r}"
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -34557,6 +34590,8 @@ def main() -> int:
         test_narration_mode_priority_dispatch_contract_lint,
         test_narration_audio_legacy_branch_wiring_contract_lint,
         test_bgm_asset_gate_and_audio_loop_contract_lint,
+        test_timeline_load_cut_segments_rejects_unicode_decode_error,  # PR-PM step 515
+        test_preflight_write_config_unicode_guard_contract_lint,  # PR-PM step 515
     ]
     failed = []
     for t in tests:

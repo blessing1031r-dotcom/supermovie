@@ -263,7 +263,7 @@ def load_cut_segments(proj: Path, fps: int, fail_fast: bool = False) -> list[dic
     try:
         with vad_path.open("r", encoding="utf-8") as f:
             data = json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:  # PR-PM step 515
         if fail_fast:
             raise
         return []

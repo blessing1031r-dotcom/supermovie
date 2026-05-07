@@ -680,7 +680,7 @@ def main():
         if cfg_path.exists():
             try:
                 cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError) as e:
+            except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:  # PR-PM step 515
                 print(f"ERROR: existing write-config parse failed: {redact_error_message(str(e))}", file=sys.stderr)
                 sys.exit(_emit("write_config_parse_error", 3,
                                error=redact_error_message(str(e))))
