@@ -285,7 +285,10 @@ def validate_int(value, label: str) -> int:
     if isinstance(value, int):
         return value
     if isinstance(value, str):
-        text = value.strip()
+        raw_text = value
+        text = raw_text.strip()
+        if text != raw_text:
+            raise ValueError(f"{label} must be int, got str")
         if text.startswith("-"):
             digits = text[1:]
         else:

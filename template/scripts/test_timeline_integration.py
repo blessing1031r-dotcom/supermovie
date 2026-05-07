@@ -9181,6 +9181,8 @@ def test_preflight_video_rejects_malformed_ffprobe_rotation_fields() -> None:
         ({"tags": {"rotate": True}}, "ffprobe video.tags.rotate must be int, got bool"),
         ({"tags": {"rotate": "ninety"}}, "ffprobe video.tags.rotate must be int, got str"),
         ({"tags": {"rotate": "９０"}}, "ffprobe video.tags.rotate must be int, got str"),
+        ({"tags": {"rotate": " 90"}}, "ffprobe video.tags.rotate must be int, got str"),
+        ({"rotation": "90 "}, "ffprobe video.rotation must be int, got str"),
         ({"rotation": ["90"]}, "ffprobe video.rotation must be int, got list"),
     ]
 
@@ -9397,6 +9399,7 @@ def test_preflight_video_rejects_malformed_ffprobe_side_data_rotation() -> None:
 
     cases = [
         ("ninety", "ffprobe streams[0].side_data_list[0].rotation must be int, got str"),
+        (" 90", "ffprobe streams[0].side_data_list[0].rotation must be int, got str"),
         (True, "ffprobe streams[0].side_data_list[0].rotation must be int, got bool"),
     ]
 
