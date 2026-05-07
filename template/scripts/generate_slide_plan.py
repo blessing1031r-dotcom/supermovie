@@ -301,16 +301,14 @@ def main():
         else:
             env_seg = os.environ.get("SUPERMOVIE_MAX_INPUT_SEGMENTS")
             if env_seg is not None:
-                try:
-                    max_input_segments = int(env_seg)
-                except ValueError as e:
-                    raise ValueError(
-                        f"SUPERMOVIE_MAX_INPUT_SEGMENTS={env_seg!r} は int に変換できません: {e}"
-                    ) from e
-                if max_input_segments < 1:
-                    raise ValueError(
-                        f"SUPERMOVIE_MAX_INPUT_SEGMENTS={max_input_segments} は >=1 必須"
-                    )
+                max_input_segments = _resolve_int(
+                    None,
+                    "SUPERMOVIE_MAX_INPUT_SEGMENTS",
+                    1,
+                    1,
+                    sys.maxsize,
+                    "max-input-segments",
+                )
             else:
                 max_input_segments = None
         # Codex 21:54 PR-D verdict: v1 canonical (SUPERMOVIE_RATE_ANTHROPIC_*) を一次、
