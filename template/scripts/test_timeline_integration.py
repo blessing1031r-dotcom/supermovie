@@ -5183,6 +5183,125 @@ def test_observability_build_status_schema_version_invariant() -> None:
     )
 
 
+def test_observability_redaction_version_policy_boundary_lint() -> None:
+    """PR-LG: redaction version policy stays independent from schema_version.
+
+    docs §Open Questions keeps redaction `version` bump policy explicit:
+    `schema_version` と独立し、redaction rule 変更時のみ bump する。
+    helper 側は `SCHEMA_VERSION` と `REDACTION_VERSION` を別定数として持ち、
+    payload でも root `schema_version` と nested `redaction.version` に分離する。
+
+    片側だけ refactor されると、consumer が v1 schema bump と redaction rule
+    bump を混同する drift が起きるため、docs / source / payload の 3 層を
+    pure Python lint で固定する。
+    """
+    import re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    obs_md = repo_root / "docs" / "OBSERVABILITY.md"
+    md = obs_md.read_text(encoding="utf-8")
+    obs_src_path = repo_root / "template" / "scripts" / "_observability.py"
+    obs_src = obs_src_path.read_text(encoding="utf-8")
+
+    sys.path.insert(0, str(repo_root / "template" / "scripts"))
+    try:
+        import _observability as _obs
+    finally:
+        sys.path.pop(0)
+
+    for const_name in ("SCHEMA_VERSION", "REDACTION_VERSION"):
+        value = getattr(_obs, const_name)
+        assert value == 1, (
+            f"{const_name} drift: expected 1, got {value!r}"
+        )
+        assert isinstance(value, int), (
+            f"{const_name} must be int, got {type(value).__name__}"
+        )
+        assert not isinstance(value, bool), (
+            f"{const_name} must not be bool, got {value!r}"
+        )
+
+    assert re.search(r"^SCHEMA_VERSION\s*=\s*1$", obs_src, re.MULTILINE), (
+        "_observability.py: SCHEMA_VERSION = 1 assignment not found"
+    )
+    assert re.search(r"^REDACTION_VERSION\s*=\s*1$", obs_src, re.MULTILINE), (
+        "_observability.py: REDACTION_VERSION = 1 assignment not found"
+    )
+    assert "schema v1, redaction v1" in obs_src, (
+        "_observability.py module docstring must name schema v1 and "
+        "redaction v1 independently"
+    )
+
+    payload = _obs.build_status(
+        script="version_policy",
+        v0_status="success",
+        exit_code=0,
+        redaction_rules=["secret", "abs_path", "secret"],
+        **{"redaction": {"version": 999}},
+    )
+    assert payload["schema_version"] == _obs.SCHEMA_VERSION, (
+        f"root schema_version drift: {payload['schema_version']!r}"
+    )
+    assert "redaction_version" not in payload, (
+        "redaction_version must not leak as a top-level compat extra; "
+        "redaction version belongs under payload['redaction']['version']"
+    )
+    assert payload["redaction"]["version"] == _obs.REDACTION_VERSION, (
+        f"nested redaction.version drift: {payload['redaction']['version']!r}"
+    )
+    assert payload["redaction"]["applied_rules"] == ["abs_path", "secret"], (
+        f"redaction.applied_rules must remain normalized independently of "
+        f"version fields, got {payload['redaction']['applied_rules']!r}"
+    )
+
+    open_questions = re.search(
+        r"^## Open Questions[^\n]*\n(?P<body>[\s\S]*)",
+        md,
+        re.MULTILINE,
+    )
+    assert open_questions is not None, "docs: §Open Questions section not found"
+    oq_body = open_questions.group("body")
+    redaction_policy_bullets = [
+        line for line in oq_body.splitlines()
+        if line.startswith("- ")
+        and "redaction" in line
+        and "`version`" in line
+    ]
+    assert len(redaction_policy_bullets) == 1, (
+        f"docs §Open Questions must contain exactly one redaction `version` "
+        f"policy bullet, got {redaction_policy_bullets!r}"
+    )
+    redaction_policy = redaction_policy_bullets[0]
+    for phrase in (
+        "schema_version とは独立",
+        "redaction rule 変更時のみ bump",
+    ):
+        assert phrase in redaction_policy, (
+            f"docs redaction `version` policy bullet missing phrase "
+            f"{phrase!r}: {redaction_policy!r}"
+        )
+
+    step_rows = [
+        line for line in md.splitlines()
+        if line.startswith("| 379 |")
+    ]
+    assert len(step_rows) == 1, (
+        f"docs §Migration steps must have exactly one step 379 row, "
+        f"got {step_rows!r}"
+    )
+    step_row = step_rows[0]
+    for snippet in (
+        "test_observability_redaction_version_policy_boundary_lint",
+        "REDACTION_VERSION",
+        "schema_version とは独立",
+        "PR-LG",
+    ):
+        assert snippet in step_row, (
+            f"docs step 379 row missing {snippet!r}: {step_row!r}"
+        )
+
+
 def test_observability_run_id_in_payload() -> None:
     """build_status は run_id / parent_run_id / step_id が non-None で payload に乗せる。"""
     from _observability import build_status
@@ -27308,6 +27427,7 @@ def main() -> int:
         test_observability_resolve_run_context_cap_exceeded,
         test_observability_resolve_run_context_cap_boundary,
         test_observability_build_status_schema_version_invariant,
+        test_observability_redaction_version_policy_boundary_lint,
         test_observability_run_id_in_payload,
         test_generate_slide_plan_run_id_propagation,
         # PR-F (cost abort threshold): 3 件
