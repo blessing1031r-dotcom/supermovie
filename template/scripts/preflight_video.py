@@ -298,8 +298,11 @@ def validate_int(value, label: str) -> int:
 def validate_finite_float(value, label: str) -> float:
     if isinstance(value, bool) or value is None:
         raise ValueError(f"{label} must be finite number, got {type(value).__name__}")
-    if isinstance(value, str) and "_" in value.strip():
-        raise ValueError(f"{label} must be finite number, got str")
+    if isinstance(value, str):
+        text = value.strip()
+        if not text.isascii() or "_" in text:
+            raise ValueError(f"{label} must be finite number, got str")
+        value = text
     try:
         parsed = float(value)
     except (TypeError, ValueError):
@@ -317,10 +320,11 @@ def validate_rate_string(value, label: str) -> str:
         raise ValueError(f"{label} must be rate string, got str")
     parsed_parts = []
     for part in parts:
-        if "_" in part.strip():
+        text = part.strip()
+        if not text.isascii() or "_" in text:
             raise ValueError(f"{label} must be rate string, got str")
         try:
-            parsed = float(part)
+            parsed = float(text)
         except ValueError:
             raise ValueError(f"{label} must be rate string, got str")
         if not math.isfinite(parsed):
