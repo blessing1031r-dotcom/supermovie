@@ -7228,6 +7228,53 @@ def test_compare_telop_split_rejects_non_dict_typo_dict_root() -> None:
         _shutil.rmtree(proj, ignore_errors=True)
 
 
+def test_compare_telop_split_rejects_malformed_typo_preserve() -> None:
+    """compare_telop_split で typo_dict.preserve 非 list[str] を reject."""
+    import os as _os
+    import io
+    import sys as _sys
+    import importlib
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+
+    proj = Path(tempfile.mkdtemp(prefix="cts_bad_typo_preserve_"))
+    (proj / "transcript_fixed.json").write_text(
+        json.dumps({"duration_ms": 1000, "words": [], "segments": []}),
+        encoding="utf-8",
+    )
+    (proj / "typo_dict.json").write_text(
+        json.dumps({"preserve": "Claude"}),
+        encoding="utf-8",
+    )
+    try:
+        _os.chdir(str(proj))
+        import compare_telop_split as cts
+        importlib.reload(cts)
+        cts.PROJ = proj
+
+        _sys.argv = ["compare_telop_split.py", "/dev/null", "/dev/null", "--json-log"]
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            rc = cts.main()
+        assert rc == 3, f"typo_dict malformed preserve should exit 3, got {rc}"
+        err_text = err_buf.getvalue()
+        assert "typo_dict.json validation failed" in err_text, err_text
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        v1_tail = json.loads(lines[-1])
+        assert v1_tail["status"] == "error"
+        assert v1_tail["category"] == "typo_dict_invalid"
+        assert v1_tail["exit_code"] == 3
+        assert v1_tail["error"] == "typo_dict.preserve must be list[str], got str"
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
 def test_preflight_video_write_config_parse_error_emits_tail() -> None:
     """preflight_video で既存 write-config が malformed JSON の時に tail + exit 3。"""
     import os as _os
@@ -29141,6 +29188,7 @@ def main() -> int:
         test_compare_telop_split_rejects_non_dict_transcript_root,
         test_compare_telop_split_typo_dict_invalid_emits_tail,
         test_compare_telop_split_rejects_non_dict_typo_dict_root,
+        test_compare_telop_split_rejects_malformed_typo_preserve,
         test_preflight_video_write_config_parse_error_emits_tail,
         test_preflight_video_write_config_rejects_non_dict_root,
         test_observability_redact_error_message_strips_abs_path,

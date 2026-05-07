@@ -205,6 +205,15 @@ def main():
         print(f"ERROR: typo_dict.json validation failed: {msg}", file=sys.stderr)
         return _emit_early("typo_dict_invalid", 3, error=msg)
     preserve = typo_dict.get("preserve", [])
+    if not isinstance(preserve, list):
+        msg = f"typo_dict.preserve must be list[str], got {type(preserve).__name__}"
+        print(f"ERROR: typo_dict.json validation failed: {msg}", file=sys.stderr)
+        return _emit_early("typo_dict_invalid", 3, error=msg)
+    for i, item in enumerate(preserve):
+        if not isinstance(item, str):
+            msg = f"typo_dict.preserve[{i}] must be str, got {type(item).__name__}"
+            print(f"ERROR: typo_dict.json validation failed: {msg}", file=sys.stderr)
+            return _emit_early("typo_dict_invalid", 3, error=msg)
     words = transcript.get("words", [])
 
     try:
