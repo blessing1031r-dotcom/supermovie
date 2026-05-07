@@ -7986,6 +7986,7 @@ def test_observability_build_cost_payload_currency_tokens_value_contract() -> No
 
     新 contract:
       - currency: 非 None str + 非空 (TypeError on non-str / ValueError on "")
+        + uppercase 3-letter ASCII code (ValueError on lower/mixed/non-ASCII)
       - tokens_input / tokens_output: int (not bool) or None (TypeError on
         bool / float / str / list)、< 0 reject (ValueError)
 
@@ -8010,11 +8011,9 @@ def test_observability_build_cost_payload_currency_tokens_value_contract() -> No
     assert p_with_tokens["tokens_input"] == 100
     assert p_with_tokens["tokens_output"] == 200
 
-    # currency 別 (将来 USD 以外も accept できる string)
+    # currency 別 (将来 USD 以外も uppercase 3-letter ASCII code は accept)
     p_jpy = build_cost_payload(0.001, 1.5, 3.0, currency="JPY")
     assert p_jpy["currency"] == "JPY"
-    p_lower = build_cost_payload(0.001, 1.5, 3.0, currency="usd")
-    assert p_lower["currency"] == "usd"  # 大小は別 lint で別途固定可、本 PR は型のみ
 
     # tokens_* = 0 (zero-cost edge) は accept (>= 0 の境界)
     p_zero_tokens = build_cost_payload(
@@ -8075,6 +8074,53 @@ def test_observability_build_cost_payload_currency_tokens_value_contract() -> No
         else:
             raise AssertionError(
                 f"negative {label}=-1 must raise ValueError"
+            )
+
+
+def test_observability_build_cost_payload_currency_canonical_case_lint() -> None:
+    """PR-LN: `build_cost_payload(currency=...)` は canonical uppercase code のみ。
+
+    PR-BG は currency の str / 非空だけを fail-loud 化し、`currency="usd"`
+    を payload にそのまま通していた。downstream cost aggregator は currency
+    値で集約するため、`USD` / `usd` / `Usd` が別 bucket になる drift を
+    防ぐ。
+
+    本 lint は helper boundary で lowercase / mixed-case / non-ASCII /
+    3文字以外 / 記号・数字混入を reject し、payload 出力は uppercase
+    3-letter ASCII code に固定する。
+    """
+    from _observability import build_cost_payload
+
+    for good in ("USD", "JPY", "EUR"):
+        payload = build_cost_payload(0.001, 1.5, 3.0, currency=good)
+        assert payload["currency"] == good
+
+    bad_values = (
+        "usd",
+        "Usd",
+        "USd",
+        "usD",
+        "US",
+        "USDD",
+        "U5D",
+        "US_",
+        "US ",
+        " USD",
+        "ＵＳＤ",
+        "円円円",
+    )
+    for bad in bad_values:
+        try:
+            build_cost_payload(0.001, 1.5, 3.0, currency=bad)
+        except ValueError as e:
+            msg = str(e)
+            assert "currency" in msg and "uppercase 3-letter ASCII" in msg, (
+                f"ValueError msg should mention canonical currency format, "
+                f"got {e!r}"
+            )
+        else:
+            raise AssertionError(
+                f"non-canonical currency={bad!r} must raise ValueError"
             )
 
 
@@ -27685,6 +27731,7 @@ def main() -> int:
         test_observability_cost_json_shape_docs_payload_key_lint,
         test_observability_status_naming_docs_status_map_value_lint,
         test_observability_build_cost_payload_currency_tokens_value_contract,
+        test_observability_build_cost_payload_currency_canonical_case_lint,
         test_observability_script_coverage_matrix_docs_code_lint,
         test_observability_trace_context_docs_code_lint,
         test_observability_sensitive_classes_docs_code_lint,
