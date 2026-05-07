@@ -4629,11 +4629,11 @@ def test_voicevox_cli_int_token_rejects_signed_and_unicode_digits() -> None:
     import argparse as _argparse
     import voicevox_narration as vn
 
-    for good in ("0", "03", " 12 "):
+    for good in ("0", "03", "12"):
         parsed = vn.parse_cli_int_token(good)
         assert isinstance(parsed, int), f"{good!r} should parse to int"
 
-    for bad in ("+3", "-1", "００3", "٣"):
+    for bad in ("+3", "-1", "００3", "٣", " 12", "12 "):
         try:
             vn.parse_cli_int_token(bad)
         except _argparse.ArgumentTypeError as e:
