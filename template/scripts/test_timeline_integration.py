@@ -33896,6 +33896,21 @@ def test_gsp_api_unicode_guard_contract_lint() -> None:
     )
 
 
+def test_gsp_plan_type_guard_contract_lint() -> None:
+    """PR-PM step 520: generate_slide_plan.py の json.loads 直後に isinstance(plan, dict) チェックが
+    あることを確認する (code-text check)。
+
+    LLM が valid JSON だが dict でない値 (list/string 等) を返した場合、plan.get('slides', []) が
+    AttributeError を送出して main() を emit_json なしに終了させる gap を防ぐ。
+    """
+    gsp_path = Path(__file__).parent / "generate_slide_plan.py"
+    gsp_text = gsp_path.read_text(encoding="utf-8")
+    snippet = "if not isinstance(plan, dict):  # PR-PM step 520: plan.get() raises AttributeError if plan is list/str"
+    assert snippet in gsp_text, (
+        f"generate_slide_plan.py plan isinstance(dict) guard missing (step 520): {snippet!r}"
+    )
+
+
 def main() -> int:
     tests = [
         test_fps_consistency,
@@ -34690,6 +34705,7 @@ def main() -> int:
         test_vn_stat_oserror_guard_contract_lint,  # PR-PM step 517
         test_vn_synthesize_unicode_guard_contract_lint,  # PR-PM step 518
         test_gsp_api_unicode_guard_contract_lint,  # PR-PM step 519
+        test_gsp_plan_type_guard_contract_lint,  # PR-PM step 520
     ]
     failed = []
     for t in tests:

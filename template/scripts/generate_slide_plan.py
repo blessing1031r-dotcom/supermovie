@@ -648,6 +648,9 @@ def main():
             )
         print(f"ERROR: LLM 応答が JSON parse 失敗: {e}\n{raw_msg}", file=sys.stderr)
         return emit_json("llm_json_invalid", 5, error=str(e))
+    if not isinstance(plan, dict):  # PR-PM step 520: plan.get() raises AttributeError if plan is list/str
+        print(f"ERROR: LLM 応答が dict でない: {type(plan).__name__}", file=sys.stderr)
+        return emit_json("llm_json_invalid", 5, error=f"plan must be dict, got {type(plan).__name__}")
 
     out_path = Path(args.output)
     try:
