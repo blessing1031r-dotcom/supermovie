@@ -1558,6 +1558,161 @@ def test_build_slide_data_rejects_invalid_vad_and_plan_load() -> None:
                 bsd.FPS = original_fps
 
 
+def test_build_slide_data_rejects_unicode_decode_error() -> None:
+    """step 512: build_slide_data.py が transcript_fixed.json / project-config.json /
+    vad_result.json / --plan の UnicodeDecodeError を structured tail で reject。
+    read_text(encoding='utf-8') が invalid byte で raise する UnicodeDecodeError は
+    以前の except (OSError, json.JSONDecodeError) を素通りしていた。"""
+    import build_slide_data as bsd
+    import contextlib as _contextlib
+    import io as _io
+
+    INVALID_UTF8 = b"\x80\x81\x82"
+
+    valid_transcript = json.dumps(
+        {"segments": [{"text": "hi", "start": 0, "end": 1000}], "words": []}
+    )
+    valid_config = json.dumps({"format": "short"})
+    valid_vad = json.dumps({"speech_segments": []})
+
+    # Case 1: transcript_fixed.json invalid UTF-8 → exit 3
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = _setup_temp_project(Path(tmp))
+        (proj / "transcript_fixed.json").write_bytes(INVALID_UTF8)
+        (proj / "project-config.json").write_text(valid_config, encoding="utf-8")
+        original_proj = bsd.PROJ
+        bsd.PROJ = proj
+        try:
+            import sys as _sys
+            old_argv = _sys.argv
+            _sys.argv = ["build_slide_data.py", "--json-log"]
+            try:
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                    try:
+                        bsd.main()
+                        raise AssertionError("build_slide_data should fail for unicode transcript")
+                    except SystemExit as e:
+                        if e.code != 3:
+                            raise AssertionError(f"unicode transcript: Expected exit 3, got: {e.code}")
+                if "transcript_fixed.json load failed" not in err_buf.getvalue():
+                    raise AssertionError(f"unicode transcript: expected load failed in stderr")
+                lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                tail = json.loads(lines[-1])
+                assert_eq(tail.get("status"), "error", "unicode slide transcript status")
+                assert_eq(tail.get("exit_code"), 3, "unicode slide transcript exit_code")
+            finally:
+                _sys.argv = old_argv
+        finally:
+            bsd.PROJ = original_proj
+
+    # Case 2: project-config.json invalid UTF-8 → exit 3
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = _setup_temp_project(Path(tmp))
+        (proj / "transcript_fixed.json").write_text(valid_transcript, encoding="utf-8")
+        (proj / "project-config.json").write_bytes(INVALID_UTF8)
+        original_proj = bsd.PROJ
+        bsd.PROJ = proj
+        try:
+            import sys as _sys
+            old_argv = _sys.argv
+            _sys.argv = ["build_slide_data.py", "--json-log"]
+            try:
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                    try:
+                        bsd.main()
+                        raise AssertionError("build_slide_data should fail for unicode config")
+                    except SystemExit as e:
+                        if e.code != 3:
+                            raise AssertionError(f"unicode config: Expected exit 3, got: {e.code}")
+                if "project-config.json load failed" not in err_buf.getvalue():
+                    raise AssertionError(f"unicode config: expected load failed in stderr")
+                lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                tail = json.loads(lines[-1])
+                assert_eq(tail.get("status"), "error", "unicode slide config status")
+                assert_eq(tail.get("exit_code"), 3, "unicode slide config exit_code")
+            finally:
+                _sys.argv = old_argv
+        finally:
+            bsd.PROJ = original_proj
+
+    # Case 3: vad_result.json invalid UTF-8 → exit 8
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = _setup_temp_project(Path(tmp))
+        (proj / "transcript_fixed.json").write_text(valid_transcript, encoding="utf-8")
+        (proj / "project-config.json").write_text(valid_config, encoding="utf-8")
+        (proj / "vad_result.json").write_bytes(INVALID_UTF8)
+        original_proj = bsd.PROJ
+        original_fps = bsd.FPS
+        bsd.PROJ = proj
+        bsd.FPS = 30
+        try:
+            import sys as _sys
+            old_argv = _sys.argv
+            _sys.argv = ["build_slide_data.py", "--json-log"]
+            try:
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                    try:
+                        bsd.main()
+                        raise AssertionError("build_slide_data should fail for unicode vad")
+                    except SystemExit as e:
+                        if e.code != 8:
+                            raise AssertionError(f"unicode vad: Expected exit 8, got: {e.code}")
+                if "vad_result.json load failed" not in err_buf.getvalue():
+                    raise AssertionError(f"unicode vad: expected load failed in stderr")
+                lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                tail = json.loads(lines[-1])
+                assert_eq(tail.get("status"), "error", "unicode slide vad status")
+                assert_eq(tail.get("exit_code"), 8, "unicode slide vad exit_code")
+            finally:
+                _sys.argv = old_argv
+        finally:
+            bsd.PROJ = original_proj
+            bsd.FPS = original_fps
+
+    # Case 4: --plan invalid UTF-8 → exit 2
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = _setup_temp_project(Path(tmp))
+        (proj / "transcript_fixed.json").write_text(valid_transcript, encoding="utf-8")
+        (proj / "project-config.json").write_text(valid_config, encoding="utf-8")
+        plan_path = proj / "plan.json"
+        plan_path.write_bytes(INVALID_UTF8)
+        original_proj = bsd.PROJ
+        original_fps = bsd.FPS
+        bsd.PROJ = proj
+        bsd.FPS = 30
+        try:
+            import sys as _sys
+            old_argv = _sys.argv
+            _sys.argv = ["build_slide_data.py", "--json-log", "--plan", str(plan_path), "--strict-plan"]
+            try:
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                    try:
+                        bsd.main()
+                        raise AssertionError("build_slide_data should fail for unicode plan")
+                    except SystemExit as e:
+                        if e.code != 2:
+                            raise AssertionError(f"unicode plan: Expected exit 2, got: {e.code}")
+                if "--plan load failed" not in err_buf.getvalue():
+                    raise AssertionError(f"unicode plan: expected load failed in stderr")
+                lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                tail = json.loads(lines[-1])
+                assert_eq(tail.get("status"), "error", "unicode slide plan status")
+                assert_eq(tail.get("exit_code"), 2, "unicode slide plan exit_code")
+            finally:
+                _sys.argv = old_argv
+        finally:
+            bsd.PROJ = original_proj
+            bsd.FPS = original_fps
+
+
 def test_build_slide_data_rejects_write_error() -> None:
     """step 500: build_slide_data.py が slideData.ts write 失敗を build_slide_write_error exit 3 で reject."""
     import build_slide_data as bsd
@@ -33474,6 +33629,7 @@ def main() -> int:
         test_build_slide_data_rejects_non_dict_project_config_root,
         test_build_slide_data_rejects_malformed_json_inputs,
         test_build_slide_data_rejects_invalid_vad_and_plan_load,
+        test_build_slide_data_rejects_unicode_decode_error,
         test_build_slide_data_rejects_write_error,
         test_build_telop_data_main_e2e,
         test_build_telop_data_validates_bad_transcript,
