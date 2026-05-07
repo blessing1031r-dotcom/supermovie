@@ -493,6 +493,26 @@ def main():
                 )
                 print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
                 sys.exit(_emit("ffprobe_failed", 3, error=msg))
+            if side_data_type == "DOVI configuration record":
+                for dovi_field in (
+                    "dv_profile",
+                    "dv_level",
+                    "rpu_present_flag",
+                    "el_present_flag",
+                    "bl_present_flag",
+                ):
+                    dovi_value = entry.get(dovi_field)
+                    if dovi_value is None:
+                        continue
+                    try:
+                        validate_int(
+                            dovi_value,
+                            f"ffprobe streams[{i}].side_data_list[{j}].{dovi_field}",
+                        )
+                    except ValueError as e:
+                        msg = str(e)
+                        print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
+                        sys.exit(_emit("ffprobe_failed", 3, error=msg))
             if side_data_type == "Display Matrix":
                 rotation = entry.get("rotation")
                 if rotation is not None:
