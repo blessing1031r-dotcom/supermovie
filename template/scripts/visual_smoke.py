@@ -126,7 +126,7 @@ def probe_dim(png: Path) -> tuple[int, int]:
             raise ValueError(f"ffprobe stream.{key} must be int-compatible, got bool")
         if isinstance(s[key], str):
             text = s[key].strip()
-            if "_" in text or not text.isascii():
+            if "_" in text or not text.isascii() or text.startswith("+"):
                 raise ValueError(f"ffprobe stream.{key} must be int-compatible, got str")
         if isinstance(s[key], float) and not s[key].is_integer():
             raise ValueError(f"ffprobe stream.{key} must be int-compatible, got float")
