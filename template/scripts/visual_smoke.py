@@ -109,8 +109,34 @@ def probe_dim(png: Path) -> tuple[int, int]:
         text=True,
     )
     info = json.loads(out)
-    s = info["streams"][0]
-    return int(s["width"]), int(s["height"])
+    if not isinstance(info, dict):
+        raise ValueError(f"ffprobe output must be dict, got {type(info).__name__}")
+    streams = info.get("streams")
+    if not isinstance(streams, list):
+        raise ValueError(f"ffprobe streams must be list, got {type(streams).__name__}")
+    if not streams:
+        raise ValueError("ffprobe streams must contain at least one stream")
+    s = streams[0]
+    if not isinstance(s, dict):
+        raise ValueError(f"ffprobe streams[0] must be dict, got {type(s).__name__}")
+    for key in ("width", "height"):
+        if key not in s:
+            raise ValueError(f"ffprobe stream.{key} must be present")
+        if isinstance(s[key], bool):
+            raise ValueError(f"ffprobe stream.{key} must be int-compatible, got bool")
+    try:
+        width = int(s["width"])
+    except (TypeError, ValueError) as e:
+        raise ValueError(
+            f"ffprobe stream.width must be int-compatible, got {type(s.get('width')).__name__}"
+        ) from e
+    try:
+        height = int(s["height"])
+    except (TypeError, ValueError) as e:
+        raise ValueError(
+            f"ffprobe stream.height must be int-compatible, got {type(s.get('height')).__name__}"
+        ) from e
+    return width, height
 
 
 def render_still(project: Path, frame: int, png_out: Path) -> None:
@@ -395,7 +421,7 @@ def cli() -> int:
                     break
                 try:
                     w, h = probe_dim(png)
-                except subprocess.CalledProcessError as e:
+                except (subprocess.CalledProcessError, json.JSONDecodeError, ValueError) as e:
                     # PR-J: png is abs path under out_dir.resolve()、redact applied.
                     _safe_png = safe_artifact_path(png, project_root=PROJ, unsafe_keep_abs_path=args.unsafe_keep_abs_path)
                     print(f"  ERROR: ffprobe failed for {_safe_png}: {redact_error_message(str(e))}", file=sys.stderr)

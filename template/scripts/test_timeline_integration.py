@@ -4051,6 +4051,116 @@ def test_visual_smoke_cli_mismatch_and_restore() -> None:
             _shutil.which = original_which
 
 
+def test_visual_smoke_probe_dim_rejects_malformed_ffprobe_json() -> None:
+    """visual_smoke.probe_dim が ffprobe JSON shape 破損を ValueError で reject."""
+    import visual_smoke as vs
+
+    cases = [
+        ("[]", "ffprobe output must be dict, got list"),
+        (json.dumps({"streams": "not a list"}), "ffprobe streams must be list, got str"),
+        (json.dumps({"streams": []}), "ffprobe streams must contain at least one stream"),
+        (json.dumps({"streams": ["not a dict"]}), "ffprobe streams[0] must be dict, got str"),
+        (json.dumps({"streams": [{"width": 320}]}), "ffprobe stream.height must be present"),
+        (json.dumps({"streams": [{"width": True, "height": 240}]}), "ffprobe stream.width must be int-compatible, got bool"),
+        (json.dumps({"streams": [{"width": "bad", "height": 240}]}), "ffprobe stream.width must be int-compatible, got str"),
+    ]
+
+    original_check_output = vs.subprocess.check_output
+    try:
+        for raw_output, expected_error in cases:
+            vs.subprocess.check_output = lambda *args, raw=raw_output, **kwargs: raw
+            try:
+                vs.probe_dim(Path("fake.png"))
+                raise AssertionError("probe_dim should reject malformed ffprobe JSON")
+            except ValueError as e:
+                assert expected_error == str(e), f"expected {expected_error!r}, got {e!r}"
+    finally:
+        vs.subprocess.check_output = original_check_output
+
+
+def test_visual_smoke_probe_dim_error_emits_tail() -> None:
+    """visual_smoke.cli が probe_dim validation error を summary + JSON tail に載せる。"""
+    import visual_smoke as vs
+    import shutil as _shutil
+    import io as _io
+    import contextlib as _contextlib
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        (proj / "src").mkdir()
+        original_content = (
+            "export const FORMAT: VideoFormat = 'youtube';\n"
+            "export const FPS = 30;\n"
+        )
+        config_path = proj / "src" / "videoConfig.ts"
+        config_path.write_text(original_content, encoding="utf-8")
+        main_video = proj / "public" / "main.mp4"
+        main_video.parent.mkdir()
+        main_video.touch()
+        remotion_bin = proj / "node_modules" / ".bin" / "remotion"
+        remotion_bin.parent.mkdir(parents=True)
+        remotion_bin.touch()
+        out_dir = proj / "out" / "visual_smoke"
+
+        def fake_render(project, frame, png_out):
+            png_out.parent.mkdir(parents=True, exist_ok=True)
+            png_out.write_bytes(b"fake-png")
+
+        bak = {
+            "PROJ": vs.PROJ,
+            "VIDEO_CONFIG": vs.VIDEO_CONFIG,
+            "MAIN_VIDEO": vs.MAIN_VIDEO,
+            "REMOTION_BIN": vs.REMOTION_BIN,
+            "render_still": vs.render_still,
+            "has_drawtext_filter": vs.has_drawtext_filter,
+        }
+        original_which = _shutil.which
+        original_check_output = vs.subprocess.check_output
+        try:
+            vs.PROJ = proj
+            vs.VIDEO_CONFIG = config_path
+            vs.MAIN_VIDEO = main_video
+            vs.REMOTION_BIN = remotion_bin
+            vs.render_still = fake_render
+            vs.has_drawtext_filter = lambda: False
+            vs.subprocess.check_output = lambda *args, **kwargs: json.dumps({"streams": ["not a dict"]})
+            _shutil.which = lambda cmd: "/usr/bin/" + cmd
+
+            import sys as _sys
+            old_argv = _sys.argv
+            _sys.argv = [
+                "visual_smoke.py",
+                "--formats", "youtube",
+                "--frames", "30",
+                "--no-grid",
+                "--out-dir", str(out_dir),
+                "--json-log",
+            ]
+            try:
+                out_buf = _io.StringIO()
+                err_buf = _io.StringIO()
+                with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                    ret = vs.cli()
+            finally:
+                _sys.argv = old_argv
+
+            assert_eq(ret, 3, "probe_dim validation error → cli exit 3")
+            assert "ffprobe failed" in err_buf.getvalue(), err_buf.getvalue()
+            summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+            assert_eq(summary.get("env_error"), "probe_failed", "visual smoke probe failure env_error")
+            assert_eq(summary.get("total"), 1, "visual smoke probe failure total")
+            lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+            payload = json.loads(lines[-1])
+            assert_eq(payload.get("status"), "error", "visual smoke probe failure status")
+            assert_eq(payload.get("category"), "dimension-regression", "visual smoke probe failure category")
+            assert_eq(payload.get("exit_code"), 3, "visual smoke probe failure exit_code")
+        finally:
+            for k, v in bak.items():
+                setattr(vs, k, v)
+            _shutil.which = original_which
+            vs.subprocess.check_output = original_check_output
+
+
 def test_visual_smoke_patch_format_youtube_to_short() -> None:
     """Phase 3-V post-freeze 第2弾 P4 (Codex CODEX_NEXT_PRIORITY:21-23):
     visual_smoke.patch_format が videoConfig.ts の FORMAT 行を正しく書き換える."""
@@ -29401,6 +29511,8 @@ def main() -> int:
         test_voicevox_json_log_engine_skip_path,
         test_voicevox_json_log_engine_strict_path,
         test_visual_smoke_cli_mismatch_and_restore,
+        test_visual_smoke_probe_dim_rejects_malformed_ffprobe_json,
+        test_visual_smoke_probe_dim_error_emits_tail,
         test_visual_smoke_patch_format_youtube_to_short,
         test_visual_smoke_patch_format_no_match_raises,
         test_visual_smoke_patch_format_round_trip,
