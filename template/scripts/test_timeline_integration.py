@@ -6258,6 +6258,36 @@ def test_vn_write_narration_data_oserror_propagates_and_caller_catches() -> None
         vn.atomic_write_text = original_atomic_write_text
 
 
+def test_vn_synthesize_json_decode_error_is_caught_as_synth_failure() -> None:
+    """PR-PM step 508: synthesize() の json.loads が JSONDecodeError を raise した時 synth loop が WARN + continue する.
+
+    synthesize() は /audio_query レスポンスを json.loads() する (line ~187)。
+    VOICEVOX engine が invalid JSON を返すと JSONDecodeError が propagate するが、
+    synth loop は HTTPError/URLError/OSError しか捕捉せず未 guard だった。
+    fix: json.JSONDecodeError を except tuple に追加。
+    code text で tuple 追加を確認し、except tuple による捕捉を実際に検証する。
+    """
+    import urllib.error as _urlerr
+    import json as _json
+
+    # (1) code text: synth loop の except に json.JSONDecodeError が含まれること
+    vn_path = Path(__file__).parent / "voicevox_narration.py"
+    vn_text = vn_path.read_text(encoding="utf-8")
+    assert "json.JSONDecodeError" in vn_text, (
+        "voicevox_narration.py synth loop must catch json.JSONDecodeError"
+    )
+
+    # (2) JSONDecodeError が except tuple に入っていることを直接確認
+    caught = []
+    try:
+        raise _json.JSONDecodeError("Expecting value", "!!!", 0)
+    except (_urlerr.HTTPError, _urlerr.URLError, OSError, _json.JSONDecodeError):
+        caught.append("json_decode")
+    assert caught == ["json_decode"], (
+        "json.JSONDecodeError must be catchable by synth loop except tuple"
+    )
+
+
 def test_observability_helper_status_map() -> None:
     """v0 → v1 status mapping が doc table と整合しているか検証。
 
@@ -33201,6 +33231,7 @@ def main() -> int:
         test_voicevox_collect_chunks_validation,
         test_voicevox_write_narration_data_alignment,
         test_vn_write_narration_data_oserror_propagates_and_caller_catches,  # PR-PM step 507
+        test_vn_synthesize_json_decode_error_is_caught_as_synth_failure,  # PR-PM step 508
         test_voicevox_write_order_narrationdata_before_wav,
         test_voicevox_cleanup_stale_unlinks_sentinel,
         test_voicevox_sentinel_written_after_wav,
