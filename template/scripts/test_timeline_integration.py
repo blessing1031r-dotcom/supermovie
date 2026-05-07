@@ -374,6 +374,47 @@ def test_timeline_rejects_invalid_fps_values() -> None:
         )
 
 
+def test_ms_to_playback_frame_rejects_invalid_ms_values() -> None:
+    """PR-LP: ms_to_playback_frame requires finite int|float ms."""
+    cut_segments = [
+        {
+            "originalStartMs": 0,
+            "originalEndMs": 1000,
+            "playbackStart": 0,
+            "playbackEnd": 30,
+        }
+    ]
+
+    assert_eq(
+        timeline.ms_to_playback_frame(500.0, 30, cut_segments),
+        15,
+        "valid float ms",
+    )
+    assert_eq(
+        timeline.ms_to_playback_frame(0, 30, []),
+        0,
+        "valid int ms no cut",
+    )
+
+    for bad_ms in (True, False, "500", None, [], {}):
+        assert_raises(
+            lambda bad_ms=bad_ms: timeline.ms_to_playback_frame(
+                bad_ms, 30, cut_segments
+            ),
+            TypeError,
+            f"ms_to_playback_frame invalid ms type {bad_ms!r}",
+        )
+
+    for bad_ms in (float("nan"), float("inf"), float("-inf")):
+        assert_raises(
+            lambda bad_ms=bad_ms: timeline.ms_to_playback_frame(
+                bad_ms, 30, cut_segments
+            ),
+            ValueError,
+            f"ms_to_playback_frame non-finite ms {bad_ms!r}",
+        )
+
+
 def test_voicevox_collect_chunks_validation() -> None:
     """voicevox_narration.collect_chunks が壊れた transcript で raise する."""
     import voicevox_narration as vn
@@ -27680,6 +27721,7 @@ def main() -> int:
         test_timeline_validation_rejects_bool_timing_values,
         test_timeline_validation_rejects_non_finite_timing_values,
         test_timeline_rejects_invalid_fps_values,
+        test_ms_to_playback_frame_rejects_invalid_ms_values,
         test_voicevox_collect_chunks_validation,
         test_voicevox_write_narration_data_alignment,
         test_voicevox_write_order_narrationdata_before_wav,
