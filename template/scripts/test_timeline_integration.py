@@ -1862,6 +1862,78 @@ def test_build_telop_data_rejects_malformed_typo_preserve() -> None:
             btd.call_budoux = original_call
 
 
+def test_build_telop_data_rejects_invalid_vad_result() -> None:
+    """build_telop_data.py が vad_result.json の欠損/IOエラー/JSONエラー/スキーマエラーを vad_invalid / exit 8 で reject."""
+    import build_telop_data as btd
+    import contextlib as _contextlib
+    import io as _io
+
+    valid_transcript = json.dumps(
+        {"segments": [{"text": "hi", "start": 0, "end": 1000}], "words": []}
+    )
+
+    cases = [
+        ("missing", None),
+        ("directory", "mkdir"),
+        ("malformed_json", "not-json{{{"),
+        ("schema_invalid", json.dumps({"not_speech_segments": []})),
+    ]
+
+    for label, vad_content in cases:
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = _setup_temp_project(Path(tmp))
+            (proj / "transcript_fixed.json").write_text(valid_transcript, encoding="utf-8")
+            vad_path = proj / "vad_result.json"
+            if vad_content == "mkdir":
+                vad_path.mkdir()
+            elif vad_content is not None:
+                vad_path.write_text(vad_content, encoding="utf-8")
+
+            original_proj = btd.PROJ
+            original_call = btd.call_budoux
+            btd.PROJ = proj
+            btd.call_budoux = lambda x: [["dummy"] for _ in x]
+            try:
+                import sys as _sys
+
+                old_argv = _sys.argv
+                _sys.argv = ["build_telop_data.py", "--json-log"]
+                try:
+                    out_buf = _io.StringIO()
+                    err_buf = _io.StringIO()
+                    with _contextlib.redirect_stdout(out_buf), _contextlib.redirect_stderr(err_buf):
+                        try:
+                            btd.main()
+                            raise AssertionError(
+                                f"build_telop_data should fail for vad case={label!r}"
+                            )
+                        except SystemExit as e:
+                            if e.code != 8:
+                                raise AssertionError(
+                                    f"case={label!r}: Expected exit code 8, got: {e.code}"
+                                )
+                    err_text = err_buf.getvalue()
+                    if "vad_result.json" not in err_text:
+                        raise AssertionError(
+                            f"case={label!r}: Expected vad_result.json in stderr, got: {err_text!r}"
+                        )
+                    lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+                    tail = json.loads(lines[-1])
+                    assert_eq(tail.get("status"), "error", f"build_telop vad {label} status")
+                    assert_eq(tail.get("category"), "vad_invalid", f"build_telop vad {label} category")
+                    assert_eq(tail.get("exit_code"), 8, f"build_telop vad {label} exit_code")
+                    raw_error = tail.get("error", "")
+                    if tmp in str(raw_error):
+                        raise AssertionError(
+                            f"case={label!r}: raw abs path leaked in error field: {raw_error!r}"
+                        )
+                finally:
+                    _sys.argv = old_argv
+            finally:
+                btd.PROJ = original_proj
+                btd.call_budoux = original_call
+
+
 def test_generate_slide_plan_skip_no_api_key() -> None:
     """generate_slide_plan.py: ANTHROPIC_API_KEY 未設定で exit 0 (skip)."""
     import generate_slide_plan as gsp
@@ -32051,6 +32123,7 @@ def main() -> int:
         test_build_telop_data_rejects_malformed_transcript_words,
         test_build_telop_data_rejects_non_dict_typo_dict_root,
         test_build_telop_data_rejects_malformed_typo_preserve,
+        test_build_telop_data_rejects_invalid_vad_result,
         test_generate_slide_plan_skip_no_api_key,
         test_generate_slide_plan_missing_inputs,
         test_generate_slide_plan_rejects_non_dict_transcript_root,

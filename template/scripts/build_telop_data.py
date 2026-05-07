@@ -36,6 +36,7 @@ _sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _observability import (  # noqa: E402
     build_status,
     emit_json as _obs_emit_json,
+    redact_error_message,
     resolve_run_context,
     safe_artifact_path,
     user_content_meta,
@@ -318,7 +319,12 @@ def main():
         return exit_code
 
     transcript = json.loads((PROJ / "transcript_fixed.json").read_text(encoding="utf-8"))
-    vad = json.loads((PROJ / "vad_result.json").read_text(encoding="utf-8"))
+    try:
+        vad = json.loads((PROJ / "vad_result.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError) as e:
+        err = redact_error_message(str(e))
+        print(f"ERROR: vad_result.json load failed: {err}", file=_sys.stderr)
+        _sys.exit(_emit_error("vad_invalid", 8, error=err))
     typo = (PROJ / "typo_dict.json")
     typo_dict = json.loads(typo.read_text(encoding="utf-8")) if typo.exists() else {}
     if not isinstance(transcript, dict):
@@ -339,7 +345,12 @@ def main():
             msg = f"typo_dict.preserve[{i}] must be str, got {type(item).__name__}"
             print(f"ERROR: typo_dict.json validation failed: {msg}", file=_sys.stderr)
             _sys.exit(_emit_error("typo_dict_invalid", 3, error=msg))
-    cut_segments = build_cut_segments_from_vad(vad)
+    try:
+        cut_segments = build_cut_segments_from_vad(vad)
+    except VadSchemaError as e:
+        err = redact_error_message(str(e))
+        print(f"ERROR: vad_result.json schema invalid: {err}", file=_sys.stderr)
+        _sys.exit(_emit_error("vad_invalid", 8, error=err))
     cut_total_frames = cut_segments[-1]["playbackEnd"] if cut_segments else 0
 
     words = transcript.get("words", [])
