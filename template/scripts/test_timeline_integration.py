@@ -7759,6 +7759,8 @@ def test_preflight_video_rejects_malformed_ffprobe_codec_type() -> None:
          "ffprobe streams[0].codec_type must be str, got list"),
         ([{"codec_type": "video", "width": 320, "height": 240}, {"codec_type": True}],
          "ffprobe streams[1].codec_type must be str, got bool"),
+        ([{"codec_type": None, "width": 320, "height": 240}],
+         "ffprobe streams[0].codec_type must be str, got NoneType"),
     ]
 
     saved_argv = list(_sys.argv)
