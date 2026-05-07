@@ -718,6 +718,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 416 | `template/scripts/build_telop_data.py` が optional `typo_dict.preserve` に `list[str]` を要求し、str / 非 str entry を `typo_dict_invalid` JSON tail + exit 3 で reject することを lint (`test_build_telop_data_rejects_malformed_typo_preserve`、Codex 推奨 PR-MR)。壊れた preserve が 1 文字単位 iteration や `text.find()` TypeError に流れ、telop 改行保護が silent に崩れる drift を防ぐ | PR-MR |
 | 417 | `template/scripts/compare_telop_split.py` が optional `typo_dict.preserve` に `list[str]` を要求し、str / 非 str entry を `typo_dict_invalid` JSON tail + exit 3 で reject することを lint (`test_compare_telop_split_rejects_malformed_typo_preserve`、Codex 推奨 PR-MS)。壊れた preserve が KPI 計算の linebreak_inside_preserve_count で 1 文字単位 iteration や `find()` TypeError に流れる drift を防ぐ | PR-MS |
 | 418 | `template/scripts/compare_telop_split.py` が `transcript.words` に list[dict] shape を要求し、非 list / 非 dict entry を `transcript_invalid` JSON tail + exit 3 で reject することを lint (`test_compare_telop_split_rejects_malformed_transcript_words`、Codex 推奨 PR-MT)。壊れた words entry が KPI 計算の `.get("text")` AttributeError に流れ、`kpi_calc_error` へ誤分類される drift を防ぐ | PR-MT |
+| 419 | `template/scripts/compare_telop_split.py` が `transcript.words[*].text` に str を要求し、数値 / null など text 破損を `transcript_invalid` JSON tail + exit 3 で reject することを lint (`test_compare_telop_split_rejects_malformed_transcript_word_text`、Codex 推奨 PR-MU)。壊れた word text が KPI 計算の `"".join(...)` TypeError に流れ、`kpi_calc_error` へ誤分類される drift を防ぐ | PR-MU |
 
 ## Test Requirements
 
