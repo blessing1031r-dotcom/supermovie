@@ -124,6 +124,8 @@ def probe_dim(png: Path) -> tuple[int, int]:
             raise ValueError(f"ffprobe stream.{key} must be present")
         if isinstance(s[key], bool):
             raise ValueError(f"ffprobe stream.{key} must be int-compatible, got bool")
+        if isinstance(s[key], float) and not s[key].is_integer():
+            raise ValueError(f"ffprobe stream.{key} must be int-compatible, got float")
     try:
         width = int(s["width"])
     except (TypeError, ValueError) as e:
