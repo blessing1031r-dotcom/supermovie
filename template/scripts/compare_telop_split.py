@@ -60,6 +60,49 @@ def parse_telop_style_token(token: str) -> str:
     return token
 
 
+def _count_telop_array_items(text: str) -> int:
+    """telopData array body の top-level object 数を string/comment-aware に数える."""
+    m = re.search(r"\btelopData\b[^=]*=\s*\[", text, re.S)
+    if m is None:
+        return 0
+    i = m.end()
+    brace_depth = 0
+    in_str = False
+    str_char = ""
+    count = 0
+    while i < len(text):
+        c = text[i]
+        if in_str:
+            if c == "\\" and str_char == '"':
+                i += 2
+                continue
+            if c == str_char:
+                in_str = False
+        elif text[i : i + 2] == "//":
+            nl = text.find("\n", i)
+            i = nl + 1 if nl >= 0 else len(text)
+            continue
+        elif text[i : i + 2] == "/*":
+            end = text.find("*/", i + 2)
+            i = end + 2 if end >= 0 else len(text)
+            continue
+        else:
+            if c in ('"', "'"):
+                in_str = True
+                str_char = c
+            elif c == "]" and brace_depth == 0:
+                break
+            elif c == "{" and brace_depth == 0:
+                count += 1
+                brace_depth = 1
+            elif c == "{":
+                brace_depth += 1
+            elif c == "}":
+                brace_depth -= 1
+        i += 1
+    return count
+
+
 def parse_telop_data_ts(ts_path: Path) -> list[dict]:
     """telopData.ts から telop 配列を抽出 (簡易 parser)."""
     text = ts_path.read_text(encoding="utf-8")
@@ -102,6 +145,11 @@ def parse_telop_data_ts(ts_path: Path) -> list[dict]:
             "style": style,
         })
         pos = text_end + style_match.end()
+    expected = _count_telop_array_items(text)
+    if expected != len(items):
+        raise ValueError(
+            "telopData item must contain required fields id/startFrame/endFrame/text/style"
+        )
     return items
 
 
