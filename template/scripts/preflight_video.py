@@ -70,8 +70,12 @@ def run_ffprobe(path: str) -> dict:
     # Codex 21:34 PR5 review P1 fix: bare sys.exit(3) を撤去し caller に raise する。
     # main() 側で try/except → _emit() で v1 status JSON tail を出してから exit。
     try:
-        out = subprocess.run(cmd, capture_output=True, check=True, text=True)
+        out = subprocess.run(cmd, capture_output=True, check=True, text=True, timeout=30)
         return json.loads(out.stdout)
+    except subprocess.TimeoutExpired as e:
+        # PR-PM step 504: ffprobe hang guard — 30 s timeout raises TimeoutExpired which was
+        # previously uncaught, bypassing the FFprobeError path and the observability tail.
+        raise FFprobeError(f"ffprobe timed out for {path}: {e}") from e
     except (subprocess.CalledProcessError, json.JSONDecodeError, FileNotFoundError) as e:
         raise FFprobeError(f"ffprobe failed for {path}: {e}") from e
 
