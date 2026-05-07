@@ -6258,6 +6258,43 @@ def test_vn_write_narration_data_oserror_propagates_and_caller_catches() -> None
         vn.atomic_write_text = original_atomic_write_text
 
 
+def test_vn_collect_chunks_script_read_oserror_raises_transcript_error() -> None:
+    """PR-PM step 510: collect_chunks --script path wraps read_text in try/except (OSError, UnicodeDecodeError).
+
+    If the --script file cannot be read (missing, permission denied, non-UTF-8 bytes),
+    OSError/UnicodeDecodeError propagated uncaught past the caller's TranscriptSegmentError handler.
+    fix: wrap read_text in try/except (OSError, UnicodeDecodeError) and raise TranscriptSegmentError.
+    """
+    import sys as _sys
+
+    vn_path = Path(__file__).parent / "voicevox_narration.py"
+    vn_text = vn_path.read_text(encoding="utf-8")
+
+    # (1) code text: PR-PM step 510 comment present
+    assert "PR-PM step 510" in vn_text, "voicevox_narration.py must contain PR-PM step 510 guard"
+
+    # (2) OSError path: verify OSError is caught and re-raised as TranscriptSegmentError
+    vn_dir = vn_path.parent
+    _sys.path.insert(0, str(vn_dir))
+    import importlib, types
+    # Minimal stub for args
+    class _Args:
+        script = "/nonexistent_path_that_cannot_exist_xyz.txt"
+        script_json = None
+        transcript = None
+
+    import voicevox_narration as vn
+    import importlib; importlib.reload(vn)
+
+    try:
+        vn.collect_chunks(_Args(), {})
+        assert False, "expected TranscriptSegmentError"
+    except vn.TranscriptSegmentError as e:
+        assert "script read failed" in str(e), f"unexpected message: {e}"
+    finally:
+        _sys.path.pop(0)
+
+
 def test_vn_list_speakers_error_guard() -> None:
     """PR-PM step 509: list_speakers() call is wrapped in try/except for HTTPError/URLError/OSError/JSONDecodeError.
 
@@ -33275,6 +33312,7 @@ def main() -> int:
         test_vn_write_narration_data_oserror_propagates_and_caller_catches,  # PR-PM step 507
         test_vn_synthesize_json_decode_error_is_caught_as_synth_failure,  # PR-PM step 508
         test_vn_list_speakers_error_guard,  # PR-PM step 509
+        test_vn_collect_chunks_script_read_oserror_raises_transcript_error,  # PR-PM step 510
         test_voicevox_write_order_narrationdata_before_wav,
         test_voicevox_cleanup_stale_unlinks_sentinel,
         test_voicevox_sentinel_written_after_wav,
