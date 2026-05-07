@@ -618,6 +618,12 @@ def main():
             )
         print(f"ERROR: Anthropic API HTTP {e.code}: {body_msg}", file=sys.stderr)
         return emit_json("api_http_error", 4, http_status=e.code)
+    except (urllib.error.URLError, OSError) as e:
+        # PR-PM step 503: URLError covers socket timeout, DNS failure, SSL/TLS, connection refused.
+        # OSError is the base for URLError on some platforms but added explicitly for defense.
+        err = redact_error_message(str(e))
+        print(f"ERROR: Anthropic API network error: {err}", file=sys.stderr)
+        return emit_json("api_network_error", 4, error=err)
 
     text = "".join(b.get("text", "") for b in response.get("content", []) if b.get("type") == "text")
     # コードフェンス除去 (LLM が markdown 返した場合)
