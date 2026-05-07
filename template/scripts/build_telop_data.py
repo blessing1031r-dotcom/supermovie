@@ -318,7 +318,12 @@ def main():
         _obs_emit_json(args.json_log, payload)
         return exit_code
 
-    transcript = json.loads((PROJ / "transcript_fixed.json").read_text(encoding="utf-8"))
+    try:
+        transcript = json.loads((PROJ / "transcript_fixed.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError) as e:
+        err = redact_error_message(str(e))
+        print(f"ERROR: transcript_fixed.json load failed: {err}", file=_sys.stderr)
+        _sys.exit(_emit_error("build_telop_transcript_invalid", 3, error=err))
     try:
         vad = json.loads((PROJ / "vad_result.json").read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, json.JSONDecodeError) as e:
