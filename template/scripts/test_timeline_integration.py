@@ -247,6 +247,52 @@ def test_transcript_segment_validation() -> None:
     )
 
 
+def test_transcript_segments_reject_non_monotonic_timing() -> None:
+    """PR-LV: transcript segments list validation rejects timing overlap."""
+    out = timeline.validate_transcript_segments(
+        [
+            {"text": "a", "start": 0, "end": 100},
+            {"text": "b", "start": 100, "end": 200},
+            {"text": "c", "start": 500, "end": 600},
+        ],
+        require_timing=True,
+    )
+    assert_eq(len(out), 3, "monotonic transcript segments OK")
+
+    optional = timeline.validate_transcript_segments(
+        [
+            {"text": "no timing"},
+            {"text": "timed", "start": 0, "end": 100},
+        ],
+        require_timing=False,
+    )
+    assert_eq(len(optional), 2, "optional timing transcript segments remain OK")
+
+    for bad_segments, label in (
+        (
+            [
+                {"text": "a", "start": 0, "end": 100},
+                {"text": "b", "start": 99, "end": 200},
+            ],
+            "overlap",
+        ),
+        (
+            [
+                {"text": "a", "start": 1000, "end": 1500},
+                {"text": "b", "start": 0, "end": 500},
+            ],
+            "out-of-order",
+        ),
+    ):
+        assert_raises(
+            lambda bad_segments=bad_segments: timeline.validate_transcript_segments(
+                bad_segments, require_timing=True
+            ),
+            timeline.TranscriptSegmentError,
+            f"transcript segments non-monotonic timing {label}",
+        )
+
+
 def test_timeline_validation_rejects_bool_timing_values() -> None:
     """PR-LI: bool must not pass timing numeric validation."""
     assert_raises(
@@ -28014,6 +28060,7 @@ def main() -> int:
         test_load_cut_segments_edge_cases,
         test_build_cut_segments_multi_with_gaps,
         test_transcript_segment_validation,
+        test_transcript_segments_reject_non_monotonic_timing,
         test_timeline_validation_rejects_bool_timing_values,
         test_timeline_validation_rejects_non_finite_timing_values,
         test_vad_schema_rejects_non_monotonic_speech_segments,
