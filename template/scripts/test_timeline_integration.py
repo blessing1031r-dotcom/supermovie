@@ -6189,6 +6189,75 @@ def test_visual_smoke_make_grid_timeout_exits_3() -> None:
             _shutil.which = original_which
 
 
+def test_vn_write_narration_data_oserror_propagates_and_caller_catches() -> None:
+    """PR-PM step 507: write_narration_data が atomic_write_text の OSError を caller に伝播する.
+
+    atomic_write_text() が OSError を raise すると write_narration_data() から caller まで伝播し、
+    main() の except (wave.Error, EOFError, OSError) が捕捉して write_narration_data_write_error を emit する。
+    (1) OSError 伝播の実動作確認 (monkeypatch atomic_write_text → write_narration_data call)
+    (2) caller の except clause と status key の code text 確認
+    """
+    import voicevox_narration as vn
+
+    original_proj = vn.PROJ
+    original_narration_dir = vn.NARRATION_DIR
+    original_narration_data_ts = vn.NARRATION_DATA_TS
+    original_chunk_meta_json = vn.CHUNK_META_JSON
+    original_narration_legacy_wav = vn.NARRATION_LEGACY_WAV
+    original_atomic_write_text = vn.atomic_write_text
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp)
+            vn.PROJ = proj
+            vn.NARRATION_DIR = proj / "public" / "narration"
+            vn.NARRATION_DATA_TS = proj / "src" / "Narration" / "narrationData.ts"
+            vn.CHUNK_META_JSON = vn.NARRATION_DIR / "chunk_meta.json"
+            vn.NARRATION_LEGACY_WAV = proj / "public" / "narration.wav"
+            vn.NARRATION_DIR.mkdir(parents=True)
+            vn.NARRATION_DATA_TS.parent.mkdir(parents=True)
+
+            write_synthetic_wav(vn.NARRATION_DIR / "chunk_000.wav", 1.0)
+            chunks_data = [
+                (vn.NARRATION_DIR / "chunk_000.wav", "テスト", 0, 1000),
+            ]
+
+            def fake_atomic_write_text(path, text):
+                raise OSError(f"fake disk full writing {path}")
+
+            vn.atomic_write_text = fake_atomic_write_text
+
+            raised: BaseException | None = None
+            try:
+                vn.write_narration_data(chunks_data, 30, [])
+            except OSError as e:
+                raised = e
+
+            assert raised is not None, (
+                "write_narration_data() must propagate OSError from atomic_write_text()"
+            )
+            assert "fake disk full" in str(raised), (
+                f"Unexpected OSError message: {raised}"
+            )
+
+        # code text: caller の except に OSError が含まれ、write_narration_data_write_error を emit する
+        vn_path = Path(__file__).parent / "voicevox_narration.py"
+        vn_text = vn_path.read_text(encoding="utf-8")
+        assert "except OSError as e:" in vn_text, (
+            "voicevox_narration.py main() must catch OSError from write_narration_data()"
+        )
+        assert '"write_narration_data_write_error"' in vn_text, (
+            "voicevox_narration.py must emit write_narration_data_write_error for OSError path"
+        )
+    finally:
+        vn.PROJ = original_proj
+        vn.NARRATION_DIR = original_narration_dir
+        vn.NARRATION_DATA_TS = original_narration_data_ts
+        vn.CHUNK_META_JSON = original_chunk_meta_json
+        vn.NARRATION_LEGACY_WAV = original_narration_legacy_wav
+        vn.atomic_write_text = original_atomic_write_text
+
+
 def test_observability_helper_status_map() -> None:
     """v0 → v1 status mapping が doc table と整合しているか検証。
 
@@ -6216,7 +6285,8 @@ def test_observability_helper_status_map() -> None:
         "transcript_missing", "transcript_invalid", "no_chunks", "invalid_fps",
         "stale_cleanup_fail", "vad_invalid", "no_chunks_succeeded",
         "partial_chunks_disallowed", "concat_fail",
-        "write_narration_data_wave_error", "sentinel_write_fail",
+        "write_narration_data_wave_error", "write_narration_data_write_error",
+        "narration_dir_mkdir_error", "sentinel_write_fail",
         # compare_telop_split (Codex 21:01 verdict S3-6 KPI comparison)
         "all_pass", "some_fail",
         # visual_smoke (Codex 21:01 verdict S3-4 dimension regression)
@@ -33130,6 +33200,7 @@ def main() -> int:
         test_ms_to_playback_frame_rejects_non_monotonic_cut_segments,
         test_voicevox_collect_chunks_validation,
         test_voicevox_write_narration_data_alignment,
+        test_vn_write_narration_data_oserror_propagates_and_caller_catches,  # PR-PM step 507
         test_voicevox_write_order_narrationdata_before_wav,
         test_voicevox_cleanup_stale_unlinks_sentinel,
         test_voicevox_sentinel_written_after_wav,

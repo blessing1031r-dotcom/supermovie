@@ -691,7 +691,11 @@ def main():
         # cleanup_stale_all() 直後で narrationData.ts は空 array、その他成果物
         # (chunk wav / narration.wav / chunk_meta.json) は未生成、mkdir も未実行。
         return emit_json("vad_invalid", 8, error=str(e))
-    NARRATION_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        NARRATION_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as e:  # PR-PM step 507 P2: permission denied / read-only fs
+        print(f"ERROR: narration dir mkdir failed: {e}", file=sys.stderr)
+        return emit_json("narration_dir_mkdir_error", 6, error=f"{type(e).__name__}: {e}")
     if cut_segments:
         print(f"cut-aware mapping: {len(cut_segments)} cut segments loaded from vad_result.json")
 
@@ -701,11 +705,15 @@ def main():
         text = ch["text"]
         try:
             wav_bytes = synthesize(text, args.speaker)
-        except (urllib.error.HTTPError, urllib.error.URLError) as e:
+        except (urllib.error.HTTPError, urllib.error.URLError, OSError) as e:  # PR-PM step 507: OSError from urlopen
             print(f"WARN: synth failed for chunk {i}: {e}", file=sys.stderr)
             continue
         p = NARRATION_DIR / f"chunk_{i:03d}.wav"
-        atomic_write_bytes(p, wav_bytes)
+        try:
+            atomic_write_bytes(p, wav_bytes)
+        except OSError as e:  # PR-PM step 507 P2: disk full / permission denied
+            print(f"WARN: chunk {i} wav write failed: {e}", file=sys.stderr)
+            continue
         chunk_paths.append(p)
         chunk_meta.append((text, ch.get("sourceStartMs"), ch.get("sourceEndMs")))
         # Codex 20:48 PR3 review P1 #1 fix: chunk text raw partial を default redact、
@@ -761,6 +769,14 @@ def main():
     ]
     try:
         segments, ts_path, meta_path = write_narration_data(pairs, fps, cut_segments)
+    except OSError as e:  # PR-PM step 507: OSError from atomic_write_text (mkdir/write_text/os.replace)
+        print(f"ERROR: narration data write failed: {type(e).__name__}: {e}", file=sys.stderr)
+        for p in chunk_paths:
+            try:
+                p.unlink()
+            except OSError:
+                pass
+        return emit_json("write_narration_data_write_error", 6, error=f"{type(e).__name__}: {e}")
     except (wave.Error, EOFError) as e:
         print(f"ERROR: WAV duration probe failed (wave.Error / EOFError): {e}", file=sys.stderr)
         for p in chunk_paths:
