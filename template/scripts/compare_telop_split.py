@@ -55,17 +55,28 @@ def parse_telop_data_ts(ts_path: Path) -> list[dict]:
     text = ts_path.read_text(encoding="utf-8")
     # `text: "..."` 部分は \n や 引用符のエスケープがあるので JSON で読む
     items = []
-    for m in re.finditer(
-        r"\{\s*id:\s*([^,\s]+),\s*startFrame:\s*([^,\s]+),\s*endFrame:\s*([^,\s]+),\s*text:\s*(.+?),\s*style:\s*'(\w+)'",
-        text,
+    decoder = json.JSONDecoder()
+    item_prefix = re.compile(
+        r"\{\s*id:\s*([^,\s]+),\s*startFrame:\s*([^,\s]+),\s*endFrame:\s*([^,\s]+),\s*text:\s*",
         re.S,
-    ):
-        idn, sf, ef, txt_raw, style = m.groups()
+    )
+    pos = 0
+    while True:
+        m = item_prefix.search(text, pos)
+        if m is None:
+            break
+        idn, sf, ef = m.groups()
         # txt_raw は JSON 文字列 (例: "abc\\nd") として書かれている
         try:
-            txt = json.loads(txt_raw)
-        except json.JSONDecodeError:
-            txt = txt_raw.strip().strip(",").strip("\"")
+            txt, text_end = decoder.raw_decode(text, m.end())
+        except json.JSONDecodeError as e:
+            raise ValueError("text must be JSON string") from e
+        if not isinstance(txt, str):
+            raise ValueError(f"text must be JSON string, got {type(txt).__name__}")
+        style_match = re.match(r"\s*,\s*style:\s*'(\w+)'", text[text_end:], re.S)
+        if style_match is None:
+            raise ValueError("style must follow text JSON string")
+        style = style_match.group(1)
         items.append({
             "id": parse_ascii_int_token(idn, "id"),
             "startFrame": parse_ascii_int_token(sf, "startFrame"),
@@ -73,6 +84,7 @@ def parse_telop_data_ts(ts_path: Path) -> list[dict]:
             "text": txt,
             "style": style,
         })
+        pos = text_end + style_match.end()
     return items
 
 

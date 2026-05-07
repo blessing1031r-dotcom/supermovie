@@ -8689,6 +8689,175 @@ def test_compare_telop_split_invalid_telop_numeric_token_emits_tail() -> None:
         _shutil.rmtree(proj, ignore_errors=True)
 
 
+def test_compare_telop_split_rejects_malformed_telop_text_json() -> None:
+    """compare_telop_split parser で telopData.ts の text は JSON string に限定する."""
+    import importlib
+
+    import compare_telop_split as cts
+    importlib.reload(cts)
+
+    cases = [
+        ("bare identifier", "hello"),
+        ("single quoted", "'hello'"),
+        ("unterminated string", "\"hello"),
+        ("non-string json", "123"),
+    ]
+    tmp_dir = Path(tempfile.mkdtemp(prefix="cts_bad_telop_text_"))
+    try:
+        for case_name, text_token in cases:
+            ts_path = tmp_dir / f"{case_name.replace(' ', '_')}.ts"
+            ts_path.write_text(
+                "export const telopData = [\n"
+                f"  {{ id: 1, startFrame: 0, endFrame: 60, text: {text_token}, "
+                "style: 'normal', template: 1 },\n"
+                "];\n",
+                encoding="utf-8",
+            )
+            try:
+                cts.parse_telop_data_ts(ts_path)
+            except ValueError as e:
+                msg = str(e)
+            else:
+                raise AssertionError(
+                    f"compare_telop_split should reject malformed text token: {case_name}"
+                )
+            assert "text must be JSON string" in msg, msg
+    finally:
+        import shutil as _shutil
+        _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def test_compare_telop_split_accepts_delimiter_like_telop_text_json() -> None:
+    """compare_telop_split parser は text 内の delimiter 風文字列を field 境界にしない."""
+    import importlib
+
+    import compare_telop_split as cts
+    importlib.reload(cts)
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="cts_delimiter_telop_text_"))
+    ts_path = tmp_dir / "telopData.ts"
+    try:
+        ts_path.write_text(
+            "export const telopData = [\n"
+            "  { id: 1, startFrame: 0, endFrame: 60, "
+            "text: \"hello, style: 'normal'\", style: 'normal', template: 1 },\n"
+            "];\n",
+            encoding="utf-8",
+        )
+        telops = cts.parse_telop_data_ts(ts_path)
+        assert_eq(len(telops), 1, "delimiter-like text telop count")
+        assert_eq(telops[0]["text"], "hello, style: 'normal'", "delimiter-like text preserved")
+        assert_eq(telops[0]["style"], "normal", "delimiter-like text style")
+    finally:
+        import shutil as _shutil
+        _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def test_compare_telop_split_accepts_object_like_telop_text_json() -> None:
+    """compare_telop_split parser は text 内の object-like substring を item_prefix と誤認しない."""
+    import importlib
+
+    import compare_telop_split as cts
+    importlib.reload(cts)
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="cts_objlike_telop_text_"))
+    ts_path = tmp_dir / "telopData.ts"
+    try:
+        # text value contains a substring that looks exactly like an item prefix
+        ts_path.write_text(
+            "export const telopData = [\n"
+            "  { id: 1, startFrame: 0, endFrame: 60, "
+            'text: "{ id: 1, startFrame: 0, endFrame: 60, text: hello }", '
+            "style: 'normal', template: 1 },\n"
+            "];\n",
+            encoding="utf-8",
+        )
+        telops = cts.parse_telop_data_ts(ts_path)
+        assert_eq(len(telops), 1, "object-like text telop count")
+        assert_eq(
+            telops[0]["text"],
+            "{ id: 1, startFrame: 0, endFrame: 60, text: hello }",
+            "object-like text preserved",
+        )
+        assert_eq(telops[0]["style"], "normal", "object-like text style")
+    finally:
+        import shutil as _shutil
+        _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def test_compare_telop_split_invalid_telop_text_token_emits_tail() -> None:
+    """compare_telop_split CLI で malformed telopData.ts text token は tail emit."""
+    import os as _os
+    import io
+    import sys as _sys
+    import importlib
+    from contextlib import redirect_stdout, redirect_stderr
+
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+
+    proj = Path(tempfile.mkdtemp(prefix="cts_bad_telop_text_tail_"))
+    baseline_ts = proj / "baseline.ts"
+    new_ts = proj / "new.ts"
+    (proj / "transcript_fixed.json").write_text(
+        json.dumps(
+            {
+                "duration_ms": 4000,
+                "text": "hello",
+                "segments": [{"text": "hello", "start": 0, "end": 4000}],
+                "words": [{"text": "hello", "start": 0, "end": 4000}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    baseline_ts.write_text(
+        "export const telopData = [\n"
+        "  { id: 1, startFrame: 0, endFrame: 60, "
+        "text: hello, style: 'normal', template: 1 },\n"
+        "];\n",
+        encoding="utf-8",
+    )
+    new_ts.write_text(
+        "export const telopData = [\n"
+        "  { id: 1, startFrame: 0, endFrame: 60, "
+        "text: \"hello\", style: 'normal', template: 1 },\n"
+        "];\n",
+        encoding="utf-8",
+    )
+    try:
+        _os.chdir(str(proj))
+        import compare_telop_split as cts
+        importlib.reload(cts)
+        cts.PROJ = proj
+
+        _sys.argv = [
+            "compare_telop_split.py",
+            str(baseline_ts),
+            str(new_ts),
+            "--json-log",
+        ]
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            rc = cts.main()
+        assert rc == 3, f"malformed telop text token should exit 3, got {rc}"
+        err_text = err_buf.getvalue()
+        assert "telop ts parse failed" in err_text, err_text
+        assert "hello" not in err_text, err_text
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        v1_tail = json.loads(lines[-1])
+        assert v1_tail["status"] == "error"
+        assert v1_tail["category"] == "telop_ts_invalid"
+        assert v1_tail["exit_code"] == 3
+        assert "text must be JSON string" in v1_tail["error"], v1_tail
+        assert "hello" not in v1_tail["error"], v1_tail
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
 def test_preflight_video_write_config_parse_error_emits_tail() -> None:
     """preflight_video で既存 write-config が malformed JSON の時に tail + exit 3。"""
     import os as _os
@@ -31654,6 +31823,10 @@ def main() -> int:
         test_compare_telop_split_rejects_malformed_typo_preserve,
         test_compare_telop_split_rejects_unicode_telop_numeric_tokens,
         test_compare_telop_split_invalid_telop_numeric_token_emits_tail,
+        test_compare_telop_split_rejects_malformed_telop_text_json,
+        test_compare_telop_split_accepts_delimiter_like_telop_text_json,
+        test_compare_telop_split_accepts_object_like_telop_text_json,
+        test_compare_telop_split_invalid_telop_text_token_emits_tail,
         test_preflight_video_write_config_parse_error_emits_tail,
         test_preflight_video_write_config_rejects_non_dict_root,
         test_preflight_video_rejects_malformed_ffprobe_streams,
