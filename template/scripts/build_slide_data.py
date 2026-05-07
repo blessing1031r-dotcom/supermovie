@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _observability import (  # noqa: E402
     build_status,
     emit_json as _obs_emit_json,
+    redact_error_message,
     resolve_run_context,
     safe_artifact_path,
     user_content_meta,
@@ -378,8 +379,18 @@ def main():
         print(f"ERROR: {msg}", file=sys.stderr)
         sys.exit(_emit_error("build_slide_inputs_missing", 3))
 
-    transcript = load_json(transcript_path)
-    config = load_json(config_path)
+    try:
+        transcript = load_json(transcript_path)
+    except (OSError, json.JSONDecodeError) as e:
+        err = redact_error_message(str(e))
+        print(f"ERROR: transcript_fixed.json load failed: {err}", file=sys.stderr)
+        sys.exit(_emit_error("build_slide_transcript_invalid", 3, error=err))
+    try:
+        config = load_json(config_path)
+    except (OSError, json.JSONDecodeError) as e:
+        err = redact_error_message(str(e))
+        print(f"ERROR: project-config.json load failed: {err}", file=sys.stderr)
+        sys.exit(_emit_error("config_invalid", 3, error=err))
     if not isinstance(transcript, dict):
         msg = f"transcript must be dict, got {type(transcript).__name__}"
         print(f"ERROR: transcript validation failed: {msg}", file=sys.stderr)
