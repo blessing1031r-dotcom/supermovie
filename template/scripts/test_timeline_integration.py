@@ -23077,6 +23077,108 @@ def test_supermovie_image_gen_error_handling_docs_match_prereq_contract_lint() -
     )
 
 
+def test_supermovie_image_gen_gemini_provider_env_boundary_lint() -> None:
+    """PR-LE: Gemini image-gen provider env must stay separate from Anthropic slide-plan rates."""
+    import re
+
+    repo_root = Path(__file__).parents[2]
+    obs_path = repo_root / "docs" / "OBSERVABILITY.md"
+    skill_path = repo_root / "skills" / "supermovie-image-gen" / "SKILL.md"
+    claude_path = repo_root / "CLAUDE.md"
+    for path in (obs_path, skill_path, claude_path):
+        assert path.is_file(), f"{path.relative_to(repo_root)} not found"
+
+    obs_text = obs_path.read_text(encoding="utf-8")
+    skill_text = skill_path.read_text(encoding="utf-8")
+    claude_text = claude_path.read_text(encoding="utf-8")
+    errors: list[str] = []
+
+    provider_notes_match = re.search(
+        r"### Provider Notes\s*([\s\S]*?)\n### Missing Rate Behavior",
+        obs_text,
+    )
+    image_gen_section_match = re.search(
+        r"## 画像生成（Gemini API）\s*([\s\S]*?)\n## データスキーマ",
+        claude_text,
+    )
+    phase3_match = re.search(
+        r"## Phase 3: Gemini API で画像生成\s*([\s\S]*?)\n---\n\n## Phase 4:",
+        skill_text,
+    )
+    error_match = re.search(
+        r"## エラーハンドリング\s*([\s\S]*?)\n---\n\n## 連携マップ",
+        skill_text,
+    )
+    assert provider_notes_match is not None, "OBSERVABILITY Provider Notes section not found"
+    assert image_gen_section_match is not None, "CLAUDE.md image-gen section not found"
+    assert phase3_match is not None, "supermovie-image-gen Phase 3 section not found"
+    assert error_match is not None, "supermovie-image-gen error handling section not found"
+
+    provider_notes = provider_notes_match.group(1)
+    claude_image_gen = image_gen_section_match.group(1)
+    skill_image_gen = "\n".join([phase3_match.group(1), error_match.group(1)])
+
+    required_provider_snippets = {
+        "gemini row": "| Gemini API (image gen) | $/image | image generation、別 env 系 (`GEMINI_API_KEY`、PR-LE で固定) |",
+        "anthropic row": "| Anthropic API (slide plan) | $/MTok input + $/MTok output | text generation、env 必須 |",
+        "voicevox row": "| VOICEVOX (narration) | local engine、cost なし",
+    }
+    for name, snippet in required_provider_snippets.items():
+        if snippet not in provider_notes:
+            errors.append(f"OBSERVABILITY Provider Notes missing {name}: {snippet}")
+
+    required_skill_snippets = {
+        "phase heading": "## Phase 3: Gemini API で画像生成",
+        "gemini api key row": "GEMINI_API_KEY 未設定",
+        "gemini skill": "gemini-api-image",
+        "generator command": "python scripts/run.py api_generator.py",
+        "aspect flag": "-a <アスペクト比>",
+    }
+    for name, snippet in required_skill_snippets.items():
+        if snippet not in skill_text:
+            errors.append(f"supermovie-image-gen docs missing Gemini provider {name}: {snippet}")
+
+    required_claude_snippets = {
+        "heading": "## 画像生成（Gemini API）",
+        "env": "環境変数: `GEMINI_API_KEY`",
+        "script": ".claude/skills/gemini-api-image/scripts/run.py",
+        "command": "python scripts/run.py api_generator.py",
+    }
+    for name, snippet in required_claude_snippets.items():
+        if snippet not in claude_text:
+            errors.append(f"CLAUDE.md image-gen docs missing Gemini provider {name}: {snippet}")
+
+    forbidden_in_image_gen_sections = (
+        "ANTHROPIC_API_KEY",
+        "SUPERMOVIE_RATE_",
+        "SUPERMOVIE_RATE_INPUT_PER_MTOK",
+        "SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+        "generate_slide_plan",
+        "$/MTok",
+    )
+    for forbidden in forbidden_in_image_gen_sections:
+        if forbidden in skill_image_gen:
+            errors.append(f"supermovie-image-gen Gemini sections must not mention {forbidden}")
+        if forbidden in claude_image_gen:
+            errors.append(f"CLAUDE.md Gemini image-gen section must not mention {forbidden}")
+
+    required_obs_snippets = {
+        "step": "| 377 | `docs/OBSERVABILITY.md` の Provider Notes",
+        "test name": "test_supermovie_image_gen_gemini_provider_env_boundary_lint",
+        "pr code": "PR-LE",
+        "gemini key": "`GEMINI_API_KEY`",
+        "anthropic separation": "Anthropic slide-plan cost/rate 経路",
+    }
+    for name, snippet in required_obs_snippets.items():
+        if snippet not in obs_text:
+            errors.append(f"OBSERVABILITY step 377 missing {name}: {snippet}")
+
+    assert errors == [], (
+        "supermovie-image-gen Gemini provider/env boundary drift:\n"
+        + "\n".join(errors)
+    )
+
+
 def test_supermovie_image_gen_content_analysis_docs_match_image_segment_type_contract_lint() -> None:
     """PR-KP: supermovie-image-gen content analysis docs must match ImageSegment.type."""
     import re
@@ -27564,6 +27666,8 @@ def main() -> int:
         test_supermovie_image_gen_completion_handoff_docs_match_sequence_contract_lint,
         # PR-KO (supermovie-image-gen error handling docs stay synced with prerequisites): 1 件
         test_supermovie_image_gen_error_handling_docs_match_prereq_contract_lint,
+        # PR-LE (supermovie-image-gen keeps Gemini provider/env separate from Anthropic rates): 1 件
+        test_supermovie_image_gen_gemini_provider_env_boundary_lint,
         # PR-KP (supermovie-image-gen content analysis docs stay synced with ImageSegment type): 1 件
         test_supermovie_image_gen_content_analysis_docs_match_image_segment_type_contract_lint,
         # PR-KQ (supermovie-image-gen plan hearing docs stay synced with candidate schema): 1 件

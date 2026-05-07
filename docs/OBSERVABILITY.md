@@ -213,7 +213,7 @@ dry-run legacy JSON (`--json-log` なしの一次 stdout) は依然 top-level fo
 | provider | unit | rate kind |
 |---|---|---|
 | Anthropic API (slide plan) | $/MTok input + $/MTok output | text generation、env 必須 |
-| Gemini API (image gen) | $/image | image generation、別 env 系 (本 doc 後の別 PR で固定) |
+| Gemini API (image gen) | $/image | image generation、別 env 系 (`GEMINI_API_KEY`、PR-LE で固定) |
 | VOICEVOX (narration) | local engine、cost なし ([voicevox_narration.py:66](../template/scripts/voicevox_narration.py)) | telemetry 対象外 |
 | Kling / 他 (将来) | provider 個別 | 別 doc 化 |
 
@@ -675,6 +675,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 374 | `skills/supermovie-skill-creator/SKILL.md` の品質チェックリスト 12 行 (`YAML frontmatter` / ロール定義 / ワークフロー図 / 前提条件 / フェーズ分割 / データスキーマ / バリデーション / エラーテーブル / 完了報告 / 次のステップ / テーブル活用 / コード例) と `12項目中10個以上` 合格・`9個以下` 改善 threshold が scaffold contract に同期することを lint (`test_supermovie_skill_creator_quality_checklist_docs_match_scaffold_contract_lint`、Codex 推奨 PR-LB)。新規 skill 生成時の品質 gate が frontmatter / docs sync だけに縮退する drift を保護 | PR-LB |
 | 375 | `skills/supermovie-subtitles/SKILL.md` の Phase 2 LLM optional plan docs (`LLM 経路は将来オプション化`、`telop_plan.json` validate / invalid→BudouX fallback 設計、`現時点未実装`) が `template/scripts/build_telop_data.py` の現 runtime (LLM/`--plan`/`telop_plan.json`/Anthropic 経路なし、BudouX default + `--baseline` 比較のみ) と同期することを lint (`test_supermovie_subtitles_llm_plan_docs_mark_unimplemented_lint`、Codex 推奨 PR-LC)。未実装の LLM plan を実装済み手順として誤案内する drift を保護 | PR-LC |
 | 376 | `docs/REMOTION_CODEX_PLUGIN_INTEGRATION.md` と `skills/supermovie-remotion-bridge/SKILL.md` が upstream PR 作成・close/reopen・maintainer contact・upstream merge 完了条件化・force push / remote history rewrite を non-goal / optional_later に固定し、fork/local docs-and-lint branch で代替する境界を持つことを lint (`test_remotion_upstream_pr_lifecycle_stays_optional_later_lint`、Codex 推奨 PR-LD)。official Remotion plugin 連携が upstream lifecycle 操作へ drift する事故を防ぎ、fork 内完結の実装/review/test loop 境界を保護 | PR-LD |
+| 377 | `docs/OBSERVABILITY.md` の Provider Notes にある Gemini API (image gen) 行 (`$/image`、`GEMINI_API_KEY`、Anthropic rate env とは別系統) が `skills/supermovie-image-gen/SKILL.md` の `gemini-api-image` / `GEMINI_API_KEY` 手順と `CLAUDE.md` の画像生成セクションに同期し、image-gen docs が `ANTHROPIC_API_KEY` / `SUPERMOVIE_RATE_*` / `generate_slide_plan` 経路を参照しないことを lint (`test_supermovie_image_gen_gemini_provider_env_boundary_lint`、Codex 推奨 PR-LE)。Gemini 画像生成の provider/env 境界が Anthropic slide-plan cost/rate 経路へ drift する事故を防ぐ | PR-LE |
 
 ## Test Requirements
 
