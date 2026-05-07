@@ -8192,6 +8192,43 @@ def test_compare_telop_split_rejects_malformed_typo_preserve() -> None:
         _shutil.rmtree(proj, ignore_errors=True)
 
 
+def test_compare_telop_split_rejects_unicode_telop_numeric_tokens() -> None:
+    """compare_telop_split parser で telopData.ts の Unicode 数字を reject."""
+    import importlib
+
+    import compare_telop_split as cts
+    importlib.reload(cts)
+
+    cases = [
+        ("id", "１", "0", "60"),
+        ("startFrame", "1", "０", "60"),
+        ("endFrame", "1", "0", "６０"),
+    ]
+    tmp_dir = Path(tempfile.mkdtemp(prefix="cts_unicode_telop_int_"))
+    try:
+        for label, id_token, start_token, end_token in cases:
+            ts_path = tmp_dir / f"{label}.ts"
+            ts_path.write_text(
+                "export const telopData = [\n"
+                f"  {{ id: {id_token}, startFrame: {start_token}, endFrame: {end_token}, "
+                "text: \"hello\", style: 'normal', template: 1 },\n"
+                "];\n",
+                encoding="utf-8",
+            )
+            try:
+                cts.parse_telop_data_ts(ts_path)
+            except ValueError as e:
+                msg = str(e)
+            else:
+                raise AssertionError(
+                    f"compare_telop_split should reject Unicode {label} token"
+                )
+            assert label in msg and "ASCII integer token" in msg, msg
+    finally:
+        import shutil as _shutil
+        _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def test_preflight_video_write_config_parse_error_emits_tail() -> None:
     """preflight_video で既存 write-config が malformed JSON の時に tail + exit 3。"""
     import os as _os
@@ -31034,6 +31071,7 @@ def main() -> int:
         test_compare_telop_split_typo_dict_invalid_emits_tail,
         test_compare_telop_split_rejects_non_dict_typo_dict_root,
         test_compare_telop_split_rejects_malformed_typo_preserve,
+        test_compare_telop_split_rejects_unicode_telop_numeric_tokens,
         test_preflight_video_write_config_parse_error_emits_tail,
         test_preflight_video_write_config_rejects_non_dict_root,
         test_preflight_video_rejects_malformed_ffprobe_streams,
