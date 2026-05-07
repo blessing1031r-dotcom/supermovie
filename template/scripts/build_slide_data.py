@@ -368,6 +368,10 @@ def main():
 
     transcript = load_json(transcript_path)
     config = load_json(config_path)
+    if not isinstance(transcript, dict):
+        msg = f"transcript must be dict, got {type(transcript).__name__}"
+        print(f"ERROR: transcript validation failed: {msg}", file=sys.stderr)
+        sys.exit(_emit_error("build_slide_transcript_invalid", 3, error=msg))
     fmt = config.get("format", "short")
     tone = config.get("tone", "プロフェッショナル")
     segments = transcript.get("segments", [])
