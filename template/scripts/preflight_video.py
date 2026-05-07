@@ -303,8 +303,9 @@ def validate_finite_float(value, label: str) -> float:
     if isinstance(value, bool) or value is None:
         raise ValueError(f"{label} must be finite number, got {type(value).__name__}")
     if isinstance(value, str):
-        text = value.strip()
-        if not text.isascii() or "_" in text or text.startswith("+"):
+        raw_text = value
+        text = raw_text.strip()
+        if text != raw_text or not text.isascii() or "_" in text or text.startswith("+"):
             raise ValueError(f"{label} must be finite number, got str")
         value = text
     try:

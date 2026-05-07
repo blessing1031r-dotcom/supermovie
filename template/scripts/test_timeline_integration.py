@@ -8745,6 +8745,8 @@ def test_preflight_video_rejects_malformed_ffprobe_format_duration() -> None:
         ("1_000.5", "ffprobe format.duration must be finite number, got str"),
         ("１０００.５", "ffprobe format.duration must be finite number, got str"),
         ("+1000.5", "ffprobe format.duration must be finite number, got str"),
+        (" 1000.5", "ffprobe format.duration must be finite number, got str"),
+        ("1000.5 ", "ffprobe format.duration must be finite number, got str"),
         ("-1", "ffprobe format.duration must be non-negative finite number, got -1.0"),
     ]
 
