@@ -466,7 +466,7 @@ def main():
             print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
             sys.exit(_emit("ffprobe_failed", 3, error=msg))
         tags = stream.get("tags", {})
-        if tags is not None and not isinstance(tags, dict):
+        if not isinstance(tags, dict):
             msg = f"ffprobe streams[{i}].tags must be dict, got {type(tags).__name__}"
             print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
             sys.exit(_emit("ffprobe_failed", 3, error=msg))

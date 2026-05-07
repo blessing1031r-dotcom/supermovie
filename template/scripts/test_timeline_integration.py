@@ -8555,35 +8555,40 @@ def test_preflight_video_rejects_malformed_ffprobe_tags() -> None:
         with tempfile.TemporaryDirectory() as tmp:
             src = Path(tmp) / "in.mp4"
             src.write_bytes(b"not a real mp4; run_ffprobe is monkeypatched")
-            pv.run_ffprobe = lambda _path: {
-                "streams": [{
-                    "codec_type": "video",
-                    "width": 320,
-                    "height": 240,
-                    "tags": ["not", "a", "dict"],
-                }],
-                "format": {},
-            }
-            _sys.argv = ["preflight_video.py", str(src), "--json-log"]
+            cases = [
+                (["not", "a", "dict"], "ffprobe streams[0].tags must be dict, got list"),
+                (None, "ffprobe streams[0].tags must be dict, got NoneType"),
+            ]
+            for tags_value, expected_error in cases:
+                pv.run_ffprobe = lambda _path, tags_value=tags_value: {
+                    "streams": [{
+                        "codec_type": "video",
+                        "width": 320,
+                        "height": 240,
+                        "tags": tags_value,
+                    }],
+                    "format": {},
+                }
+                _sys.argv = ["preflight_video.py", str(src), "--json-log"]
 
-            out_buf = io.StringIO()
-            err_buf = io.StringIO()
-            with redirect_stdout(out_buf), redirect_stderr(err_buf):
-                try:
-                    pv.main()
-                    raise AssertionError("preflight_video should reject malformed ffprobe tags")
-                except SystemExit as e:
-                    if e.code != 3:
-                        raise AssertionError(f"Expected exit code 3, got: {e.code}")
+                out_buf = io.StringIO()
+                err_buf = io.StringIO()
+                with redirect_stdout(out_buf), redirect_stderr(err_buf):
+                    try:
+                        pv.main()
+                        raise AssertionError("preflight_video should reject malformed ffprobe tags")
+                    except SystemExit as e:
+                        if e.code != 3:
+                            raise AssertionError(f"Expected exit code 3, got: {e.code}")
 
-            err_text = err_buf.getvalue()
-            assert "ffprobe output validation failed" in err_text, err_text
-            lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
-            v1_tail = json.loads(lines[-1])
-            assert v1_tail["status"] == "error"
-            assert v1_tail["category"] == "ffprobe-failed"
-            assert v1_tail["exit_code"] == 3
-            assert v1_tail["error"] == "ffprobe streams[0].tags must be dict, got list"
+                err_text = err_buf.getvalue()
+                assert "ffprobe output validation failed" in err_text, err_text
+                lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+                v1_tail = json.loads(lines[-1])
+                assert v1_tail["status"] == "error"
+                assert v1_tail["category"] == "ffprobe-failed"
+                assert v1_tail["exit_code"] == 3
+                assert v1_tail["error"] == expected_error
     finally:
         pv.run_ffprobe = original_run_ffprobe
         _sys.argv = saved_argv
