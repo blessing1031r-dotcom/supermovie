@@ -73,6 +73,7 @@ STATUS_MAP = {
     "cost_guard_arg_invalid": ("error", "cost_guard_arg_invalid"),
     "cost_guard_aborted": ("error", "cost_guard_aborted"),
     "inputs_missing": ("error", "inputs_missing"),
+    "config_invalid": ("error", "config_invalid"),
     "rate_limited": ("error", "rate_limited"),
     "api_http_error": ("error", "api_http_error"),
     "llm_json_invalid": ("error", "llm_json_invalid"),

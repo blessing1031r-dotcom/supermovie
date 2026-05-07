@@ -343,6 +343,10 @@ def main():
         msg = f"transcript must be dict, got {type(transcript).__name__}"
         print(f"ERROR: transcript validation failed: {msg}", file=sys.stderr)
         return emit_json("transcript_invalid", 3, error=msg)
+    if not isinstance(config, dict):
+        msg = f"project config must be dict, got {type(config).__name__}"
+        print(f"ERROR: project config validation failed: {msg}", file=sys.stderr)
+        return emit_json("config_invalid", 3, error=msg)
     fmt = config.get("format", "short")
     tone = config.get("tone", "プロフェッショナル")
     words = transcript.get("words", [])
