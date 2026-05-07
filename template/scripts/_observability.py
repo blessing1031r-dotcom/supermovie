@@ -509,6 +509,18 @@ def build_cost_payload(estimate: object, rate_input: object, rate_output: object
         raise ValueError(
             f"build_cost_payload: currency must be non-empty, got {currency!r}"
         )
+    # PR-LN: canonicalize by rejection, not mutation. Downstream aggregators
+    # should never have to coalesce "USD" / "usd" / "Usd" buckets.
+    if (
+        len(currency) != 3
+        or not currency.isascii()
+        or not currency.isalpha()
+        or not currency.isupper()
+    ):
+        raise ValueError(
+            f"build_cost_payload: currency must be uppercase 3-letter ASCII "
+            f"code, got {currency!r}"
+        )
     for label, val in (("tokens_input", tokens_input),
                        ("tokens_output", tokens_output)):
         if val is None:
