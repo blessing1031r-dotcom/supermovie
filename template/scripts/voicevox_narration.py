@@ -172,7 +172,7 @@ def check_engine() -> tuple[bool, str | None]:
     try:
         body = http_request("GET", "/version")
         return True, body.decode("utf-8").strip().strip('"')
-    except (urllib.error.URLError, OSError, urllib.error.HTTPError) as e:
+    except (urllib.error.URLError, OSError, urllib.error.HTTPError, UnicodeDecodeError) as e:  # PR-PM step 518: decode("utf-8") on /version response
         return False, str(e)
 
 

@@ -33854,19 +33854,31 @@ def test_vn_stat_oserror_guard_contract_lint() -> None:
 
 
 def test_vn_synthesize_unicode_guard_contract_lint() -> None:
-    """PR-PM step 518: synthesize() 呼び出しサイトの except 句に UnicodeDecodeError が
-    含まれることを確認する (code-text check)。
+    """PR-PM step 518: synthesize() 呼び出しサイトと check_engine() の except 句に
+    UnicodeDecodeError が含まれることを確認する (code-text check)。
 
     synthesize() 内の aq_body.decode("utf-8") が非 UTF-8 VOICEVOX レスポンスで
     UnicodeDecodeError を送出した場合、chunk ループの except 句が捕捉できなければ
     sentinel emit をスキップして uncaught propagation になる。
+    check_engine() も /version レスポンスの decode で同様の gap がある。
     """
     vn_path = Path(__file__).parent / "voicevox_narration.py"
     vn_text = vn_path.read_text(encoding="utf-8")
-    snippet = "except (urllib.error.HTTPError, urllib.error.URLError, OSError, json.JSONDecodeError, UnicodeDecodeError) as e:  # PR-PM step 508/518:"
-    assert snippet in vn_text, (
-        f"voicevox_narration.py synthesize call-site UnicodeDecodeError guard missing (step 518): {snippet!r}"
-    )
+    checks = [
+        (
+            "synthesize call-site",
+            "except (urllib.error.HTTPError, urllib.error.URLError, OSError, json.JSONDecodeError, UnicodeDecodeError) as e:  # PR-PM step 508/518:",
+        ),
+        (
+            "check_engine decode",
+            "except (urllib.error.URLError, OSError, urllib.error.HTTPError, UnicodeDecodeError) as e:  # PR-PM step 518: decode",
+        ),
+    ]
+    errors = []
+    for label, snippet in checks:
+        if snippet not in vn_text:
+            errors.append(f"{label}: missing {snippet!r}")
+    assert not errors, "voicevox_narration.py step 518 UnicodeDecodeError guards missing:\n" + "\n".join(errors)
 
 
 def main() -> int:
