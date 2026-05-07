@@ -1558,6 +1558,67 @@ def test_build_slide_data_rejects_invalid_vad_and_plan_load() -> None:
                 bsd.FPS = original_fps
 
 
+def test_build_slide_data_rejects_write_error() -> None:
+    """step 500: build_slide_data.py が slideData.ts write 失敗を build_slide_write_error exit 3 で reject."""
+    import build_slide_data as bsd
+    import contextlib
+    import io as _io
+    import sys as _sys
+
+    original_proj = bsd.PROJ
+    original_fps = bsd.FPS
+    old_argv = _sys.argv
+
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        bsd.PROJ = proj
+        bsd.FPS = 60
+        # Provide required inputs
+        (proj / "transcript_fixed.json").write_text(
+            json.dumps({"words": [], "segments": []}), encoding="utf-8"
+        )
+        (proj / "project-config.json").write_text(
+            json.dumps({"format": "youtube"}), encoding="utf-8"
+        )
+        # Create slides dir as a READ-ONLY file to simulate write failure
+        slides_dir = proj / "src" / "Slides"
+        slides_dir.mkdir(parents=True, exist_ok=True)
+        out_path = slides_dir / "slideData.ts"
+        out_path.write_text("// placeholder", encoding="utf-8")
+        import os as _os
+        _os.chmod(str(out_path), 0o444)  # read-only → write will fail
+        _sys.argv = ["build_slide_data.py", "--json-log"]
+        out_buf = _io.StringIO()
+        err_buf = _io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+                try:
+                    bsd.main()
+                    raise AssertionError("Expected SystemExit from build_slide_data on write failure")
+                except SystemExit as e:
+                    if e.code != 3:
+                        raise AssertionError(
+                            f"Expected exit code 3, got: {e.code}\n"
+                            f"stdout={out_buf.getvalue()!r}\nstderr={err_buf.getvalue()!r}"
+                        )
+            stderr_str = err_buf.getvalue()
+            assert "slideData.ts write failed" in stderr_str, (
+                f"Expected 'slideData.ts write failed' in stderr, got: {stderr_str!r}"
+            )
+            stdout_str = out_buf.getvalue()
+            lines = [ln for ln in stdout_str.splitlines() if ln.strip().startswith("{")]
+            assert lines, f"No JSON tail found in stdout: {stdout_str!r}"
+            tail = json.loads(lines[-1])
+            assert tail.get("category") == "slide-write-error", (
+                f"Expected category='slide-write-error', got {tail.get('category')!r}"
+            )
+        finally:
+            _os.chmod(str(out_path), 0o644)
+            _sys.argv = old_argv
+            bsd.PROJ = original_proj
+            bsd.FPS = original_fps
+
+
 def test_build_telop_data_main_e2e() -> None:
     """build_telop_data.py を temp project で main() 実行、call_budoux stub.
 
@@ -32531,6 +32592,7 @@ def main() -> int:
         test_build_slide_data_rejects_non_dict_project_config_root,
         test_build_slide_data_rejects_malformed_json_inputs,
         test_build_slide_data_rejects_invalid_vad_and_plan_load,
+        test_build_slide_data_rejects_write_error,
         test_build_telop_data_main_e2e,
         test_build_telop_data_validates_bad_transcript,
         test_build_telop_data_rejects_non_dict_transcript_root,
