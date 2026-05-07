@@ -357,6 +357,29 @@ def test_transcript_validation_rejects_non_bool_require_timing() -> None:
         )
 
 
+def test_transcript_validation_rejects_invalid_idx_values() -> None:
+    """PR-MC: validate_transcript_segment idx must be -1 or non-negative int."""
+    segment = {"text": "hi", "start": 0, "end": 1000}
+    timeline.validate_transcript_segment(segment, -1)
+    timeline.validate_transcript_segment(segment, 0)
+    timeline.validate_transcript_segment(segment, 12)
+
+    for bad_idx in (True, False, 1.0, "0", None, [], {}):
+        assert_raises(
+            lambda bad_idx=bad_idx: timeline.validate_transcript_segment(
+                segment, bad_idx
+            ),
+            TypeError,
+            f"transcript segment invalid idx type {bad_idx!r}",
+        )
+
+    assert_raises(
+        lambda: timeline.validate_transcript_segment(segment, -2),
+        ValueError,
+        "transcript segment idx below sentinel",
+    )
+
+
 def test_timeline_validation_rejects_bool_timing_values() -> None:
     """PR-LI: bool must not pass timing numeric validation."""
     assert_raises(
@@ -28216,6 +28239,7 @@ def main() -> int:
         test_transcript_segment_validation,
         test_transcript_segments_reject_non_monotonic_timing,
         test_transcript_validation_rejects_non_bool_require_timing,
+        test_transcript_validation_rejects_invalid_idx_values,
         test_timeline_validation_rejects_bool_timing_values,
         test_timeline_validation_rejects_non_finite_timing_values,
         test_timeline_validation_rejects_negative_timing_values,

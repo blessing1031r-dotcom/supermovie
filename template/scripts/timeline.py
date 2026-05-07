@@ -120,6 +120,18 @@ def _validate_bool_flag(value: object, label: str) -> bool:
     return value
 
 
+def _validate_segment_index(idx: object) -> int:
+    """segment label index guard."""
+    if isinstance(idx, bool) or not isinstance(idx, int):
+        raise TypeError(
+            f"idx must be -1 or non-negative int (bool / float / str reject), "
+            f"got {type(idx).__name__}"
+        )
+    if idx < -1:
+        raise ValueError(f"idx must be -1 or non-negative int, got {idx!r}")
+    return idx
+
+
 def _validate_cut_segments_shape(cut_segments: object) -> list[dict]:
     """cut-aware frame conversion shape guard."""
     if not isinstance(cut_segments, list):
@@ -300,6 +312,7 @@ def validate_transcript_segment(
     build_slide_data / build_telop_data など timing 駆動の script で使う
     (Codex Phase 3-J review Part B 設計概要 反映)。
     """
+    idx = _validate_segment_index(idx)
     require_timing = _validate_bool_flag(require_timing, "require_timing")
     label = f"segment[{idx}]" if idx >= 0 else "segment"
     if not isinstance(seg, dict):
