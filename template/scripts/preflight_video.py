@@ -450,7 +450,7 @@ def main():
         msg = f"ffprobe output must be dict, got {type(probe).__name__}"
         print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
         sys.exit(_emit("ffprobe_failed", 3, error=msg))
-    streams = probe.get("streams", []) or []
+    streams = probe.get("streams", [])
     if not isinstance(streams, list):
         msg = f"ffprobe streams must be list, got {type(streams).__name__}"
         print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
