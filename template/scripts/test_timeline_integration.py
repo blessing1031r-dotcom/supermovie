@@ -1848,6 +1848,7 @@ def test_build_slide_data_plan_strict_failure() -> None:
 def test_build_scripts_wiring() -> None:
     """build_slide_data / build_telop_data が timeline 経由で正しく wire されている."""
     import importlib
+    import inspect
     bsd = importlib.import_module("build_slide_data")
     btd = importlib.import_module("build_telop_data")
 
@@ -1862,6 +1863,16 @@ def test_build_scripts_wiring() -> None:
         raise AssertionError("build_slide_data should import validate_transcript_segment")
     if btd.validate_transcript_segment is None:
         raise AssertionError("build_telop_data should import validate_transcript_segment")
+    assert_eq(
+        btd._bcs_raw,
+        timeline.build_cut_segments_from_vad,
+        "build_telop_data cut helper should delegate to timeline.build_cut_segments_from_vad",
+    )
+    btd_cut_source = inspect.getsource(btd.build_cut_segments_from_vad)
+    if "return _bcs_raw(validate_vad_schema(vad), FPS)" not in btd_cut_source:
+        raise AssertionError("build_telop_data cut helper should return timeline raw helper output")
+    if "cursor_ms" in btd_cut_source or '"playbackStart"' in btd_cut_source:
+        raise AssertionError("build_telop_data cut helper should not keep inline playback frame mapping")
 
     # build_slide_data の cut helper wrapper が timeline 経由で動く
     cuts = bsd.build_cut_segments_from_vad(
@@ -1875,6 +1886,7 @@ def test_build_scripts_wiring() -> None:
         {"speech_segments": [{"start": 0, "end": 1000}]}
     )
     assert_eq(len(cuts_t), 1, "btd.build_cut_segments_from_vad len")
+    assert_eq(cuts_t[0]["playbackEnd"], 30, "btd cut mapping uses timeline helper")
 
     # 壊れた VAD で raise (3 script で挙動統一の確認)
     bad_vad = {"speech_segments": [{"start": 100, "end": 50}]}

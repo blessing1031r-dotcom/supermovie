@@ -43,6 +43,7 @@ from _observability import (  # noqa: E402
 from timeline import (  # noqa: E402
     TranscriptSegmentError,
     VadSchemaError,
+    build_cut_segments_from_vad as _bcs_raw,
     ms_to_playback_frame as _msf_raw,
     read_video_config_fps,
     validate_transcript_segment,
@@ -250,28 +251,12 @@ def call_budoux(seg_texts: list[str]) -> list[list[str]]:
 
 # ---------------- VAD / cut ----------------
 def build_cut_segments_from_vad(vad):
-    """vad の speech_segments から cut timeline 構築 (Phase 3-K: validate 経由).
+    """Phase 3-J: timeline.build_cut_segments_from_vad を FPS 注入 wrapper.
 
-    Codex Phase 3-J review P2 #2 反映: build_slide_data / voicevox_narration と
-    同じ validate_vad_schema を経由して、3 script で壊れた VAD の扱いを揃える。
+    validate を経由して schema 破損は raise。
+    cut mapping 本体は timeline.py を source of truth にする。
     """
-    validate_vad_schema(vad)
-    speech = vad["speech_segments"]
-    out = []
-    cursor_ms = 0
-    for i, seg in enumerate(speech):
-        s_ms = seg["start"]
-        e_ms = seg["end"]
-        dur_ms = e_ms - s_ms
-        out.append({
-            "id": i + 1,
-            "originalStartMs": s_ms,
-            "originalEndMs": e_ms,
-            "playbackStart": round(cursor_ms / 1000 * FPS),
-            "playbackEnd": round((cursor_ms + dur_ms) / 1000 * FPS),
-        })
-        cursor_ms += dur_ms
-    return out
+    return _bcs_raw(validate_vad_schema(vad), FPS)
 
 
 def find_cut_segment_for_ms(ms, cut_segments):
