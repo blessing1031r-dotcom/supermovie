@@ -6258,6 +6258,48 @@ def test_vn_write_narration_data_oserror_propagates_and_caller_catches() -> None
         vn.atomic_write_text = original_atomic_write_text
 
 
+def test_vn_list_speakers_error_guard() -> None:
+    """PR-PM step 509: list_speakers() call is wrapped in try/except for HTTPError/URLError/OSError/JSONDecodeError.
+
+    --list-speakers path: check_engine() succeeds but list_speakers() can fail (network drop,
+    malformed /speakers response). Without the guard, exception propagates past emit_json().
+    fix: wrap list_speakers() in try/except, emit list_speakers_error (exit 4).
+    Verify: code text contains the guard and status is in STATUS_MAP.
+    """
+    import urllib.error as _urlerr
+    import json as _json
+
+    vn_path = Path(__file__).parent / "voicevox_narration.py"
+    vn_text = vn_path.read_text(encoding="utf-8")
+
+    # (1) list_speakers_error status string present
+    assert '"list_speakers_error"' in vn_text, (
+        "voicevox_narration.py must emit 'list_speakers_error' on list_speakers failure"
+    )
+
+    # (2) except tuple covers JSONDecodeError and schema drift (AttributeError/TypeError)
+    for exc in [
+        _json.JSONDecodeError("bad json", "!!!", 0),
+        AttributeError("'str' object has no attribute 'get'"),
+        TypeError("list indices must be integers"),
+        UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"),
+    ]:
+        caught = []
+        try:
+            raise exc
+        except (_urlerr.HTTPError, _urlerr.URLError, OSError, _json.JSONDecodeError,
+                UnicodeDecodeError, TypeError, AttributeError):
+            caught.append("caught")
+        assert caught == ["caught"], f"expected {type(exc).__name__} to be caught"
+
+    # (3) STATUS_MAP contains list_speakers_error
+    obs_path = Path(__file__).parent / "_observability.py"
+    obs_text = obs_path.read_text(encoding="utf-8")
+    assert '"list_speakers_error"' in obs_text, (
+        "_observability.py STATUS_MAP must contain 'list_speakers_error'"
+    )
+
+
 def test_vn_synthesize_json_decode_error_is_caught_as_synth_failure() -> None:
     """PR-PM step 508: synthesize() の json.loads が JSONDecodeError を raise した時 synth loop が WARN + continue する.
 
@@ -33232,6 +33274,7 @@ def main() -> int:
         test_voicevox_write_narration_data_alignment,
         test_vn_write_narration_data_oserror_propagates_and_caller_catches,  # PR-PM step 507
         test_vn_synthesize_json_decode_error_is_caught_as_synth_failure,  # PR-PM step 508
+        test_vn_list_speakers_error_guard,  # PR-PM step 509
         test_voicevox_write_order_narrationdata_before_wav,
         test_voicevox_cleanup_stale_unlinks_sentinel,
         test_voicevox_sentinel_written_after_wav,

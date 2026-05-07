@@ -145,6 +145,7 @@ STATUS_MAP = {
     "generate_slide_plan_write_error": ("error", "slide-plan-write-error"),
     "api_network_error": ("error", "api-network-error"),
     "build_telop_transcript_invalid": ("error", "transcript-invalid"),
+    "list_speakers_error": ("error", "list-speakers-error"),
 }
 
 
