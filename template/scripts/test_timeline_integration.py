@@ -4347,6 +4347,37 @@ def test_voicevox_speaker_cli_rejects_underscore_value() -> None:
         vn.check_engine = original_check_engine
 
 
+def test_voicevox_fps_cli_rejects_underscore_value() -> None:
+    """--fps の underscore integer を argparse type=int の緩い解釈に任せず拒否。"""
+    import voicevox_narration as vn
+    import contextlib
+    import io as _io
+
+    original_check_engine = vn.check_engine
+    try:
+        vn.check_engine = lambda: (False, "connection refused")
+        import sys as _sys
+
+        old_argv = _sys.argv
+        _sys.argv = ["voicevox_narration.py", "--fps", "3_0", "--json-log"]
+        err_buf = _io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err_buf):
+                try:
+                    ret = vn.main()
+                except SystemExit as e:
+                    ret = e.code
+            assert_eq(ret, 2, "--fps=3_0 -> argparse exit 2")
+            if "invalid integer token" not in err_buf.getvalue():
+                raise AssertionError(
+                    f"underscore fps stderr should mention invalid integer token: {err_buf.getvalue()!r}"
+                )
+        finally:
+            _sys.argv = old_argv
+    finally:
+        vn.check_engine = original_check_engine
+
+
 def test_visual_smoke_cli_mismatch_and_restore() -> None:
     """Phase 3-V P4 review P2 fix (CODEX_2ND_BATCH_REVIEW:9):
     cli() の finally restore + mismatched/exit 2 を mock-only で verify."""
@@ -25067,7 +25098,7 @@ def test_supermovie_narration_fps_docs_match_voicevox_resolution_lint() -> None:
 
     for pattern, desc in (
         (r"from\s+timeline\s+import\s*\([\s\S]*?\bDEFAULT_FPS\b[\s\S]*?\bread_video_config_fps\b", "timeline DEFAULT_FPS/read_video_config_fps imports"),
-        (r"ap\.add_argument\(\s*['\"]--fps['\"][\s\S]*?type\s*=\s*int[\s\S]*?default\s*=\s*None", "--fps argparse int optional"),
+        (r"ap\.add_argument\(\s*['\"]--fps['\"][\s\S]*?type\s*=\s*parse_cli_int_token[\s\S]*?default\s*=\s*None", "--fps argparse strict int optional"),
         (r"help=f?['\"][\s\S]*?default:\s*src/videoConfig\.ts FPS[\s\S]*?\{DEFAULT_FPS\}", "--fps help mentions videoConfig and DEFAULT_FPS"),
         (r"fps\s*=\s*args\.fps\s+if\s+args\.fps\s+is\s+not\s+None\s+else\s+read_video_config_fps\(PROJ\)", "FPS resolution priority"),
         (r"if\s+fps\s*<=\s*0\s*:", "invalid fps guard"),
@@ -30740,6 +30771,7 @@ def main() -> int:
         test_voicevox_json_log_engine_skip_path,
         test_voicevox_json_log_engine_strict_path,
         test_voicevox_speaker_cli_rejects_underscore_value,
+        test_voicevox_fps_cli_rejects_underscore_value,
         test_visual_smoke_cli_mismatch_and_restore,
         test_visual_smoke_probe_dim_rejects_malformed_ffprobe_json,
         test_visual_smoke_probe_dim_error_emits_tail,
