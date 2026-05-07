@@ -1452,6 +1452,60 @@ def test_generate_slide_plan_missing_inputs() -> None:
             gsp.PROJ = original_proj
 
 
+def test_generate_slide_plan_rejects_non_dict_transcript_root() -> None:
+    """generate_slide_plan.py: transcript root 非 dict を transcript_invalid として reject."""
+    import generate_slide_plan as gsp
+    import contextlib
+    import io as _io
+    import os as _os
+    import sys as _sys
+
+    original_proj = gsp.PROJ
+    original_api_key = _os.environ.get("ANTHROPIC_API_KEY")
+    old_argv = _sys.argv
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        gsp.PROJ = proj
+        (proj / "transcript_fixed.json").write_text(
+            json.dumps(["not", "a", "dict"]),
+            encoding="utf-8",
+        )
+        (proj / "project-config.json").write_text(
+            json.dumps({"format": "short"}),
+            encoding="utf-8",
+        )
+        _os.environ.pop("ANTHROPIC_API_KEY", None)
+        _sys.argv = ["generate_slide_plan.py", "--dry-run", "--json-log"]
+        out_buf = _io.StringIO()
+        err_buf = _io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+                ret = gsp.main()
+            assert_eq(ret, 3, "non-dict transcript root exit 3")
+            err_text = err_buf.getvalue()
+            if "transcript validation failed" not in err_text:
+                raise AssertionError(
+                    f"Expected transcript validation stderr, got: {err_text!r}"
+                )
+            lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+            payload = json.loads(lines[-1])
+            assert_eq(payload.get("status"), "error", "non-dict transcript status")
+            assert_eq(payload.get("category"), "transcript_invalid", "non-dict transcript category")
+            assert_eq(payload.get("exit_code"), 3, "non-dict transcript exit_code")
+            assert_eq(
+                payload.get("error"),
+                "transcript must be dict, got list",
+                "non-dict transcript error",
+            )
+        finally:
+            _sys.argv = old_argv
+            if original_api_key is None:
+                _os.environ.pop("ANTHROPIC_API_KEY", None)
+            else:
+                _os.environ["ANTHROPIC_API_KEY"] = original_api_key
+            gsp.PROJ = original_proj
+
+
 def test_generate_slide_plan_api_mock_success() -> None:
     """generate_slide_plan API mock: valid response → slide_plan.json 生成.
 
@@ -28288,6 +28342,7 @@ def main() -> int:
         test_build_telop_data_validates_bad_transcript,
         test_generate_slide_plan_skip_no_api_key,
         test_generate_slide_plan_missing_inputs,
+        test_generate_slide_plan_rejects_non_dict_transcript_root,
         test_generate_slide_plan_api_mock_success,
         test_generate_slide_plan_api_rate_limited_429,
         test_generate_slide_plan_api_http_error_non_429,

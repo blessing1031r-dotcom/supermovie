@@ -703,6 +703,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 401 | `template/scripts/timeline.py` の `validate_transcript_segment(idx=...)` が label index に `-1` または非負 int のみを受け付け、bool / float / str / container / `-2` 以下を reject することを lint (`test_transcript_validation_rejects_invalid_idx_values`、Codex 推奨 PR-MC)。public helper の caller typo が `segment[True]` や比較 TypeError に流れる drift を防ぐ | PR-MC |
 | 402 | `template/scripts/build_slide_data.py` の `build_cut_segments_from_vad()` wrapper が VAD 不在 `None` のみを empty cut 扱いし、空 dict/list など falsy な破損 VAD を `validate_vad_schema()` 経由で reject することを lint (`test_build_scripts_wiring`、Codex 推奨 PR-MD)。`vad_result.json` が壊れているのに slide generation が cut 無しへ silent fallback する drift を防ぐ | PR-MD |
 | 403 | `template/scripts/voicevox_narration.py` の `collect_chunks()` が transcript root に dict を要求し、list / str など root 破損を `TranscriptSegmentError` で reject することを lint (`test_voicevox_collect_chunks_validation`、Codex 推奨 PR-ME)。壊れた `transcript_fixed.json` root が empty chunks として扱われ、narration 生成が「chunk なし」へ silent fallback する drift を防ぐ | PR-ME |
+| 404 | `template/scripts/generate_slide_plan.py` が `transcript_fixed.json` root に dict を要求し、list / str など root 破損を `transcript_invalid` JSON tail + exit 3 で reject することを lint (`test_generate_slide_plan_rejects_non_dict_transcript_root`、Codex 推奨 PR-MF)。壊れた transcript root が prompt construction の `.get()` AttributeError に流れ、observability tail なしで落ちる drift を防ぐ | PR-MF |
 
 ## Test Requirements
 
