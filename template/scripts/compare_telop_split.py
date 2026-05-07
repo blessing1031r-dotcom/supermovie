@@ -270,7 +270,7 @@ def main():
     except FileNotFoundError as e:
         print(f"ERROR: transcript_fixed.json not found: {e}", file=sys.stderr)
         return _emit_early("transcript_missing", 3, error=redact_error_message(str(e)))
-    except (json.JSONDecodeError, OSError) as e:
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:  # PR-PM step 513
         print(f"ERROR: transcript_fixed.json parse failed: {e}", file=sys.stderr)
         return _emit_early("transcript_invalid", 3, error=redact_error_message(str(e)))
     if not isinstance(transcript, dict):
@@ -296,7 +296,7 @@ def main():
     typo = (PROJ / "typo_dict.json")
     try:
         typo_dict = json.loads(typo.read_text(encoding="utf-8")) if typo.exists() else {}
-    except (json.JSONDecodeError, OSError) as e:
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:  # PR-PM step 513
         print(f"ERROR: typo_dict.json parse failed: {e}", file=sys.stderr)
         return _emit_early("typo_dict_invalid", 3, error=redact_error_message(str(e)))
     if not isinstance(typo_dict, dict):

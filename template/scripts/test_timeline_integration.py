@@ -2873,6 +2873,82 @@ def test_generate_slide_plan_rejects_malformed_json_inputs() -> None:
                 gsp.PROJ = original_proj
 
 
+def test_generate_slide_plan_rejects_unicode_decode_error() -> None:
+    """step 513: generate_slide_plan.py が transcript_fixed.json / project-config.json の
+    UnicodeDecodeError を structured tail で reject。"""
+    import generate_slide_plan as gsp
+    import contextlib
+    import io as _io
+    import os as _os
+    import sys as _sys
+
+    INVALID_UTF8 = b"\x80\x81\x82"
+    valid_transcript = json.dumps({"words": [], "segments": []})
+    valid_config = json.dumps({"format": "short"})
+
+    original_proj = gsp.PROJ
+    original_api_key = _os.environ.get("ANTHROPIC_API_KEY")
+    old_argv = _sys.argv
+
+    # Case 1: transcript_fixed.json invalid UTF-8 → exit 3
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        gsp.PROJ = proj
+        (proj / "transcript_fixed.json").write_bytes(INVALID_UTF8)
+        (proj / "project-config.json").write_text(valid_config, encoding="utf-8")
+        _os.environ.pop("ANTHROPIC_API_KEY", None)
+        _sys.argv = ["generate_slide_plan.py", "--dry-run", "--json-log"]
+        try:
+            out_buf = _io.StringIO()
+            err_buf = _io.StringIO()
+            with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+                ret = gsp.main()
+            if ret != 3:
+                raise AssertionError(f"unicode transcript: Expected exit 3, got: {ret}")
+            if "transcript_fixed.json load failed" not in err_buf.getvalue():
+                raise AssertionError("unicode transcript: expected load failed in stderr")
+            lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+            payload = json.loads(lines[-1])
+            assert_eq(payload.get("status"), "error", "gsp unicode transcript status")
+            assert_eq(payload.get("exit_code"), 3, "gsp unicode transcript exit_code")
+        finally:
+            _sys.argv = old_argv
+            gsp.PROJ = original_proj
+            if original_api_key is None:
+                _os.environ.pop("ANTHROPIC_API_KEY", None)
+            else:
+                _os.environ["ANTHROPIC_API_KEY"] = original_api_key
+
+    # Case 2: project-config.json invalid UTF-8 → exit 3
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        gsp.PROJ = proj
+        (proj / "transcript_fixed.json").write_text(valid_transcript, encoding="utf-8")
+        (proj / "project-config.json").write_bytes(INVALID_UTF8)
+        _os.environ.pop("ANTHROPIC_API_KEY", None)
+        _sys.argv = ["generate_slide_plan.py", "--dry-run", "--json-log"]
+        try:
+            out_buf = _io.StringIO()
+            err_buf = _io.StringIO()
+            with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+                ret = gsp.main()
+            if ret != 3:
+                raise AssertionError(f"unicode config: Expected exit 3, got: {ret}")
+            if "project-config.json load failed" not in err_buf.getvalue():
+                raise AssertionError("unicode config: expected load failed in stderr")
+            lines = [ln for ln in out_buf.getvalue().splitlines() if ln.strip()]
+            payload = json.loads(lines[-1])
+            assert_eq(payload.get("status"), "error", "gsp unicode config status")
+            assert_eq(payload.get("exit_code"), 3, "gsp unicode config exit_code")
+        finally:
+            _sys.argv = old_argv
+            gsp.PROJ = original_proj
+            if original_api_key is None:
+                _os.environ.pop("ANTHROPIC_API_KEY", None)
+            else:
+                _os.environ["ANTHROPIC_API_KEY"] = original_api_key
+
+
 def test_generate_slide_plan_rejects_write_error() -> None:
     """step 502: generate_slide_plan.py が slide_plan.json write 失敗を generate_slide_plan_write_error exit 3 で reject."""
     import generate_slide_plan as gsp
@@ -9925,6 +10001,72 @@ def test_compare_telop_split_typo_dict_invalid_emits_tail() -> None:
         v1_tail = json.loads(lines[-1])
         assert v1_tail["status"] == "error"
         assert v1_tail["category"] == "typo_dict_invalid"
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+
+def test_compare_telop_split_rejects_unicode_decode_error() -> None:
+    """step 513: compare_telop_split で transcript_fixed.json / typo_dict.json の
+    UnicodeDecodeError を structured tail で reject。"""
+    import os as _os
+    import io
+    import sys as _sys
+    import importlib
+    from contextlib import redirect_stdout, redirect_stderr
+
+    INVALID_UTF8 = b"\x80\x81\x82"
+    saved_argv = list(_sys.argv)
+    saved_cwd = _os.getcwd()
+
+    # Case 1: transcript_fixed.json invalid UTF-8 → transcript_invalid exit 3
+    proj = Path(tempfile.mkdtemp(prefix="cts_uni_transcript_"))
+    proj.joinpath("transcript_fixed.json").write_bytes(INVALID_UTF8)
+    try:
+        _os.chdir(str(proj))
+        import compare_telop_split as cts
+        importlib.reload(cts)
+        cts.PROJ = proj
+        _sys.argv = ["compare_telop_split.py", "/dev/null", "/dev/null", "--json-log"]
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            rc = cts.main()
+        if rc != 3:
+            raise AssertionError(f"unicode transcript: Expected exit 3, got {rc}")
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        v1_tail = json.loads(lines[-1])
+        assert v1_tail["status"] == "error", f"unicode transcript: expected error, got {v1_tail['status']}"
+    finally:
+        _os.chdir(saved_cwd)
+        _sys.argv = saved_argv
+        import shutil as _shutil
+        _shutil.rmtree(proj, ignore_errors=True)
+
+    # Case 2: typo_dict.json invalid UTF-8 → typo_dict_invalid exit 3
+    proj = Path(tempfile.mkdtemp(prefix="cts_uni_typo_"))
+    proj.joinpath("transcript_fixed.json").write_text(
+        json.dumps({"duration_ms": 1000, "words": [], "segments": []}), encoding="utf-8"
+    )
+    proj.joinpath("typo_dict.json").write_bytes(INVALID_UTF8)
+    try:
+        _os.chdir(str(proj))
+        import compare_telop_split as cts
+        importlib.reload(cts)
+        cts.PROJ = proj
+        _sys.argv = ["compare_telop_split.py", "/dev/null", "/dev/null", "--json-log"]
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            rc = cts.main()
+        if rc != 3:
+            raise AssertionError(f"unicode typo_dict: Expected exit 3, got {rc}")
+        lines = [l for l in out_buf.getvalue().splitlines() if l.strip()]
+        v1_tail = json.loads(lines[-1])
+        assert v1_tail["status"] == "error", f"unicode typo_dict: expected error status"
+        assert v1_tail["category"] == "typo_dict_invalid", f"unicode typo_dict: expected typo_dict_invalid"
     finally:
         _os.chdir(saved_cwd)
         _sys.argv = saved_argv
@@ -33649,6 +33791,7 @@ def main() -> int:
         test_generate_slide_plan_rejects_non_dict_transcript_root,
         test_generate_slide_plan_rejects_non_dict_project_config_root,
         test_generate_slide_plan_rejects_malformed_json_inputs,
+        test_generate_slide_plan_rejects_unicode_decode_error,
         test_generate_slide_plan_rejects_write_error,
         test_generate_slide_plan_rejects_network_error,
         test_generate_slide_plan_rejects_malformed_prompt_lists,
@@ -33732,6 +33875,7 @@ def main() -> int:
         test_compare_telop_split_rejects_malformed_transcript_words,
         test_compare_telop_split_rejects_malformed_transcript_word_text,
         test_compare_telop_split_typo_dict_invalid_emits_tail,
+        test_compare_telop_split_rejects_unicode_decode_error,
         test_compare_telop_split_rejects_non_dict_typo_dict_root,
         test_compare_telop_split_rejects_malformed_typo_preserve,
         test_compare_telop_split_rejects_unicode_telop_numeric_tokens,
