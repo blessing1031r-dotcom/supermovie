@@ -201,7 +201,7 @@ def main():
     ap.add_argument("--max-tokens", type=int, default=None,
                     help=f"max_tokens override (default {MAX_TOKENS_DEFAULT}、cap {MAX_TOKENS_CAP}、"
                          f"env: SUPERMOVIE_MAX_TOKENS)")
-    ap.add_argument("--max-input-words", type=int, default=None,
+    ap.add_argument("--max-input-words", default=None,
                     help=f"transcript words preview の cap (default {MAX_INPUT_WORDS_DEFAULT}、"
                          f"env: SUPERMOVIE_MAX_INPUT_WORDS)")
     ap.add_argument("--max-input-segments", default=None,
