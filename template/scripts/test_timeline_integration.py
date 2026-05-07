@@ -130,6 +130,32 @@ def test_read_video_config_fps_rejects_invalid_default() -> None:
             )
 
 
+def test_read_video_config_fps_rejects_unicode_digit_token() -> None:
+    """read_video_config_fps は Unicode digit FPS を canonical FPS として読まない."""
+    with tempfile.TemporaryDirectory() as tmp:
+        proj = Path(tmp)
+        src = proj / "src"
+        src.mkdir()
+        cases = [
+            ("fullwidth", "６０"),
+            ("arabic-indic", "٦٠"),
+        ]
+        for case_name, fps_token in cases:
+            (src / "videoConfig.ts").write_text(
+                "export type VideoFormat = 'youtube' | 'short' | 'square';\n"
+                "export const FORMAT: VideoFormat = 'youtube';\n"
+                f"export const FPS = {fps_token};\n"
+                "export const SOURCE_DURATION_FRAMES = 1500;\n"
+                "export const VIDEO_FILE = 'main.mp4';\n",
+                encoding="utf-8",
+            )
+            assert_eq(
+                timeline.read_video_config_fps(proj, default=42),
+                42,
+                f"{case_name} FPS token fallback",
+            )
+
+
 def test_vad_schema_validation() -> None:
     """VadSchemaError が部分破損を全て検出する."""
     # 非 dict
@@ -31005,6 +31031,7 @@ def main() -> int:
     tests = [
         test_fps_consistency,
         test_read_video_config_fps_rejects_invalid_default,
+        test_read_video_config_fps_rejects_unicode_digit_token,
         test_vad_schema_validation,
         test_ms_to_playback_frame,
         test_ms_to_playback_frame_edge_cases,
