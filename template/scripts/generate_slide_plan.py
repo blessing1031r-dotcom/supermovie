@@ -229,7 +229,7 @@ def main():
                          "(env v1: SUPERMOVIE_RATE_ANTHROPIC_INPUT_USD_PER_MTOK、"
                          "env v0 alias: SUPERMOVIE_RATE_INPUT_PER_MTOK、"
                          "両 rate 設定時のみ dry-run cost estimate 計算)")
-    ap.add_argument("--rate-output", type=float, default=None,
+    ap.add_argument("--rate-output", default=None,
                     help="output cost rate USD/MTok "
                          "(env v1: SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK、"
                          "env v0 alias: SUPERMOVIE_RATE_OUTPUT_PER_MTOK)")
@@ -360,6 +360,7 @@ def main():
             args.rate_output,
             "SUPERMOVIE_RATE_ANTHROPIC_OUTPUT_USD_PER_MTOK",
             v0_alias="SUPERMOVIE_RATE_OUTPUT_PER_MTOK",
+            arg_name="rate-output",
         )
         # PR-F: pre-API cost abort threshold。CLI > env、None で無効。
         # rate 未設定 (estimate=None) 時は閾値があっても skip (cost 不明で abort せず通常進行)。
