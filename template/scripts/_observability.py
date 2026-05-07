@@ -490,6 +490,12 @@ def build_cost_payload(estimate: object, rate_input: object, rate_output: object
             f"build_cost_payload: rate_source must contain a non-empty env "
             f"var name after 'env:' prefix, got {rate_source!r}"
         )
+    env_name = rate_source[len("env:"):]
+    if not env_name.isascii() or any(ch.isspace() for ch in env_name):
+        raise ValueError(
+            f"build_cost_payload: rate_source env name must be ASCII and "
+            f"contain no whitespace, got {rate_source!r}"
+        )
     # PR-BG (Codex 06:42 verdict BS) defense: currency / tokens_* の cell-value
     # 型 contract。PR-BE で docs §Cost JSON Shape ↔ build_cost_payload output
     # key の双方向 set lint は積んだが、各 cell の値型 (currency / tokens
