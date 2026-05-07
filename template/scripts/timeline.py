@@ -79,6 +79,18 @@ def _validate_fps(fps: object) -> int:
     return fps
 
 
+def _validate_ms(value: object, label: str) -> int | float:
+    """millisecond/frame mapping numeric guard."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(
+            f"{label} must be finite int|float (bool / str reject), "
+            f"got {type(value).__name__}"
+        )
+    if not math.isfinite(value):
+        raise ValueError(f"{label} must be finite int|float, got {value!r}")
+    return value
+
+
 def validate_vad_schema(vad: object) -> dict:
     """vad_result.json の最低限 schema を検査して dict を返す.
 
@@ -163,12 +175,15 @@ def load_cut_segments(proj: Path, fps: int, fail_fast: bool = False) -> list[dic
     return build_cut_segments_from_vad(validated, fps)
 
 
-def ms_to_playback_frame(ms: int, fps: int, cut_segments: list[dict]) -> int | None:
+def ms_to_playback_frame(
+    ms: int | float, fps: int, cut_segments: list[dict]
+) -> int | None:
     """元動画の ms を playback frame に変換 (cut-aware).
 
     cut_segments が空なら直接変換。ms が cut 範囲外 (cut で除外された箇所) は
     None を返す (呼出側が累積 fallback or skip 判断)。
     """
+    ms = _validate_ms(ms, "ms")
     fps = _validate_fps(fps)
     if not cut_segments:
         return round(ms / 1000 * fps)
