@@ -531,7 +531,7 @@ def main():
     ap.add_argument("--output", default=str(PROJ / "public" / "narration.wav"))
     ap.add_argument(
         "--fps",
-        type=int,
+        type=parse_cli_int_token,
         default=None,
         help=f"narrationData.ts に書き込む frame 換算 fps "
              f"(default: src/videoConfig.ts FPS、読めなければ {DEFAULT_FPS})",
