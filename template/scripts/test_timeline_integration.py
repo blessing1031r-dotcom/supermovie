@@ -4316,6 +4316,37 @@ def test_voicevox_json_log_engine_strict_path() -> None:
         vn.check_engine = original_check_engine
 
 
+def test_voicevox_speaker_cli_rejects_underscore_value() -> None:
+    """--speaker の underscore integer を argparse type=int の緩い解釈に任せず拒否。"""
+    import voicevox_narration as vn
+    import contextlib
+    import io as _io
+
+    original_check_engine = vn.check_engine
+    try:
+        vn.check_engine = lambda: (False, "connection refused")
+        import sys as _sys
+
+        old_argv = _sys.argv
+        _sys.argv = ["voicevox_narration.py", "--speaker", "1_000", "--json-log"]
+        err_buf = _io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err_buf):
+                try:
+                    ret = vn.main()
+                except SystemExit as e:
+                    ret = e.code
+            assert_eq(ret, 2, "--speaker=1_000 -> argparse exit 2")
+            if "invalid integer token" not in err_buf.getvalue():
+                raise AssertionError(
+                    f"underscore speaker stderr should mention invalid integer token: {err_buf.getvalue()!r}"
+                )
+        finally:
+            _sys.argv = old_argv
+    finally:
+        vn.check_engine = original_check_engine
+
+
 def test_visual_smoke_cli_mismatch_and_restore() -> None:
     """Phase 3-V P4 review P2 fix (CODEX_2ND_BATCH_REVIEW:9):
     cli() の finally restore + mismatched/exit 2 を mock-only で verify."""
@@ -25150,7 +25181,7 @@ def test_supermovie_narration_synthesis_docs_match_voicevox_api_contract_lint() 
     }
     required_code_snippets = {
         "default speaker constant": "DEFAULT_SPEAKER = 3",
-        "speaker argparse": 'ap.add_argument("--speaker", type=int, default=DEFAULT_SPEAKER',
+        "speaker argparse": 'ap.add_argument("--speaker", type=parse_cli_int_token, default=DEFAULT_SPEAKER',
         "list speakers argparse": 'ap.add_argument("--list-speakers", action="store_true")',
         "speakers endpoint": 'http_request("GET", "/speakers")',
         "synthesize function": "def synthesize(text: str, speaker: int) -> bytes:",
@@ -30708,6 +30739,7 @@ def main() -> int:
         test_voicevox_json_log_emits_pure_json,
         test_voicevox_json_log_engine_skip_path,
         test_voicevox_json_log_engine_strict_path,
+        test_voicevox_speaker_cli_rejects_underscore_value,
         test_visual_smoke_cli_mismatch_and_restore,
         test_visual_smoke_probe_dim_rejects_malformed_ffprobe_json,
         test_visual_smoke_probe_dim_error_emits_tail,

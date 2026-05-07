@@ -93,6 +93,16 @@ EMPTY_NARRATION_DATA = (
 )
 
 
+def parse_cli_int_token(value: str) -> int:
+    text = str(value).strip()
+    if not text or "_" in text:
+        raise argparse.ArgumentTypeError(f"invalid integer token: {value!r}")
+    try:
+        return int(text)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"invalid integer token: {value!r}") from e
+
+
 def _tmp_path(path: Path) -> Path:
     """`.{name}.{pid}.tmp` 形式の temp path を返す.
 
@@ -511,7 +521,7 @@ def collect_chunks(args, transcript: dict) -> list[dict]:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--speaker", type=int, default=DEFAULT_SPEAKER,
+    ap.add_argument("--speaker", type=parse_cli_int_token, default=DEFAULT_SPEAKER,
                     help=f"VOICEVOX speaker id (default {DEFAULT_SPEAKER}=ずんだもんノーマル)")
     ap.add_argument("--script", help="custom plain-text narration (1 line = 1 chunk)")
     ap.add_argument("--script-json", help="custom JSON {segments:[{text}]} narration")
