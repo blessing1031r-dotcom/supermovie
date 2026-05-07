@@ -526,8 +526,6 @@ def main():
                         print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
                         sys.exit(_emit("ffprobe_failed", 3, error=msg))
     fmt_meta = probe.get("format", {})
-    if fmt_meta is None:
-        fmt_meta = {}
     if not isinstance(fmt_meta, dict):
         msg = f"ffprobe format must be dict, got {type(fmt_meta).__name__}"
         print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
