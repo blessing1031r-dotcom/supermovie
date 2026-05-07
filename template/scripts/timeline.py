@@ -192,6 +192,10 @@ def validate_vad_schema(vad: object) -> dict:
                 raise VadSchemaError(
                     f"segment[{i}].{key} must be finite int|float, got {type(v).__name__}"
                 )
+            if v < 0:
+                raise VadSchemaError(
+                    f"segment[{i}].{key} must be >= 0, got {v!r}"
+                )
         if seg["start"] > seg["end"]:
             raise VadSchemaError(
                 f"segment[{i}] start={seg['start']} > end={seg['end']}"
@@ -312,6 +316,8 @@ def validate_transcript_segment(
             raise TranscriptSegmentError(
                 f"{label}.{k} must be finite int|float|None, got {type(v).__name__}"
             )
+        if _is_timing_number(v) and v < 0:
+            raise TranscriptSegmentError(f"{label}.{k} must be >= 0, got {v!r}")
     if require_timing:
         if not _is_timing_number(s):
             raise TranscriptSegmentError(

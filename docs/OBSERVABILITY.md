@@ -699,6 +699,7 @@ str literal 未出現の key は orphaned dead entry であり、mapping 膨張�
 | 397 | `template/scripts/timeline.py` の `validate_transcript_segment()` / `validate_transcript_segments()` が `require_timing` に explicit bool のみを受け付け、`0` / `1` / `"false"` など truthy/falsy 値を reject することを lint (`test_transcript_validation_rejects_non_bool_require_timing`、Codex 推奨 PR-LY)。flag typo が optional/strict timing validation mode を silent に切り替える drift を防ぐ | PR-LY |
 | 398 | `template/scripts/timeline.py` の `load_cut_segments(fail_fast=...)` が explicit bool のみを受け付け、`0` / `1` / `"false"` など truthy/falsy 値を reject することを lint (`test_load_cut_segments_fail_fast`、Codex 推奨 PR-LZ)。VAD 破損時の soft fallback / fail-fast strategy が flag typo で silent に切り替わる drift を防ぐ | PR-LZ |
 | 399 | `template/scripts/timeline.py` の `_validate_ms()` が `ms` と `cut_segments[*].originalStartMs/originalEndMs` に non-negative finite int|float のみを受け付け、負値を reject することを lint (`test_ms_to_playback_frame_rejects_invalid_ms_values` / `test_ms_to_playback_frame_rejects_invalid_cut_segment_value_types`、Codex 推奨 PR-MA)。負の millisecond が frame 計算や cut-aware range に silent に入る drift を防ぐ | PR-MA |
+| 400 | `template/scripts/timeline.py` の `validate_vad_schema()` / `validate_transcript_segment()` が `start` / `end` timing に non-negative finite int|float のみを受け付け、負値を reject することを lint (`test_timeline_validation_rejects_negative_timing_values`、Codex 推奨 PR-MB)。負 timestamp が VAD / transcript schema validation を通過して後段 mapping に入る drift を防ぐ | PR-MB |
 
 ## Test Requirements
 
