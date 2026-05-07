@@ -8330,6 +8330,8 @@ def test_preflight_video_rejects_malformed_ffprobe_side_data_list() -> None:
     cases = [
         ({"codec_type": "video", "width": 320, "height": 240, "side_data_list": "bad"},
          "ffprobe streams[0].side_data_list must be list, got str"),
+        ({"codec_type": "video", "width": 320, "height": 240, "side_data_list": None},
+         "ffprobe streams[0].side_data_list must be list, got NoneType"),
         ({"codec_type": "video", "width": 320, "height": 240, "side_data_list": ["bad"]},
          "ffprobe streams[0].side_data_list[0] must be dict, got str"),
     ]

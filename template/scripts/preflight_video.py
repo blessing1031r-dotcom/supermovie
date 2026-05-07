@@ -471,8 +471,6 @@ def main():
             print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
             sys.exit(_emit("ffprobe_failed", 3, error=msg))
         side_data = stream.get("side_data_list", [])
-        if side_data is None:
-            continue
         if not isinstance(side_data, list):
             msg = f"ffprobe streams[{i}].side_data_list must be list, got {type(side_data).__name__}"
             print(f"ERROR: ffprobe output validation failed: {msg}", file=sys.stderr)
